@@ -10,6 +10,8 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"mineagent/internal/config"
@@ -23,6 +25,7 @@ const systemInstruction = `你是 Minecraft 服务器「jzk 的服务器」的�
 - 玩家消息格式为 [玩家名] 内容；你只收到服务器公开聊天的最近记录。
 - 用简体中文回答，语气轻松友好。
 - 回复要短（一般不超过 80 字），适合游戏聊天框阅读，不要使用 Markdown 表格或多级标题。
+- 你可以调用工具查询服务器实时信息（在线玩家、玩家详情、TPS/内存、游戏时间、天气）。被问到这些实时问题时必须先调用工具，不要凭猜测回答。
 - 不确定的服务器信息不要编造，直接说不知道。`
 
 type Request struct {
@@ -41,7 +44,7 @@ type Agent struct {
 	jobs    chan Request
 }
 
-func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog.Logger) (*Agent, error) {
+func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog.Logger, agentTools []tool.BaseTool) (*Agent, error) {
 	a := &Agent{
 		store:     store,
 		log:       log,
@@ -71,10 +74,13 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	}
 
 	chatAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:          "mineagent",
-		Description:   "Minecraft 服务器聊天助手",
-		Instruction:   systemInstruction,
-		Model:         cm,
+		Name:        "mineagent",
+		Description: "Minecraft 服务器聊天助手",
+		Instruction: systemInstruction,
+		Model:       cm,
+		ToolsConfig: adk.ToolsConfig{
+			ToolsNodeConfig: compose.ToolsNodeConfig{Tools: agentTools},
+		},
 		MaxIterations: 8,
 	})
 	if err != nil {

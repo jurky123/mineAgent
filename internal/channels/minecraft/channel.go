@@ -44,15 +44,19 @@ func (c *Channel) Detach(conn *ws.Conn) {
 }
 
 func (c *Channel) Send(_ context.Context, msg storage.Message) error {
+	return c.SendProtocol(protocol.TypeAgentMessage, protocol.AgentMessage{
+		Text:    msg.Text,
+		Target:  msg.Target,
+		ReplyTo: strconv.FormatInt(msg.ID, 10),
+	})
+}
+
+func (c *Channel) SendProtocol(typ string, data any) error {
 	c.mu.RLock()
 	conn := c.conn
 	c.mu.RUnlock()
 	if conn == nil {
 		return ErrOffline
 	}
-	return conn.Send(protocol.TypeAgentMessage, protocol.AgentMessage{
-		Text:    msg.Text,
-		Target:  msg.Target,
-		ReplyTo: strconv.FormatInt(msg.ID, 10),
-	})
+	return conn.Send(typ, data)
 }

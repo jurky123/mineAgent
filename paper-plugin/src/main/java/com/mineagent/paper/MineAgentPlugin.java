@@ -13,6 +13,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 public final class MineAgentPlugin extends JavaPlugin {
 
     private BackendClient backend;
+    private ToolExecutor toolExecutor;
 
     @Override
     public void onEnable() {
@@ -27,6 +28,8 @@ public final class MineAgentPlugin extends JavaPlugin {
         backend.setHelloInfo("minecraft", getPluginMeta().getVersion(), getServer().getMinecraftVersion());
         backend.setHandler(this::handleBackendMessage);
         backend.start();
+
+        toolExecutor = new ToolExecutor(this);
 
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
@@ -53,6 +56,8 @@ public final class MineAgentPlugin extends JavaPlugin {
     private void handleBackendMessage(String type, JsonObject data) {
         if (Protocol.AGENT_MESSAGE.equals(type)) {
             handleAgentMessage(data);
+        } else if (Protocol.TOOL_CALL.equals(type)) {
+            toolExecutor.handle(data);
         } else if (!Protocol.HELLO_ACK.equals(type) && !Protocol.PONG.equals(type)) {
             getLogger().info("recv " + type);
         }

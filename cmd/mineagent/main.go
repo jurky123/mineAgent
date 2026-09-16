@@ -17,6 +17,7 @@ import (
 	"mineagent/internal/protocol"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
+	"mineagent/internal/tools"
 	"mineagent/internal/version"
 	"mineagent/internal/ws"
 )
@@ -58,7 +59,8 @@ func main() {
 	mc := minecraft.NewChannel(log)
 	sess.Register(mc)
 
-	ag, err := agent.New(ctx, cfg, store, log)
+	gw := tools.NewGateway(mc, log)
+	ag, err := agent.New(ctx, cfg, store, log, tools.ReadOnly(gw))
 	if err != nil {
 		log.Error("init agent", "err", err)
 		os.Exit(1)
@@ -91,6 +93,13 @@ func main() {
 					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}
 			}
+		case protocol.TypeToolResult:
+			var res protocol.ToolResult
+			if err := env.Decode(&res); err != nil {
+				log.Warn("bad tool.result", "err", err)
+				return
+			}
+			gw.HandleResult(res)
 		default:
 			log.Info("message", "role", c.RemoteRole(), "type", env.Type, "bytes", len(env.Data))
 		}

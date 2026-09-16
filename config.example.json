@@ -1,0 +1,17 @@
+{
+  "listen": "127.0.0.1:8765",
+  "token": "",
+  "logLevel": "info",
+  "minecraft": {
+    "trigger": "@agent",
+    "sessionId": "minecraft-main"
+  },
+  "model": {
+    "baseURL": "",
+    "apiKey": "",
+    "name": ""
+  },
+  "storage": {
+    "path": "data/mineagent.db"
+  }
+}

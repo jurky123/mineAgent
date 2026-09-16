@@ -1,0 +1,14 @@
+name: MineAgent
+version: '${version}'
+main: com.mineagent.paper.MineAgentPlugin
+api-version: '26.2'
+description: MineAgent 后端连接插件（WebSocket）
+author: jurky123
+commands:
+  mineagent:
+    description: MineAgent 状态与重连
+    usage: /mineagent <status|reconnect>
+permissions:
+  mineagent.admin:
+    description: 允许 /mineagent status|reconnect
+    default: op

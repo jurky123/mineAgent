@@ -1,0 +1,10 @@
+/bin/
+/data/
+/config.json
+*.db
+*.db-shm
+*.db-wal
+paper-plugin/.gradle/
+paper-plugin/build/
+.idea/
+*.iml

@@ -1,0 +1,7 @@
+backend:
+  url: "ws://127.0.0.1:8765/ws"
+  token: ""
+  reconnect:
+    initial-delay-ms: 1000
+    max-delay-ms: 30000
+  heartbeat-ms: 20000

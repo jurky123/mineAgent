@@ -14,6 +14,7 @@ public final class MineAgentPlugin extends JavaPlugin {
 
     private BackendClient backend;
     private ToolExecutor toolExecutor;
+    private ApprovalHandler approvalHandler;
 
     @Override
     public void onEnable() {
@@ -30,6 +31,7 @@ public final class MineAgentPlugin extends JavaPlugin {
         backend.start();
 
         toolExecutor = new ToolExecutor(this);
+        approvalHandler = new ApprovalHandler(this);
 
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
@@ -58,6 +60,8 @@ public final class MineAgentPlugin extends JavaPlugin {
             handleAgentMessage(data);
         } else if (Protocol.TOOL_CALL.equals(type)) {
             toolExecutor.handle(data);
+        } else if (Protocol.APPROVAL_REQUEST.equals(type)) {
+            approvalHandler.request(data);
         } else if (!Protocol.HELLO_ACK.equals(type) && !Protocol.PONG.equals(type)) {
             getLogger().info("recv " + type);
         }

@@ -60,7 +60,10 @@ func main() {
 	sess.Register(mc)
 
 	gw := tools.NewGateway(mc, log)
-	ag, err := agent.New(ctx, cfg, store, log, tools.ReadOnly(gw))
+	approvalTimeout := time.Duration(cfg.Tools.ApprovalTimeoutSeconds) * time.Second
+	approvals := tools.NewApprovals(mc, approvalTimeout, log)
+	agentTools := append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, cfg.Tools, log)...)
+	ag, err := agent.New(ctx, cfg, store, log, agentTools, approvals)
 	if err != nil {
 		log.Error("init agent", "err", err)
 		os.Exit(1)
@@ -100,6 +103,13 @@ func main() {
 				return
 			}
 			gw.HandleResult(res)
+		case protocol.TypeApprovalResult:
+			var res protocol.ApprovalResult
+			if err := env.Decode(&res); err != nil {
+				log.Warn("bad approval.result", "err", err)
+				return
+			}
+			approvals.HandleResult(res)
 		default:
 			log.Info("message", "role", c.RemoteRole(), "type", env.Type, "bytes", len(env.Data))
 		}

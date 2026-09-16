@@ -69,6 +69,7 @@ type ToolCall struct {
 	CallID    string          `json:"callId"`
 	Tool      string          `json:"tool"`
 	Args      json.RawMessage `json:"args,omitempty"`
+	Requester string          `json:"requester,omitempty"`
 	TimeoutMS int64           `json:"timeoutMs,omitempty"`
 }
 

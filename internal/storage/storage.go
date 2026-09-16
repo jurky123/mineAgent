@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS tool_audit (
 	result      TEXT NOT NULL DEFAULT '',
 	created_at  INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS agent_checkpoints (
+	id         TEXT PRIMARY KEY,
+	data       BLOB NOT NULL,
+	updated_at INTEGER NOT NULL
+);
 `
 
 func Open(path string) (*Store, error) {
@@ -231,6 +237,31 @@ func (s *Store) SaveAudit(ctx context.Context, e AuditEntry) (int64, error) {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+func (s *Store) SaveCheckpoint(ctx context.Context, id string, data []byte, now int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO agent_checkpoints(id, data, updated_at) VALUES(?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at`,
+		id, data, now)
+	return err
+}
+
+func (s *Store) LoadCheckpoint(ctx context.Context, id string) ([]byte, bool, error) {
+	var data []byte
+	err := s.db.QueryRowContext(ctx, `SELECT data FROM agent_checkpoints WHERE id=?`, id).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return data, true, nil
+}
+
+func (s *Store) DeleteCheckpoint(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_checkpoints WHERE id=?`, id)
+	return err
 }
 
 type rowScanner interface {

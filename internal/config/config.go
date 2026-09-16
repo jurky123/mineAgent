@@ -15,6 +15,7 @@ type Config struct {
 	Minecraft Minecraft `json:"minecraft"`
 	Model     Model     `json:"model"`
 	Storage   Storage   `json:"storage"`
+	Tools     Tools     `json:"tools"`
 }
 
 type Minecraft struct {
@@ -32,12 +33,23 @@ type Storage struct {
 	Path string `json:"path"`
 }
 
+type Tools struct {
+	ApprovalTimeoutSeconds int `json:"approvalTimeoutSeconds"`
+}
+
+func DefaultTools() Tools {
+	return Tools{
+		ApprovalTimeoutSeconds: 180,
+	}
+}
+
 func Default() Config {
 	return Config{
 		Listen:    "127.0.0.1:8765",
 		LogLevel:  "info",
 		Minecraft: Minecraft{Trigger: "@agent", SessionID: "minecraft-main"},
 		Storage:   Storage{Path: "data/mineagent.db"},
+		Tools:     DefaultTools(),
 	}
 }
 

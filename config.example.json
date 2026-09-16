@@ -13,5 +13,8 @@
   },
   "storage": {
     "path": "data/mineagent.db"
+  },
+  "tools": {
+    "approvalTimeoutSeconds": 180
   }
 }

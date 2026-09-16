@@ -98,7 +98,7 @@ func TestAgentResponds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag, err := New(ctx, cfg, st, log, nil)
+	ag, err := New(ctx, cfg, st, log, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestAgentDisabledWithoutModel(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	ag, err := New(context.Background(), config.Default(), st, log, nil)
+	ag, err := New(context.Background(), config.Default(), st, log, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,9 +1,13 @@
 package com.mineagent.paper;
 
+import java.util.Map;
+
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -19,12 +23,13 @@ public final class ToolExecutor {
     public void handle(JsonObject data) {
         String callId = data.has("callId") ? data.get("callId").getAsString() : "";
         String tool = data.has("tool") ? data.get("tool").getAsString() : "";
+        String requester = data.has("requester") ? data.get("requester").getAsString() : "";
         JsonObject args = data.has("args") && data.get("args").isJsonObject()
                 ? data.getAsJsonObject("args")
                 : new JsonObject();
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             try {
-                reply(callId, true, execute(tool, args), null);
+                reply(callId, true, execute(tool, args, requester), null);
             } catch (Exception e) {
                 String message = e.getMessage() == null ? e.toString() : e.getMessage();
                 reply(callId, false, null, message);
@@ -32,7 +37,7 @@ public final class ToolExecutor {
         });
     }
 
-    private JsonObject execute(String tool, JsonObject args) {
+    private JsonObject execute(String tool, JsonObject args, String requester) {
         switch (tool) {
             case "minecraft_list_players":
                 return listPlayers();
@@ -44,6 +49,12 @@ public final class ToolExecutor {
                 return worldTime();
             case "minecraft_weather":
                 return weather();
+            case "minecraft_teleport":
+                return teleport(args);
+            case "minecraft_give":
+                return give(args);
+            case "minecraft_run_command":
+                return runCommand(args, requester);
             default:
                 throw new IllegalArgumentException("未知工具: " + tool);
         }
@@ -129,6 +140,72 @@ public final class ToolExecutor {
         JsonObject out = new JsonObject();
         out.add("worlds", worlds);
         return out;
+    }
+
+    private JsonObject teleport(JsonObject args) {
+        Player player = requirePlayer(args, "player");
+        Player target = requirePlayer(args, "target");
+        player.teleport(target);
+        JsonObject out = new JsonObject();
+        out.addProperty("ok", true);
+        out.addProperty("message", player.getName() + " 已传送到 " + target.getName() + " 身边");
+        return out;
+    }
+
+    private JsonObject give(JsonObject args) {
+        Player player = requirePlayer(args, "player");
+        String itemName = required(args, "item");
+        Material material = Material.matchMaterial(itemName);
+        if (material == null || !material.isItem()) {
+            throw new IllegalArgumentException("未知物品: " + itemName);
+        }
+        int count = args.has("count") ? args.get("count").getAsInt() : 1;
+        if (count < 1 || count > 64) {
+            throw new IllegalArgumentException("数量需在 1-64 之间");
+        }
+        ItemStack stack = new ItemStack(material, count);
+        Map<Integer, ItemStack> leftover = player.getInventory().addItem(stack);
+        JsonObject out = new JsonObject();
+        out.addProperty("ok", leftover.isEmpty());
+        if (leftover.isEmpty()) {
+            out.addProperty("message", "已给予 " + player.getName() + " " + count + " 个 " + itemName);
+        } else {
+            for (ItemStack rest : leftover.values()) {
+                player.getWorld().dropItemNaturally(player.getLocation(), rest);
+            }
+            out.addProperty("message", "背包已满，多余物品已掉落在 " + player.getName() + " 脚下");
+        }
+        return out;
+    }
+
+    private JsonObject runCommand(JsonObject args, String requester) {
+        String command = required(args, "command").trim();
+        if (command.startsWith("/")) {
+            command = command.substring(1);
+        }
+        if (requester.isEmpty()) {
+            throw new IllegalArgumentException("缺少请求者信息，无法以本人身份执行");
+        }
+        Player performer = Bukkit.getPlayerExact(requester);
+        if (performer == null) {
+            throw new IllegalArgumentException("请求者 " + requester + " 不在线，无法以本人身份执行命令");
+        }
+        if (!performer.performCommand(command)) {
+            throw new IllegalArgumentException("命令执行失败：权限不足或命令不存在（权限由服务器权限组决定）");
+        }
+        JsonObject out = new JsonObject();
+        out.addProperty("ok", true);
+        out.addProperty("message", "已以 " + performer.getName() + " 的身份执行: /" + command);
+        return out;
+    }
+
+    private Player requirePlayer(JsonObject args, String key) {
+        String name = required(args, key);
+        Player player = Bukkit.getPlayerExact(name);
+        if (player == null) {
+            throw new IllegalArgumentException("玩家 " + name + " 不在线");
+        }
+        return player;
     }
 
     private String required(JsonObject args, String key) {

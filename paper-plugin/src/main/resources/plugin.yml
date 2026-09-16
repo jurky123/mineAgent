@@ -12,3 +12,6 @@ permissions:
   mineagent.admin:
     description: 允许 /mineagent status|reconnect
     default: op
+  mineagent.approve:
+    description: 允许批准/拒绝 MineAgent 的高权限操作
+    default: op

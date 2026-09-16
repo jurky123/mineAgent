@@ -58,6 +58,7 @@ func (g *Gateway) Call(ctx context.Context, name string, args json.RawMessage) (
 		CallID:    callID,
 		Tool:      name,
 		Args:      args,
+		Requester: RequesterFromContext(ctx),
 		TimeoutMS: g.timeout.Milliseconds(),
 	}); err != nil {
 		return "", fmt.Errorf("call %s: %w", name, err)

@@ -7,7 +7,9 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 
+import com.google.gson.JsonObject;
 import com.mineagent.paper.BackendClient;
+import com.mineagent.paper.Protocol;
 
 import net.kyori.adventure.text.Component;
 
@@ -35,15 +37,37 @@ public final class MineAgentCommand implements CommandExecutor, TabCompleter {
                 backend.reconnectNow();
                 sender.sendMessage(Component.text("MineAgent: 正在重连..."));
             }
-            default -> sender.sendMessage(Component.text("用法: /mineagent <status|reconnect>"));
+            case "approve" -> resolve(sender, args, true);
+            case "deny" -> resolve(sender, args, false);
+            default -> sender.sendMessage(Component.text("用法: /mineagent <status|reconnect|approve|deny> [审批ID]"));
         }
         return true;
+    }
+
+    private void resolve(CommandSender sender, String[] args, boolean approved) {
+        if (!sender.hasPermission("mineagent.approve")) {
+            sender.sendMessage(Component.text("没有审批权限"));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("用法: /mineagent " + (approved ? "approve" : "deny") + " <审批ID>"));
+            return;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("approvalId", args[1]);
+        payload.addProperty("approved", approved);
+        payload.addProperty("operator", sender.getName());
+        if (!backend.send(Protocol.APPROVAL_RESULT, payload)) {
+            sender.sendMessage(Component.text("MineAgent: 后端未连接，审批失败"));
+            return;
+        }
+        sender.sendMessage(Component.text("MineAgent: 已" + (approved ? "批准" : "拒绝") + " " + args[1]));
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 1) {
-            return List.of("status", "reconnect");
+            return List.of("status", "reconnect", "approve", "deny");
         }
         return List.of();
     }

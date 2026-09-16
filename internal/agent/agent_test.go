@@ -171,7 +171,7 @@ func TestHistoryRoles(t *testing.T) {
 	}
 
 	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
-	msgs, err := ag.history(ctx)
+	msgs, cutoff, err := ag.history(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,4 +184,73 @@ func TestHistoryRoles(t *testing.T) {
 	if msgs[1].Role != "assistant" || msgs[1].Content != "hello" {
 		t.Fatalf("assistant msg = %+v", msgs[1])
 	}
+	if cutoff != 2 {
+		t.Fatalf("cutoff = %d", cutoff)
+	}
+}
+
+func TestSummarizationPersistsSummary(t *testing.T) {
+	srv := completionServer(t, "这是一段中文摘要")
+
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+	cfg.Model.BaseURL = srv.URL
+	cfg.Model.APIKey = "test-key"
+	cfg.Model.Name = "test-model"
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	hub := session.NewHub(st, log)
+	sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := &fakeChannel{}
+	sess.Register(ch)
+
+	var lastID int64
+	for i := 0; i < 45; i++ {
+		msg, err := sess.Ingest(ctx, storage.Message{
+			Channel:    "minecraft",
+			AuthorKind: "player",
+			AuthorName: "Steve",
+			Text:       fmt.Sprintf("闲聊消息 %d", i),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lastID = msg.ID
+	}
+
+	ag, err := New(ctx, cfg, st, log, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go ag.Run(ctx)
+	if !ag.Submit(Request{Session: sess, Player: "Steve", Query: "总结一下"}) {
+		t.Fatal("submit failed")
+	}
+
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		sum, err := st.LatestSummary(ctx, cfg.Minecraft.SessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sum != nil {
+			if sum.UpToMessageID != lastID {
+				t.Fatalf("summary upTo = %d, want %d", sum.UpToMessageID, lastID)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("summary not persisted in time")
 }

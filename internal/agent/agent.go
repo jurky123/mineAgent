@@ -43,6 +43,7 @@ type pendingRun struct {
 	cpID        string
 	interruptID string
 	tool        string
+	cutoff      int64
 }
 
 type Agent struct {
@@ -96,6 +97,11 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		return nil, fmt.Errorf("init chat model: %w", err)
 	}
 
+	middlewares, err := a.buildMiddlewares(ctx, cm)
+	if err != nil {
+		return nil, fmt.Errorf("init middlewares: %w", err)
+	}
+
 	chatAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        "mineagent",
 		Description: "Minecraft 服务器聊天助手",
@@ -107,6 +113,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 				ExecuteSequentially: true,
 			},
 		},
+		Handlers:      middlewares,
 		MaxIterations: 8,
 	})
 	if err != nil {
@@ -163,12 +170,13 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	rctx = tools.WithRequester(rctx, req.Player)
 	rctx = tools.WithSession(rctx, a.sessionID)
 
-	msgs, err := a.history(rctx)
+	msgs, cutoff, err := a.history(rctx)
 	if err != nil {
 		a.log.Error("agent history", "err", err)
 		_ = req.Session.Reply(rctx, "抱歉，读取聊天记录失败。", req.Player)
 		return
 	}
+	rctx = context.WithValue(rctx, historyCutoffKey{}, cutoff)
 
 	cpID := fmt.Sprintf("run-%d", time.Now().UnixNano())
 	a.log.Info("agent run", "player", req.Player, "query", req.Query, "messages", len(msgs), "checkpoint", cpID)
@@ -239,6 +247,7 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, cpID string, i
 			cpID:        cpID,
 			interruptID: ictx.ID,
 			tool:        ai.Tool,
+			cutoff:      historyCutoffFrom(ctx),
 		}
 		a.mu.Unlock()
 		a.approvals.Notify(*ai)
@@ -269,6 +278,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	defer cancel()
 	rctx = tools.WithRequester(rctx, run.player)
 	rctx = tools.WithSession(rctx, a.sessionID)
+	rctx = context.WithValue(rctx, historyCutoffKey{}, run.cutoff)
 
 	a.log.Info("resuming after approval",
 		"approvalId", out.ApprovalID,
@@ -302,12 +312,21 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-func (a *Agent) history(ctx context.Context) ([]*schema.Message, error) {
-	recent, err := a.store.RecentMessages(ctx, a.sessionID, 60)
+func (a *Agent) history(ctx context.Context) ([]*schema.Message, int64, error) {
+	summary, err := a.store.LatestSummary(ctx, a.sessionID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	msgs := make([]*schema.Message, 0, len(recent))
+	var cutoff int64
+	msgs := make([]*schema.Message, 0, 64)
+	if summary != nil {
+		cutoff = summary.UpToMessageID
+		msgs = append(msgs, schema.UserMessage("[之前聊天的摘要] "+summary.Text))
+	}
+	recent, err := a.store.MessagesAfter(ctx, a.sessionID, cutoff, 200)
+	if err != nil {
+		return nil, 0, err
+	}
 	for _, m := range recent {
 		switch m.AuthorKind {
 		case "player":
@@ -315,6 +334,9 @@ func (a *Agent) history(ctx context.Context) ([]*schema.Message, error) {
 		case "agent":
 			msgs = append(msgs, schema.AssistantMessage(m.Text, nil))
 		}
+		if m.ID > cutoff {
+			cutoff = m.ID
+		}
 	}
-	return msgs, nil
+	return msgs, cutoff, nil
 }

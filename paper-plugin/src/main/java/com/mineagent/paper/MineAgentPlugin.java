@@ -37,7 +37,7 @@ public final class MineAgentPlugin extends JavaPlugin {
 
         PluginCommand command = getCommand("mineagent");
         if (command != null) {
-            MineAgentCommand executor = new MineAgentCommand(backend);
+            MineAgentCommand executor = new MineAgentCommand(backend, approvalHandler);
             command.setExecutor(executor);
             command.setTabCompleter(executor);
         }

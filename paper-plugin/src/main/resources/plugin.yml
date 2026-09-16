@@ -6,8 +6,9 @@ description: MineAgent 后端连接插件（WebSocket）
 author: jurky123
 commands:
   mineagent:
-    description: MineAgent 状态与重连
-    usage: /mineagent <status|reconnect>
+    description: MineAgent 状态、重连与操作审批
+    usage: /mineagent <status|reconnect|approve|deny> [审批ID]
+    aliases: [ma]
 permissions:
   mineagent.admin:
     description: 允许 /mineagent status|reconnect

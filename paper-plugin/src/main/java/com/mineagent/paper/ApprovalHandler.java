@@ -1,5 +1,10 @@
 package com.mineagent.paper;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.bukkit.entity.Player;
 
 import com.google.gson.JsonObject;
@@ -11,7 +16,10 @@ import net.kyori.adventure.text.format.NamedTextColor;
 
 public final class ApprovalHandler {
 
+    private static final long PENDING_TTL_MS = 5 * 60 * 1000L;
+
     private final MineAgentPlugin plugin;
+    private final Map<String, Long> pending = new ConcurrentHashMap<>();
 
     public ApprovalHandler(MineAgentPlugin plugin) {
         this.plugin = plugin;
@@ -22,6 +30,9 @@ public final class ApprovalHandler {
         String tool = str(data, "tool");
         String requester = str(data, "requester");
         String prompt = str(data, "prompt");
+        if (!approvalId.isEmpty()) {
+            pending.put(approvalId, System.currentTimeMillis());
+        }
         plugin.getLogger().info("approval request " + approvalId + ": " + requester + " -> " + prompt);
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             Component approve = Component.text("[批准]", NamedTextColor.GREEN)
@@ -49,6 +60,16 @@ public final class ApprovalHandler {
                 plugin.getServer().getConsoleSender().sendMessage(message);
             }
         });
+    }
+
+    public void resolve(String approvalId) {
+        pending.remove(approvalId);
+    }
+
+    public List<String> pendingIds() {
+        long now = System.currentTimeMillis();
+        pending.entrySet().removeIf(entry -> now - entry.getValue() > PENDING_TTL_MS);
+        return new ArrayList<>(pending.keySet());
     }
 
     private String str(JsonObject data, String key) {

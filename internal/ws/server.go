@@ -25,6 +25,9 @@ type Server struct {
 	log     *slog.Logger
 	handler MessageHandler
 
+	onConnect    func(*Conn)
+	onDisconnect func(*Conn)
+
 	httpSrv *http.Server
 
 	pingInterval     time.Duration
@@ -59,6 +62,14 @@ func New(cfg config.Config, log *slog.Logger, handler MessageHandler) *Server {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
+}
+
+func (s *Server) OnConnect(fn func(*Conn)) {
+	s.onConnect = fn
+}
+
+func (s *Server) OnDisconnect(fn func(*Conn)) {
+	s.onDisconnect = fn
 }
 
 func (s *Server) ListenAndServe() error {
@@ -143,6 +154,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	s.addConn(c)
 	defer s.removeConn(c)
+	if s.onConnect != nil {
+		s.onConnect(c)
+	}
+	defer func() {
+		if s.onDisconnect != nil {
+			s.onDisconnect(c)
+		}
+	}()
 	s.log.Info("plugin connected",
 		"remote", c.remote,
 		"role", c.role,

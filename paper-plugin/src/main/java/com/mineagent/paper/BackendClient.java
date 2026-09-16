@@ -109,9 +109,8 @@ public final class BackendClient {
         WebSocket socket = ws;
         if (socket != null) {
             socket.abort();
-        } else {
-            scheduleReconnect(0);
         }
+        handleDisconnect(socket, "manual reconnect");
     }
 
     public boolean send(String type, JsonObject data) {
@@ -127,7 +126,7 @@ public final class BackendClient {
             }
             return true;
         } catch (Exception e) {
-            lastError = String.valueOf(e.getMessage());
+            handleDisconnect(socket, "send failed: " + e.getMessage());
             return false;
         }
     }
@@ -150,10 +149,11 @@ public final class BackendClient {
     }
 
     private void handleDisconnect(WebSocket socket, String reason) {
-        if (ws == socket) {
-            ws = null;
-            connected = false;
+        if (ws != socket && ws != null) {
+            return;
         }
+        ws = null;
+        connected = false;
         lastError = reason;
         if (!running.get()) {
             return;
@@ -184,15 +184,15 @@ public final class BackendClient {
         WebSocket socket = ws;
         if (socket != null && connected) {
             if (System.currentTimeMillis() - lastIncoming > heartbeatMs * 3) {
-                lastError = "heartbeat timeout";
                 socket.abort();
+                handleDisconnect(socket, "heartbeat timeout");
             } else {
                 try {
                     synchronized (sendLock) {
                         socket.sendPing(ByteBuffer.allocate(0));
                     }
                 } catch (Exception e) {
-                    lastError = String.valueOf(e.getMessage());
+                    handleDisconnect(socket, "ping failed: " + e.getMessage());
                 }
             }
         }
@@ -266,6 +266,7 @@ public final class BackendClient {
         @Override
         public CompletionStage<?> onPong(WebSocket socket, ByteBuffer message) {
             lastIncoming = System.currentTimeMillis();
+            socket.request(1);
             return null;
         }
 

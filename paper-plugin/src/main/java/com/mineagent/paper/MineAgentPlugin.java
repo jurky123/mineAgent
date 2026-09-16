@@ -1,9 +1,14 @@
 package com.mineagent.paper;
 
 import org.bukkit.command.PluginCommand;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import com.google.gson.JsonObject;
 import com.mineagent.paper.command.MineAgentCommand;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 public final class MineAgentPlugin extends JavaPlugin {
 
@@ -20,8 +25,10 @@ public final class MineAgentPlugin extends JavaPlugin {
 
         backend = new BackendClient(getLogger(), url, token, initial, max, heartbeat, new BukkitSchedulerAdapter(this));
         backend.setHelloInfo("minecraft", getPluginMeta().getVersion(), getServer().getMinecraftVersion());
-        backend.setHandler((type, data) -> getLogger().info("recv " + type));
+        backend.setHandler(this::handleBackendMessage);
         backend.start();
+
+        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
         PluginCommand command = getCommand("mineagent");
         if (command != null) {
@@ -41,5 +48,33 @@ public final class MineAgentPlugin extends JavaPlugin {
 
     public BackendClient backend() {
         return backend;
+    }
+
+    private void handleBackendMessage(String type, JsonObject data) {
+        if (Protocol.AGENT_MESSAGE.equals(type)) {
+            handleAgentMessage(data);
+        } else if (!Protocol.HELLO_ACK.equals(type) && !Protocol.PONG.equals(type)) {
+            getLogger().info("recv " + type);
+        }
+    }
+
+    private void handleAgentMessage(JsonObject data) {
+        String text = data.has("text") ? data.get("text").getAsString() : "";
+        String target = data.has("target") ? data.get("target").getAsString() : "";
+        getLogger().info("agent.message -> " + (target.isEmpty() ? "[广播] " : "[" + target + "] ") + text);
+        getServer().getScheduler().runTask(this, () -> {
+            Component message = Component.text("[MineAgent] ", NamedTextColor.AQUA)
+                    .append(Component.text(text, NamedTextColor.WHITE));
+            if (target.isEmpty()) {
+                getServer().broadcast(message);
+                return;
+            }
+            Player player = getServer().getPlayerExact(target);
+            if (player != null) {
+                player.sendMessage(message);
+            } else {
+                getServer().broadcast(message);
+            }
+        });
     }
 }

@@ -13,10 +13,12 @@ public final class SmokeMain {
         String url = args.length > 0 ? args[0] : "ws://127.0.0.1:8765/ws";
         String token = args.length > 1 ? args[1] : "";
         int waitSeconds = args.length > 2 ? Integer.parseInt(args[2]) : 3;
+        String message = args.length > 3 ? args[3] : "hello from smoke test";
         Logger log = Logger.getLogger("smoke");
 
         BackendClient client = new BackendClient(log, url, token, 300, 2000, 3000, new JdkScheduler());
-        client.setHelloInfo("minecraft", "smoke", "0.0-test");
+        client.setHelloInfo("smoke", "smoke", "0.0-test");
+        client.setHandler((type, data) -> System.out.println("recv " + type + " " + data));
         client.start();
 
         for (int i = 0; i < waitSeconds; i++) {
@@ -27,7 +29,7 @@ public final class SmokeMain {
         JsonObject data = new JsonObject();
         data.addProperty("player", "SmokeBot");
         data.addProperty("uuid", "00000000-0000-0000-0000-000000000001");
-        data.addProperty("message", "hello from smoke test");
+        data.addProperty("message", message);
         System.out.println("sent=" + client.send("chat.message", data));
 
         Thread.sleep(500);

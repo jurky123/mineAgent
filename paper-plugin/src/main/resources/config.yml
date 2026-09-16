@@ -4,4 +4,4 @@ backend:
   reconnect:
     initial-delay-ms: 1000
     max-delay-ms: 30000
-  heartbeat-ms: 20000
+  heartbeat-ms: 10000

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"mineagent/internal/agent"
 	"mineagent/internal/channels/minecraft"
 	"mineagent/internal/config"
 	"mineagent/internal/protocol"
@@ -57,6 +58,15 @@ func main() {
 	mc := minecraft.NewChannel(log)
 	sess.Register(mc)
 
+	ag, err := agent.New(ctx, cfg, store, log)
+	if err != nil {
+		log.Error("init agent", "err", err)
+		os.Exit(1)
+	}
+	if ag.Enabled() {
+		go ag.Run(ctx)
+	}
+
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {
 		switch env.Type {
 		case protocol.TypeChatMessage:
@@ -77,8 +87,8 @@ func main() {
 			}
 			if query, ok := matchTrigger(chat.Message, cfg.Minecraft.Trigger); ok {
 				log.Info("agent trigger", "player", chat.Player, "query", query)
-				if err := sess.Reply(ctx, "已收到消息（Agent 将在 M3 接入）: "+query, chat.Player); err != nil {
-					log.Error("reply", "err", err)
+				if !ag.Submit(agent.Request{Session: sess, Player: chat.Player, Query: query}) {
+					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}
 			}
 		default:

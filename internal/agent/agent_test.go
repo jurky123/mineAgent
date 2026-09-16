@@ -48,6 +48,12 @@ func completionServer(t *testing.T, text string) *httptest.Server {
 		if !strings.Contains(string(body), `"messages"`) {
 			t.Errorf("unexpected request body: %s", body)
 		}
+		if ua := r.Header.Get("User-Agent"); !strings.HasPrefix(ua, "MineAgent/") {
+			t.Errorf("user-agent = %q", ua)
+		}
+		if sid := r.Header.Get("x-opencode-session"); sid != "mineagent-minecraft-main" {
+			t.Errorf("x-opencode-session = %q", sid)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"id":"1","object":"chat.completion","created":0,"model":"test-model",`+
 			`"choices":[{"index":0,"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],`+

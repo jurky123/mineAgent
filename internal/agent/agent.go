@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"mineagent/internal/config"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
+	"mineagent/internal/version"
 )
 
 const systemInstruction = `你是 Minecraft 服务器「jzk 的服务器」的聊天 AI 助手。
@@ -55,7 +57,14 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		BaseURL: cfg.Model.BaseURL,
 		APIKey:  cfg.Model.APIKey,
 		Model:   cfg.Model.Name,
-		Timeout: 90 * time.Second,
+		HTTPClient: &http.Client{
+			Timeout: 90 * time.Second,
+			Transport: &headerTransport{
+				base:      http.DefaultTransport,
+				userAgent: "MineAgent/" + version.Version,
+				sessionID: "mineagent-" + cfg.Minecraft.SessionID,
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init chat model: %w", err)
@@ -154,6 +163,21 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		return
 	}
 	a.log.Info("agent replied", "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String(), "chars", len(reply))
+}
+
+type headerTransport struct {
+	base      http.RoundTripper
+	userAgent string
+	sessionID string
+}
+
+func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.Header.Set("User-Agent", t.userAgent)
+	if t.sessionID != "" {
+		r.Header.Set("x-opencode-session", t.sessionID)
+	}
+	return t.base.RoundTrip(r)
 }
 
 func (a *Agent) history(ctx context.Context) ([]*schema.Message, error) {

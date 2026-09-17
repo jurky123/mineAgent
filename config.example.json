@@ -4,7 +4,8 @@
   "logLevel": "info",
   "minecraft": {
     "trigger": "@agent",
-    "sessionId": "minecraft-main"
+    "sessionId": "minecraft-main",
+    "replyMode": "broadcast"
   },
   "model": {
     "baseURL": "",

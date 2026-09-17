@@ -5,6 +5,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import com.google.gson.JsonObject;
+import com.mineagent.paper.command.AgentCommand;
 import com.mineagent.paper.command.MineAgentCommand;
 
 import net.kyori.adventure.text.Component;
@@ -40,6 +41,12 @@ public final class MineAgentPlugin extends JavaPlugin {
             MineAgentCommand executor = new MineAgentCommand(backend, approvalHandler);
             command.setExecutor(executor);
             command.setTabCompleter(executor);
+        }
+        PluginCommand agentCommand = getCommand("agent");
+        if (agentCommand != null) {
+            AgentCommand executor = new AgentCommand(this);
+            agentCommand.setExecutor(executor);
+            agentCommand.setTabCompleter(executor);
         }
         getLogger().info("MineAgent enabled, backend=" + url);
     }

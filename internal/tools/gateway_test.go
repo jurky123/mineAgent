@@ -16,8 +16,10 @@ import (
 )
 
 type fakeSender struct {
-	mu    sync.Mutex
-	calls []protocol.ToolCall
+	mu     sync.Mutex
+	calls  []protocol.ToolCall
+	onCall func(protocol.ToolCall)
+	gw     *Gateway
 }
 
 func (f *fakeSender) SendProtocol(typ string, data any) error {
@@ -27,7 +29,11 @@ func (f *fakeSender) SendProtocol(typ string, data any) error {
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, call)
+	hook := f.onCall
 	f.mu.Unlock()
+	if hook != nil {
+		hook(call)
+	}
 	return nil
 }
 

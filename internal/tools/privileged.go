@@ -38,6 +38,34 @@ func sessionFromContext(ctx context.Context) string {
 	return v
 }
 
+const internalCheckCommand = "internal_check_command"
+
+func checkCommandPermission(ctx context.Context, gw *Gateway, args map[string]any) (bool, string, error) {
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return false, "", err
+	}
+	out, err := gw.Call(ctx, internalCheckCommand, raw)
+	if err != nil {
+		return false, "", err
+	}
+	var res struct {
+		Allowed    bool   `json:"allowed"`
+		Permission string `json:"permission"`
+		Reason     string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		return false, "", err
+	}
+	if !res.Allowed {
+		if res.Permission == "" && res.Reason != "" {
+			return false, res.Reason, nil
+		}
+		return false, res.Permission, nil
+	}
+	return true, res.Permission, nil
+}
+
 type approvalTool struct {
 	gw        *Gateway
 	approvals *Approvals
@@ -91,6 +119,17 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	if err := t.validate(args); err != nil {
 		t.audit(ctx, argsJSON, "policy_denied", "", err.Error())
 		return errorJSON(err.Error()), nil
+	}
+
+	if t.name == "minecraft_run_command" {
+		if allowed, detail, err := checkCommandPermission(ctx, t.gw, args); err == nil && !allowed {
+			msg := detail + "，我不能代为执行"
+			if strings.Contains(detail, ".") && !strings.Contains(detail, " ") {
+				msg = "你没有执行该命令的权限（" + detail + "），我不能代为执行"
+			}
+			t.audit(ctx, argsJSON, "permission_denied", "", msg)
+			return errorJSON(msg), nil
+		}
 	}
 
 	info := t.approvals.Create(ApprovalInfo{

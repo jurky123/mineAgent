@@ -21,6 +21,7 @@ type Config struct {
 type Minecraft struct {
 	Trigger   string `json:"trigger"`
 	SessionID string `json:"sessionId"`
+	ReplyMode string `json:"replyMode"`
 }
 
 type Model struct {
@@ -47,7 +48,7 @@ func Default() Config {
 	return Config{
 		Listen:    "127.0.0.1:8765",
 		LogLevel:  "info",
-		Minecraft: Minecraft{Trigger: "@agent", SessionID: "minecraft-main"},
+		Minecraft: Minecraft{Trigger: "@agent", SessionID: "minecraft-main", ReplyMode: "broadcast"},
 		Storage:   Storage{Path: "data/mineagent.db"},
 		Tools:     DefaultTools(),
 	}

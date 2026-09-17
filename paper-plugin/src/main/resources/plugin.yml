@@ -9,6 +9,10 @@ commands:
     description: MineAgent 状态、重连与操作审批
     usage: /mineagent <status|reconnect|approve|deny> [审批ID]
     aliases: [ma]
+  agent:
+    description: 向 AI 助手提问（等价于聊天 @agent）
+    usage: /agent <问题>
+    aliases: [ai]
 permissions:
   mineagent.admin:
     description: 允许 /mineagent status|reconnect

@@ -55,6 +55,8 @@ public final class ToolExecutor {
                 return give(args);
             case "minecraft_run_command":
                 return runCommand(args, requester);
+            case "internal_check_command":
+                return checkCommandPermission(args, requester);
             default:
                 throw new IllegalArgumentException("未知工具: " + tool);
         }
@@ -196,6 +198,31 @@ public final class ToolExecutor {
         JsonObject out = new JsonObject();
         out.addProperty("ok", true);
         out.addProperty("message", "已以 " + performer.getName() + " 的身份执行: /" + command);
+        return out;
+    }
+
+    private JsonObject checkCommandPermission(JsonObject args, String requester) {
+        String command = required(args, "command").trim();
+        if (command.startsWith("/")) {
+            command = command.substring(1);
+        }
+        String name = command.split("\\s+")[0].toLowerCase(java.util.Locale.ROOT);
+        JsonObject out = new JsonObject();
+        Player player = requester.isEmpty() ? null : Bukkit.getPlayerExact(requester);
+        if (player == null) {
+            out.addProperty("allowed", false);
+            out.addProperty("permission", "");
+            out.addProperty("reason", "请求者不在线");
+            return out;
+        }
+        String permission = "minecraft.command." + name;
+        org.bukkit.command.Command commandObj = Bukkit.getCommandMap().getCommand(name);
+        if (commandObj != null && commandObj.getPermission() != null && !commandObj.getPermission().isBlank()) {
+            permission = commandObj.getPermission();
+        }
+        boolean allowed = player.isOp() || player.hasPermission(permission);
+        out.addProperty("allowed", allowed);
+        out.addProperty("permission", permission);
         return out;
     }
 

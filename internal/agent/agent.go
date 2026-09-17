@@ -50,6 +50,7 @@ type Agent struct {
 	store     *storage.Store
 	log       *slog.Logger
 	sessionID string
+	replyMode string
 
 	runner    *adk.Runner
 	approvals *tools.Approvals
@@ -68,9 +69,13 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		store:     store,
 		log:       log,
 		sessionID: cfg.Minecraft.SessionID,
+		replyMode: cfg.Minecraft.ReplyMode,
 		jobs:      make(chan Request, 16),
 		pending:   make(map[string]*pendingRun),
 		approvals: approvals,
+	}
+	if a.replyMode == "" {
+		a.replyMode = "broadcast"
 	}
 	if approvals != nil {
 		a.outcomes = approvals.Outcomes()
@@ -164,6 +169,13 @@ func (a *Agent) Run(ctx context.Context) {
 	}
 }
 
+func (a *Agent) target(player string) string {
+	if a.replyMode == "player" {
+		return player
+	}
+	return ""
+}
+
 func (a *Agent) respond(ctx context.Context, req Request) {
 	rctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
@@ -198,7 +210,7 @@ func (a *Agent) consume(ctx context.Context, req Request, cpID string, iter *adk
 		}
 		if ev.Err != nil {
 			a.log.Error("agent run failed", "err", ev.Err)
-			_ = req.Session.Reply(ctx, "抱歉，我暂时无法回答（模型调用失败）。", req.Player)
+			_ = req.Session.Reply(ctx, "抱歉，我暂时无法回答（模型调用失败）。", a.target(req.Player))
 			return true
 		}
 		if ev.Action != nil && ev.Action.Interrupted != nil {
@@ -224,7 +236,7 @@ func (a *Agent) consume(ctx context.Context, req Request, cpID string, iter *adk
 	if reply == "" {
 		reply = "唔，我没有想好怎么回答。"
 	}
-	if err := req.Session.Reply(ctx, reply, req.Player); err != nil {
+	if err := req.Session.Reply(ctx, reply, a.target(req.Player)); err != nil {
 		a.log.Error("agent reply", "err", err)
 	}
 	return true
@@ -256,10 +268,10 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, cpID string, i
 	}
 	if !notified {
 		a.log.Warn("interrupt without approval info", "player", req.Player)
-		_ = req.Session.Reply(ctx, "这个操作需要人工确认，但审批信息丢失了。", req.Player)
+		_ = req.Session.Reply(ctx, "这个操作需要人工确认，但审批信息丢失了。", a.target(req.Player))
 		return
 	}
-	_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", req.Player)
+	_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", a.target(req.Player))
 }
 
 func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
@@ -291,7 +303,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	})
 	if err != nil {
 		a.log.Error("resume failed", "err", err, "checkpoint", run.cpID)
-		_ = run.session.Reply(rctx, "恢复执行失败："+err.Error(), run.player)
+		_ = run.session.Reply(rctx, "恢复执行失败："+err.Error(), a.target(run.player))
 		return
 	}
 	a.consume(rctx, Request{Session: run.session, Player: run.player}, run.cpID, iter)

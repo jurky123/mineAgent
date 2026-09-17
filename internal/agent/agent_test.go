@@ -117,14 +117,25 @@ func TestAgentResponds(t *testing.T) {
 			if msg.Text != "你好，我是测试助手" {
 				t.Fatalf("reply = %q", msg.Text)
 			}
-			if msg.Target != "Steve" {
-				t.Fatalf("target = %q", msg.Target)
+			if msg.Target != "" {
+				t.Fatalf("target = %q, want broadcast", msg.Target)
 			}
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("agent did not reply in time")
+}
+
+func TestReplyTargetModes(t *testing.T) {
+	a := &Agent{replyMode: "broadcast"}
+	if got := a.target("Steve"); got != "" {
+		t.Fatalf("broadcast target = %q", got)
+	}
+	a.replyMode = "player"
+	if got := a.target("Steve"); got != "Steve" {
+		t.Fatalf("player target = %q", got)
+	}
 }
 
 func TestAgentDisabledWithoutModel(t *testing.T) {

@@ -1,53 +1,62 @@
 # MineAgent
 
-Paper 服务器的 AI 聊天助手：Go 后端（CloudWeGo Eino）+ Paper 插件，通过本机 WebSocket 通信。
+Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，它了解服务器的实时情况，也能帮玩家做传送、给物品、执行命令这类操作（需要管理员批准）。
+
+## 能做什么
+
+- **聊天问答**：像和群友聊天一样提问，回答会发在服务器聊天里，所有人都能看到
+- **服务器状态**：TPS、内存占用、在线人数、服务器版本，卡不卡一问便知
+- **在线玩家**：谁在线、各自在哪个世界、延迟多少
+- **玩家信息**：某位玩家的坐标、血量、饥饿值、游戏模式
+- **世界信息**：现在是白天还是黑夜、什么天气
+- **搬运操作**：把玩家传送到另一个玩家身边、给玩家物品、执行服务器命令
+- **记得住上下文**：最近聊过什么它都知道，可以追问；聊得多了会自动压缩记忆，不会忘事
+- **多人共用一个助手**：全服玩家共享同一份聊天记忆，回答公开发布
+
+## 怎么用
+
+聊天框直接发 `@agent 问题`，或者用命令 `/agent 问题`（Tab 有补全，别名 `/ai`）：
 
 ```text
-Paper 插件 ──ws://127.0.0.1:8765── MineAgent(Go)
-                                    ├── Eino ChatModelAgent（opencode-go / OpenAI 兼容）
-                                    ├── Session Hub + SQLite
-                                    ├── 工具网关（只读 + 高权限审批）
-                                    └── 审批 / 审计 / 上下文摘要
+@agent 在线有谁
+@agent 服务器卡不卡
+@agent Steve 在哪个世界
+@agent 现在几点了？下雨吗
+@agent 把服务器时间设为白天
+@agent 给我 1 个钻石
 ```
 
-## 目录
+## 高权限操作与审批
 
-- `cmd/mineagent` —— 后端入口（配置、日志、优雅退出、`/healthz`）
-- `internal/protocol` —— WS v1 协议（hello/chat/tool/approval/ping）
-- `internal/ws` —— WebSocket 服务（握手鉴权、心跳、连接管理、钩子）
-- `internal/session` —— 多人 Session、通道注册与 fan-out
-- `internal/storage` —— SQLite（messages/summaries/identity_links/tool_audit/agent_checkpoints）
-- `internal/agent` —— Eino Runner、审批中断/恢复、摘要与工具压缩中间件
-- `internal/tools` —— 工具网关、只读工具、高权限工具与审批服务
-- `internal/channels/minecraft` —— 与 Paper 插件通信的通道
-- `paper-plugin` —— Paper 26.2 插件（Gradle，JDK Http WebSocket 客户端）
+传送、给物品、执行命令属于高权限操作，处理流程：
 
-## 构建与运行
+1. 助手会先检查**请求者本人**有没有相应权限，没有权限直接拒绝，不会打扰管理员
+2. 有权限时，向管理员广播一条消息：请求内容 + **[批准]** **[拒绝]** 按钮，点一下就能处理
+3. 批准后，操作以请求者本人身份执行：命令的实际效果由服务器权限组（LuckPerms）决定
+4. 所有请求与审批都会记录在案（谁请求、谁批准、执行结果）
 
-```bash
-make build          # 产出 bin/mineagent
-make test           # Go 单测（含 mock 模型端到端）
-make plugin         # 构建 Paper 插件 jar
-scripts/build.sh --install   # 构建并安装插件到 /home/ubuntu/minecraft/plugins
-./bin/mineagent --config config.json
-```
+## 权限节点
 
-配置见 `config.example.json`（`config.json` 已被 gitignore）：模型走任意 OpenAI 兼容端点，
-敏感值可用 `MINEAGENT_TOKEN`、`MINEAGENT_MODEL_API_KEY`、`MINEAGENT_MODEL_BASE_URL`、
-`MINEAGENT_MODEL_NAME` 环境变量覆盖。
+| 权限 | 作用 | 默认 |
+|---|---|---|
+| `mineagent.approve` | 批准/拒绝高权限操作 | op |
+| `mineagent.teleport` | 发起传送请求 | op |
+| `mineagent.give` | 发起给物品请求 | op |
 
-## 高权限操作
+命令类操作按 `minecraft.command.<命令名>` 或对应插件自身的权限节点校验。
 
-`minecraft_teleport` / `minecraft_give` / `minecraft_run_command` 会通过 Eino 的
-interrupt/resume 暂停 Agent，向游戏内广播 **[批准] [拒绝]**；批准后命令以请求者本人身份执行，
-权限硬限制由 LuckPerms 决定。所有决定写入 `tool_audit`。
+## 管理命令
 
-## 部署
+| 命令 | 作用 |
+|---|---|
+| `/agent <问题>`（别名 `/ai`） | 提问，等价于聊天 `@agent` |
+| `/mineagent status` | 查看助手连接状态 |
+| `/mineagent reconnect` | 手动重连后端 |
+| `/mineagent approve\|deny <审批ID>` | 批准/拒绝操作（Tab 可补全待审批 ID，别名 `/ma`） |
 
-生产环境由 systemd 管理：
+## 安装与运行
 
-```bash
-sudo systemctl status mineagent
-sudo systemctl restart mineagent
-journalctl -u mineagent -f
-```
+- 服务端：Paper 26.2 插件 `MineAgent.jar`，放入 `plugins/` 即可
+- 后端：同机运行 `mineagent` 服务（默认 `127.0.0.1:8765`），负责对话、审批与记忆存储
+- 模型：需要配置一个 OpenAI 兼容的模型接口（如 opencode-go），在 `config.json` 中填写
+- 日常运维：`systemctl status|restart mineagent`，日志 `journalctl -u mineagent -f`

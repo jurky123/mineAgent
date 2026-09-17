@@ -50,6 +50,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if n, err := store.ClearCheckpoints(ctx); err != nil {
+		log.Warn("clear stale checkpoints failed", "err", err)
+	} else if n > 0 {
+		log.Info("cleared stale checkpoints", "count", n)
+	}
+
 	hub := session.NewHub(store, log)
 	sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
 	if err != nil {
@@ -62,7 +68,7 @@ func main() {
 	gw := tools.NewGateway(mc, log)
 	approvalTimeout := time.Duration(cfg.Tools.ApprovalTimeoutSeconds) * time.Second
 	approvals := tools.NewApprovals(mc, approvalTimeout, log)
-	agentTools := append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, cfg.Tools, log)...)
+	agentTools := append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...)
 	ag, err := agent.New(ctx, cfg, store, log, agentTools, approvals)
 	if err != nil {
 		log.Error("init agent", "err", err)
@@ -80,23 +86,34 @@ func main() {
 				log.Warn("bad chat.message", "err", err)
 				return
 			}
-			if _, err := sess.Ingest(ctx, storage.Message{
+			msg, err := sess.Ingest(ctx, storage.Message{
 				Channel:    "minecraft",
 				AuthorKind: "player",
 				AuthorID:   chat.UUID,
 				AuthorName: chat.Player,
 				Text:       chat.Message,
-			}); err != nil {
+			})
+			if err != nil {
 				log.Error("ingest chat", "err", err)
 				return
 			}
 			if query, ok := matchTrigger(chat.Message, cfg.Minecraft.Trigger); ok {
-				log.Info("agent trigger", "player", chat.Player, "query", query)
-				if !ag.Submit(agent.Request{Session: sess, Player: chat.Player, Query: query}) {
+				log.Info("agent trigger", "player", chat.Player, "query", query, "messageId", msg.ID)
+				if !ag.Submit(agent.Request{
+					Session:          sess,
+					Player:           chat.Player,
+					RequesterID:      chat.UUID,
+					Query:            query,
+					TriggerMessageID: msg.ID,
+				}) {
 					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}
 			}
 		case protocol.TypeToolResult:
+			if !isCurrentMinecraftConn(c, mc) {
+				log.Warn("tool.result from untrusted connection", "remote", c.Remote(), "role", c.RemoteRole())
+				return
+			}
 			var res protocol.ToolResult
 			if err := env.Decode(&res); err != nil {
 				log.Warn("bad tool.result", "err", err)
@@ -104,6 +121,10 @@ func main() {
 			}
 			gw.HandleResult(res)
 		case protocol.TypeApprovalResult:
+			if !isCurrentMinecraftConn(c, mc) {
+				log.Warn("approval.result from untrusted connection", "remote", c.Remote(), "role", c.RemoteRole())
+				return
+			}
 			var res protocol.ApprovalResult
 			if err := env.Decode(&res); err != nil {
 				log.Warn("bad approval.result", "err", err)
@@ -144,6 +165,10 @@ func main() {
 			log.Error("shutdown", "err", err)
 		}
 	}
+}
+
+func isCurrentMinecraftConn(c *ws.Conn, mc *minecraft.Channel) bool {
+	return c.RemoteRole() == protocol.RoleMinecraft && mc.Attached() == c
 }
 
 func matchTrigger(text, trigger string) (string, bool) {

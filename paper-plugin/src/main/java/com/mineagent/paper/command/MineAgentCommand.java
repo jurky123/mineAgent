@@ -28,23 +28,39 @@ public final class MineAgentCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!sender.hasPermission("mineagent.admin")) {
-            sender.sendMessage(Component.text("没有权限"));
-            return true;
-        }
         String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "status";
         switch (sub) {
-            case "status" -> sender.sendMessage(Component.text(
-                    "MineAgent: connected=" + backend.isConnected()
-                            + " url=" + backend.url()
-                            + " lastError=" + backend.lastError()));
+            case "status" -> {
+                if (!require(sender, "mineagent.admin")) {
+                    return true;
+                }
+                sender.sendMessage(Component.text(
+                        "MineAgent: connected=" + backend.isConnected()
+                                + " url=" + backend.url()
+                                + " lastError=" + backend.lastError()));
+            }
             case "reconnect" -> {
+                if (!require(sender, "mineagent.admin")) {
+                    return true;
+                }
                 backend.reconnectNow();
                 sender.sendMessage(Component.text("MineAgent: 正在重连..."));
             }
             case "approve" -> resolve(sender, args, true);
             case "deny" -> resolve(sender, args, false);
-            default -> sender.sendMessage(Component.text("用法: /mineagent <status|reconnect|approve|deny> [审批ID]"));
+            default -> {
+                if (require(sender, "mineagent.admin")) {
+                    sender.sendMessage(Component.text("用法: /mineagent <status|reconnect|approve|deny> [审批ID]"));
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean require(CommandSender sender, String permission) {
+        if (!sender.hasPermission(permission)) {
+            sender.sendMessage(Component.text("没有权限"));
+            return false;
         }
         return true;
     }
@@ -74,8 +90,10 @@ public final class MineAgentCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 1) {
             List<String> subs = new ArrayList<>();
-            subs.add("status");
-            subs.add("reconnect");
+            if (sender.hasPermission("mineagent.admin")) {
+                subs.add("status");
+                subs.add("reconnect");
+            }
             if (sender.hasPermission("mineagent.approve")) {
                 subs.add("approve");
                 subs.add("deny");

@@ -127,6 +127,58 @@ func TestAgentResponds(t *testing.T) {
 	t.Fatal("agent did not reply in time")
 }
 
+func TestHistoryBoundedByTriggerMessage(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+
+	hub := session.NewHub(st, log)
+	sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var triggerID int64
+	for i := 0; i < 5; i++ {
+		msg, err := sess.Ingest(ctx, storage.Message{Channel: "minecraft", AuthorKind: "player", AuthorName: "Steve", Text: fmt.Sprintf("msg %d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 2 {
+			triggerID = msg.ID
+		}
+	}
+	if _, err := sess.Ingest(ctx, storage.Message{Channel: "minecraft", AuthorKind: "player", AuthorName: "Alex", Text: "later message"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
+	msgs, cutoff, err := ag.history(ctx, triggerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("len = %d, want 3", len(msgs))
+	}
+	last := msgs[len(msgs)-1]
+	if last.Content != "[Steve] msg 2" {
+		t.Fatalf("last = %q, want trigger message", last.Content)
+	}
+	for _, m := range msgs {
+		if m.Content == "[Alex] later message" {
+			t.Fatal("later message must not leak into request history")
+		}
+	}
+	if cutoff != triggerID {
+		t.Fatalf("cutoff = %d, want %d", cutoff, triggerID)
+	}
+}
+
 func TestReplyTargetModes(t *testing.T) {
 	a := &Agent{replyMode: "broadcast"}
 	if got := a.target("Steve"); got != "" {
@@ -182,7 +234,7 @@ func TestHistoryRoles(t *testing.T) {
 	}
 
 	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
-	msgs, cutoff, err := ag.history(ctx)
+	msgs, cutoff, err := ag.history(ctx, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

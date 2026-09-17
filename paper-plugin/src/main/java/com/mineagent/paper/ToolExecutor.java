@@ -24,12 +24,13 @@ public final class ToolExecutor {
         String callId = data.has("callId") ? data.get("callId").getAsString() : "";
         String tool = data.has("tool") ? data.get("tool").getAsString() : "";
         String requester = data.has("requester") ? data.get("requester").getAsString() : "";
+        String requesterUuid = data.has("requesterUuid") ? data.get("requesterUuid").getAsString() : "";
         JsonObject args = data.has("args") && data.get("args").isJsonObject()
                 ? data.getAsJsonObject("args")
                 : new JsonObject();
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             try {
-                reply(callId, true, execute(tool, args, requester), null);
+                reply(callId, true, execute(tool, args, requester, requesterUuid), null);
             } catch (Exception e) {
                 String message = e.getMessage() == null ? e.toString() : e.getMessage();
                 reply(callId, false, null, message);
@@ -37,7 +38,7 @@ public final class ToolExecutor {
         });
     }
 
-    private JsonObject execute(String tool, JsonObject args, String requester) {
+    private JsonObject execute(String tool, JsonObject args, String requester, String requesterUuid) {
         switch (tool) {
             case "minecraft_list_players":
                 return listPlayers();
@@ -50,15 +51,15 @@ public final class ToolExecutor {
             case "minecraft_weather":
                 return weather();
             case "minecraft_teleport":
-                return teleport(args);
+                return teleport(args, requester, requesterUuid);
             case "minecraft_give":
-                return give(args);
+                return give(args, requester, requesterUuid);
             case "minecraft_run_command":
-                return runCommand(args, requester);
+                return runCommand(args, requester, requesterUuid);
             case "internal_check_command":
-                return checkCommandPermission(args, requester);
+                return checkCommandPermission(args, requester, requesterUuid);
             case "internal_check_permission":
-                return checkPermission(args, requester);
+                return checkPermission(args, requester, requesterUuid);
             default:
                 throw new IllegalArgumentException("未知工具: " + tool);
         }
@@ -146,17 +147,21 @@ public final class ToolExecutor {
         return out;
     }
 
-    private JsonObject teleport(JsonObject args) {
+    private JsonObject teleport(JsonObject args, String requester, String requesterUuid) {
+        requirePermittedRequester(requester, requesterUuid, "mineagent.teleport", "传送");
         Player player = requirePlayer(args, "player");
         Player target = requirePlayer(args, "target");
-        player.teleport(target);
+        if (!player.teleport(target)) {
+            throw new IllegalArgumentException("传送被服务器阻止（可能被其他插件取消）");
+        }
         JsonObject out = new JsonObject();
         out.addProperty("ok", true);
         out.addProperty("message", player.getName() + " 已传送到 " + target.getName() + " 身边");
         return out;
     }
 
-    private JsonObject give(JsonObject args) {
+    private JsonObject give(JsonObject args, String requester, String requesterUuid) {
+        requirePermittedRequester(requester, requesterUuid, "mineagent.give", "给予物品");
         Player player = requirePlayer(args, "player");
         String itemName = required(args, "item");
         Material material = Material.matchMaterial(itemName);
@@ -182,50 +187,47 @@ public final class ToolExecutor {
         return out;
     }
 
-    private JsonObject runCommand(JsonObject args, String requester) {
+    private JsonObject runCommand(JsonObject args, String requester, String requesterUuid) {
         String command = required(args, "command").trim();
         if (command.startsWith("/")) {
             command = command.substring(1);
         }
-        if (requester.isEmpty()) {
-            throw new IllegalArgumentException("缺少请求者信息，无法以本人身份执行");
-        }
-        Player performer = Bukkit.getPlayerExact(requester);
+        Player performer = resolveRequester(requester, requesterUuid);
         if (performer == null) {
-            throw new IllegalArgumentException("请求者 " + requester + " 不在线，无法以本人身份执行命令");
+            throw new IllegalArgumentException("请求者不在线，无法以本人身份执行命令");
         }
         if (!performer.performCommand(command)) {
-            throw new IllegalArgumentException("命令执行失败：权限不足或命令不存在（权限由服务器权限组决定）");
+            throw new IllegalArgumentException("命令未执行：权限不足或命令不存在（权限由服务器权限组决定）");
         }
         JsonObject out = new JsonObject();
         out.addProperty("ok", true);
-        out.addProperty("message", "已以 " + performer.getName() + " 的身份执行: /" + command);
+        out.addProperty("message", "已以 " + performer.getName() + " 的身份提交命令: /" + command + "（执行结果以服务器为准）");
         return out;
     }
 
-    private JsonObject checkPermission(JsonObject args, String requester) {
+    private JsonObject checkPermission(JsonObject args, String requester, String requesterUuid) {
         String permission = required(args, "permission");
         JsonObject out = new JsonObject();
-        Player player = requester.isEmpty() ? null : Bukkit.getPlayerExact(requester);
+        Player player = resolveRequester(requester, requesterUuid);
         if (player == null) {
             out.addProperty("allowed", false);
             out.addProperty("permission", permission);
             out.addProperty("reason", "请求者不在线");
             return out;
         }
-        out.addProperty("allowed", player.isOp() || player.hasPermission(permission));
+        out.addProperty("allowed", player.hasPermission(permission));
         out.addProperty("permission", permission);
         return out;
     }
 
-    private JsonObject checkCommandPermission(JsonObject args, String requester) {
+    private JsonObject checkCommandPermission(JsonObject args, String requester, String requesterUuid) {
         String command = required(args, "command").trim();
         if (command.startsWith("/")) {
             command = command.substring(1);
         }
         String name = command.split("\\s+")[0].toLowerCase(java.util.Locale.ROOT);
         JsonObject out = new JsonObject();
-        Player player = requester.isEmpty() ? null : Bukkit.getPlayerExact(requester);
+        Player player = resolveRequester(requester, requesterUuid);
         if (player == null) {
             out.addProperty("allowed", false);
             out.addProperty("permission", "");
@@ -237,10 +239,35 @@ public final class ToolExecutor {
         if (commandObj != null && commandObj.getPermission() != null && !commandObj.getPermission().isBlank()) {
             permission = commandObj.getPermission();
         }
-        boolean allowed = player.isOp() || player.hasPermission(permission);
-        out.addProperty("allowed", allowed);
+        out.addProperty("allowed", player.hasPermission(permission));
         out.addProperty("permission", permission);
         return out;
+    }
+
+    private void requirePermittedRequester(String requester, String requesterUuid, String permission, String action) {
+        Player player = resolveRequester(requester, requesterUuid);
+        if (player == null) {
+            throw new IllegalArgumentException("请求者不在线，无法执行" + action);
+        }
+        if (!player.hasPermission(permission)) {
+            throw new IllegalArgumentException("请求者已失去权限（" + permission + "），已取消" + action);
+        }
+    }
+
+    private Player resolveRequester(String requester, String requesterUuid) {
+        if (requesterUuid != null && !requesterUuid.isBlank()) {
+            try {
+                Player player = Bukkit.getPlayer(java.util.UUID.fromString(requesterUuid));
+                if (player != null) {
+                    return player;
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        if (requester == null || requester.isBlank()) {
+            return null;
+        }
+        return Bukkit.getPlayerExact(requester);
     }
 
     private Player requirePlayer(JsonObject args, String key) {

@@ -32,14 +32,17 @@ const systemInstruction = `你是 Minecraft 服务器「jzk 的服务器」的�
 - 不确定的服务器信息不要编造，直接说不知道。`
 
 type Request struct {
-	Session *session.Session
-	Player  string
-	Query   string
+	Session          *session.Session
+	Player           string
+	RequesterID      string
+	Query            string
+	TriggerMessageID int64
 }
 
 type pendingRun struct {
 	session     *session.Session
 	player      string
+	requesterID string
 	cpID        string
 	interruptID string
 	tool        string
@@ -180,9 +183,10 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	rctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	rctx = tools.WithRequester(rctx, req.Player)
+	rctx = tools.WithRequesterID(rctx, req.RequesterID)
 	rctx = tools.WithSession(rctx, a.sessionID)
 
-	msgs, cutoff, err := a.history(rctx)
+	msgs, cutoff, err := a.history(rctx, req.TriggerMessageID)
 	if err != nil {
 		a.log.Error("agent history", "err", err)
 		_ = req.Session.Reply(rctx, "抱歉，读取聊天记录失败。", req.Player)
@@ -191,7 +195,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	rctx = context.WithValue(rctx, historyCutoffKey{}, cutoff)
 
 	cpID := fmt.Sprintf("run-%d", time.Now().UnixNano())
-	a.log.Info("agent run", "player", req.Player, "query", req.Query, "messages", len(msgs), "checkpoint", cpID)
+	a.log.Info("agent run", "player", req.Player, "query", req.Query, "messages", len(msgs), "trigger", req.TriggerMessageID, "checkpoint", cpID)
 
 	start := time.Now()
 	iter := a.runner.Run(rctx, msgs, adk.WithCheckPointID(cpID))
@@ -256,6 +260,7 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, cpID string, i
 		a.pending[ai.ApprovalID] = &pendingRun{
 			session:     req.Session,
 			player:      req.Player,
+			requesterID: req.RequesterID,
 			cpID:        cpID,
 			interruptID: ictx.ID,
 			tool:        ai.Tool,
@@ -289,6 +294,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	rctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	rctx = tools.WithRequester(rctx, run.player)
+	rctx = tools.WithRequesterID(rctx, run.requesterID)
 	rctx = tools.WithSession(rctx, a.sessionID)
 	rctx = context.WithValue(rctx, historyCutoffKey{}, run.cutoff)
 
@@ -324,7 +330,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-func (a *Agent) history(ctx context.Context) ([]*schema.Message, int64, error) {
+func (a *Agent) history(ctx context.Context, upToID int64) ([]*schema.Message, int64, error) {
 	summary, err := a.store.LatestSummary(ctx, a.sessionID)
 	if err != nil {
 		return nil, 0, err
@@ -335,7 +341,12 @@ func (a *Agent) history(ctx context.Context) ([]*schema.Message, int64, error) {
 		cutoff = summary.UpToMessageID
 		msgs = append(msgs, schema.UserMessage("[之前聊天的摘要] "+summary.Text))
 	}
-	recent, err := a.store.MessagesAfter(ctx, a.sessionID, cutoff, 200)
+	var recent []storage.Message
+	if upToID > 0 {
+		recent, err = a.store.MessagesBefore(ctx, a.sessionID, upToID, 200)
+	} else {
+		recent, err = a.store.MessagesAfter(ctx, a.sessionID, cutoff, 200)
+	}
 	if err != nil {
 		return nil, 0, err
 	}

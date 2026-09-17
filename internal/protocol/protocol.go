@@ -66,11 +66,12 @@ type AgentMessage struct {
 }
 
 type ToolCall struct {
-	CallID    string          `json:"callId"`
-	Tool      string          `json:"tool"`
-	Args      json.RawMessage `json:"args,omitempty"`
-	Requester string          `json:"requester,omitempty"`
-	TimeoutMS int64           `json:"timeoutMs,omitempty"`
+	CallID        string          `json:"callId"`
+	Tool          string          `json:"tool"`
+	Args          json.RawMessage `json:"args,omitempty"`
+	Requester     string          `json:"requester,omitempty"`
+	RequesterUUID string          `json:"requesterUuid,omitempty"`
+	TimeoutMS     int64           `json:"timeoutMs,omitempty"`
 }
 
 type ToolResult struct {

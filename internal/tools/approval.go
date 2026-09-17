@@ -139,9 +139,17 @@ func (a *Approvals) finish(id string, decision ApprovalDecision) {
 		"operator", decision.Operator,
 		"reason", decision.Reason,
 	)
+	outcome := Outcome{ApprovalID: id, Info: p.info, Decision: decision}
 	select {
-	case a.outcomes <- Outcome{ApprovalID: id, Info: p.info, Decision: decision}:
+	case a.outcomes <- outcome:
 	default:
-		a.log.Warn("approval outcome channel full", "approvalId", id)
+		a.log.Warn("approval outcome channel full, delivering async", "approvalId", id)
+		go func() {
+			select {
+			case a.outcomes <- outcome:
+			case <-time.After(30 * time.Second):
+				a.log.Error("approval outcome dropped after retry", "approvalId", id)
+			}
+		}()
 	}
 }

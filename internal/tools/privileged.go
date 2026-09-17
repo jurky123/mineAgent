@@ -12,11 +12,12 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
-	"mineagent/internal/config"
 	"mineagent/internal/storage"
 )
 
 type requesterCtxKey struct{}
+
+type requesterIDCtxKey struct{}
 
 type sessionCtxKey struct{}
 
@@ -26,6 +27,15 @@ func WithRequester(ctx context.Context, name string) context.Context {
 
 func RequesterFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(requesterCtxKey{}).(string)
+	return v
+}
+
+func WithRequesterID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requesterIDCtxKey{}, id)
+}
+
+func RequesterIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(requesterIDCtxKey{}).(string)
 	return v
 }
 
@@ -93,7 +103,6 @@ type approvalTool struct {
 	approvals *Approvals
 	store     *storage.Store
 	log       *slog.Logger
-	cfg       config.Tools
 
 	name       string
 	desc       string
@@ -145,7 +154,13 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	}
 
 	if t.permission != "" {
-		if allowed, reason, err := checkPermission(ctx, t.gw, t.permission); err == nil && !allowed {
+		allowed, reason, err := checkPermission(ctx, t.gw, t.permission)
+		if err != nil {
+			msg := "权限校验失败（无法联系 Minecraft 服务器），已拒绝执行"
+			t.audit(ctx, argsJSON, "permission_check_failed", "", err.Error())
+			return errorJSON(msg), nil
+		}
+		if !allowed {
 			msg := "你没有执行该操作的权限（" + t.permission + "），我不能执行"
 			if reason != "" {
 				msg = reason + "，无法以本人身份执行该操作"
@@ -156,7 +171,13 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	}
 
 	if t.name == "minecraft_run_command" {
-		if allowed, detail, err := checkCommandPermission(ctx, t.gw, args); err == nil && !allowed {
+		allowed, detail, err := checkCommandPermission(ctx, t.gw, args)
+		if err != nil {
+			msg := "权限校验失败（无法联系 Minecraft 服务器），已拒绝执行"
+			t.audit(ctx, argsJSON, "permission_check_failed", "", err.Error())
+			return errorJSON(msg), nil
+		}
+		if !allowed {
 			msg := detail + "，我不能代为执行"
 			if strings.Contains(detail, ".") && !strings.Contains(detail, " ") {
 				msg = "你没有执行该命令的权限（" + detail + "），我不能代为执行"
@@ -207,10 +228,10 @@ func (t *approvalTool) audit(ctx context.Context, argsJSON, decision, operator, 
 	}
 }
 
-func Privileged(gw *Gateway, approvals *Approvals, store *storage.Store, cfg config.Tools, log *slog.Logger) []tool.BaseTool {
+func Privileged(gw *Gateway, approvals *Approvals, store *storage.Store, log *slog.Logger) []tool.BaseTool {
 	return []tool.BaseTool{
 		&approvalTool{
-			gw: gw, approvals: approvals, store: store, log: log, cfg: cfg,
+			gw: gw, approvals: approvals, store: store, log: log,
 			name:       "minecraft_teleport",
 			desc:       "将一名在线玩家传送到另一名在线玩家处。属于高权限操作，会先请求管理员批准。",
 			risk:       "high",
@@ -224,7 +245,7 @@ func Privileged(gw *Gateway, approvals *Approvals, store *storage.Store, cfg con
 			},
 		},
 		&approvalTool{
-			gw: gw, approvals: approvals, store: store, log: log, cfg: cfg,
+			gw: gw, approvals: approvals, store: store, log: log,
 			name:       "minecraft_give",
 			desc:       "给予在线玩家物品。属于高权限操作，会先请求管理员批准。",
 			risk:       "high",
@@ -239,7 +260,7 @@ func Privileged(gw *Gateway, approvals *Approvals, store *storage.Store, cfg con
 			},
 		},
 		&approvalTool{
-			gw: gw, approvals: approvals, store: store, log: log, cfg: cfg,
+			gw: gw, approvals: approvals, store: store, log: log,
 			name: "minecraft_run_command",
 			desc: "以请求者本人的身份执行 Minecraft 命令（命令权限由服务器权限组硬性决定）。属于高权限操作，会先请求管理员批准。",
 			risk: "high",

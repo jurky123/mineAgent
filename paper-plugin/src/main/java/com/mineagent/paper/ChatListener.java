@@ -29,7 +29,6 @@ public final class ChatListener implements Listener {
         JsonObject data = new JsonObject();
         data.addProperty("player", player.getName());
         data.addProperty("uuid", player.getUniqueId().toString());
-        data.addProperty("world", player.getWorld().getName());
         data.addProperty("message", message);
         backend.send(Protocol.CHAT_MESSAGE, data);
     }

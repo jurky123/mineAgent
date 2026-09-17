@@ -189,6 +189,24 @@ func (s *Store) MessagesAfter(ctx context.Context, sessionID string, afterID int
 	return scanMessages(rows)
 }
 
+func (s *Store) MessagesBefore(ctx context.Context, sessionID string, maxID int64, limit int) ([]Message, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, session_id, channel, author_kind, author_id, author_name, text, target, created_at
+		 FROM messages WHERE session_id=? AND id<=? ORDER BY id DESC LIMIT ?`, sessionID, maxID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	msgs, err := scanMessages(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	return msgs, nil
+}
+
 func (s *Store) CountMessages(ctx context.Context, sessionID string) (int64, error) {
 	var n int64
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE session_id=?`, sessionID).Scan(&n)
@@ -262,6 +280,18 @@ func (s *Store) LoadCheckpoint(ctx context.Context, id string) ([]byte, bool, er
 func (s *Store) DeleteCheckpoint(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_checkpoints WHERE id=?`, id)
 	return err
+}
+
+func (s *Store) ClearCheckpoints(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM agent_checkpoints`)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 type rowScanner interface {

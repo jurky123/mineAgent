@@ -55,11 +55,12 @@ func (g *Gateway) Call(ctx context.Context, name string, args json.RawMessage) (
 	}()
 
 	if err := g.sender.SendProtocol(protocol.TypeToolCall, protocol.ToolCall{
-		CallID:    callID,
-		Tool:      name,
-		Args:      args,
-		Requester: RequesterFromContext(ctx),
-		TimeoutMS: g.timeout.Milliseconds(),
+		CallID:        callID,
+		Tool:          name,
+		Args:          args,
+		Requester:     RequesterFromContext(ctx),
+		RequesterUUID: RequesterIDFromContext(ctx),
+		TimeoutMS:     g.timeout.Milliseconds(),
 	}); err != nil {
 		return "", fmt.Errorf("call %s: %w", name, err)
 	}

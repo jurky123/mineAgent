@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"mineagent/internal/config"
 	"mineagent/internal/protocol"
 	"mineagent/internal/storage"
 )
@@ -26,7 +25,7 @@ func testTool(t *testing.T, sender *fakeSender, name string) (*approvalTool, *Ap
 	t.Cleanup(func() { _ = store.Close() })
 
 	approvals := NewApprovals(sender, time.Minute, testLogger(t))
-	all := Privileged(gw, approvals, store, config.DefaultTools(), testLogger(t))
+	all := Privileged(gw, approvals, store, testLogger(t))
 	for _, tl := range all {
 		info, err := tl.Info(context.Background())
 		if err != nil {
@@ -144,5 +143,22 @@ func TestTeleportOfflineRequester(t *testing.T) {
 	}
 	if approvals.Pending() != 0 {
 		t.Fatalf("approval should not be created, pending=%d", approvals.Pending())
+	}
+}
+
+func TestPermissionCheckFailureDenies(t *testing.T) {
+	sender := &fakeSender{}
+	tl, approvals := testTool(t, sender, "minecraft_give")
+	sender.gw.timeout = 50 * time.Millisecond
+
+	out, err := tl.InvokableRun(context.Background(), `{"player":"Steve","item":"diamond","count":1}`)
+	if err != nil {
+		t.Fatalf("expected content error, got %v", err)
+	}
+	if !strings.Contains(out, "权限校验失败") {
+		t.Fatalf("out = %s", out)
+	}
+	if approvals.Pending() != 0 {
+		t.Fatalf("approval should not be created when check fails, pending=%d", approvals.Pending())
 	}
 }

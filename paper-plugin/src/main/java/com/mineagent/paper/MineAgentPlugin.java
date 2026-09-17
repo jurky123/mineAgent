@@ -26,13 +26,13 @@ public final class MineAgentPlugin extends JavaPlugin {
         long max = getConfig().getLong("backend.reconnect.max-delay-ms", 30000L);
         long heartbeat = getConfig().getLong("backend.heartbeat-ms", 20000L);
 
+        toolExecutor = new ToolExecutor(this);
+        approvalHandler = new ApprovalHandler(this);
+
         backend = new BackendClient(getLogger(), url, token, initial, max, heartbeat, new BukkitSchedulerAdapter(this));
         backend.setHelloInfo("minecraft", getPluginMeta().getVersion(), getServer().getMinecraftVersion());
         backend.setHandler(this::handleBackendMessage);
         backend.start();
-
-        toolExecutor = new ToolExecutor(this);
-        approvalHandler = new ApprovalHandler(this);
 
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
@@ -89,7 +89,7 @@ public final class MineAgentPlugin extends JavaPlugin {
             if (player != null) {
                 player.sendMessage(message);
             } else {
-                getServer().broadcast(message);
+                getLogger().warning("agent.message target offline, skipped delivery: " + target);
             }
         });
     }

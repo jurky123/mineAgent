@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,6 +26,8 @@ public final class BackendClient {
         void shutdown();
     }
 
+    private static final int MAX_IN_FLIGHT = 256;
+
     private final Logger log;
     private final URI uri;
     private final String token;
@@ -38,7 +41,8 @@ public final class BackendClient {
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
     private final AtomicInteger attempt = new AtomicInteger();
-    private final StringBuilder partial = new StringBuilder();
+    private final AtomicInteger inFlight = new AtomicInteger();
+    private CompletableFuture<WebSocket> sendTail = CompletableFuture.completedFuture(null);
 
     private volatile WebSocket ws;
     private volatile boolean connected;
@@ -119,16 +123,24 @@ public final class BackendClient {
             lastError = "not connected";
             return false;
         }
-        String payload = Protocol.envelope(type, data);
-        try {
-            synchronized (sendLock) {
-                socket.sendText(payload, true);
-            }
-            return true;
-        } catch (Exception e) {
-            handleDisconnect(socket, "send failed: " + e.getMessage());
+        if (inFlight.get() >= MAX_IN_FLIGHT) {
+            lastError = "send queue full";
             return false;
         }
+        String payload = Protocol.envelope(type, data);
+        inFlight.incrementAndGet();
+        synchronized (sendLock) {
+            CompletableFuture<WebSocket> next = sendTail
+                    .handle((previous, error) -> previous)
+                    .thenCompose(previous -> socket.sendText(payload, true));
+            sendTail = next.whenComplete((result, error) -> {
+                inFlight.decrementAndGet();
+                if (error != null) {
+                    handleDisconnect(socket, "send failed: " + error);
+                }
+            });
+        }
+        return true;
     }
 
     private void connect() {
@@ -182,19 +194,9 @@ public final class BackendClient {
             return;
         }
         WebSocket socket = ws;
-        if (socket != null && connected) {
-            if (System.currentTimeMillis() - lastIncoming > heartbeatMs * 3) {
-                socket.abort();
-                handleDisconnect(socket, "heartbeat timeout");
-            } else {
-                try {
-                    synchronized (sendLock) {
-                        socket.sendPing(ByteBuffer.allocate(0));
-                    }
-                } catch (Exception e) {
-                    handleDisconnect(socket, "ping failed: " + e.getMessage());
-                }
-            }
+        if (socket != null && connected && System.currentTimeMillis() - lastIncoming > heartbeatMs * 3) {
+            socket.abort();
+            handleDisconnect(socket, "heartbeat timeout");
         }
         scheduler.schedule(this::heartbeatTick, heartbeatMs);
     }
@@ -234,15 +236,24 @@ public final class BackendClient {
 
     private final class Listener implements WebSocket.Listener {
 
+        private final StringBuilder partial = new StringBuilder();
+
         @Override
         public void onOpen(WebSocket socket) {
+            if (ws != null && ws != socket) {
+                socket.abort();
+                return;
+            }
             ws = socket;
             connected = true;
             lastError = "";
             lastIncoming = System.currentTimeMillis();
             attempt.set(0);
             reconnectScheduled.set(false);
-            partial.setLength(0);
+            inFlight.set(0);
+            synchronized (sendLock) {
+                sendTail = CompletableFuture.completedFuture(socket);
+            }
             log.info("connected to " + uri);
             sendHello();
             socket.request(1);
@@ -250,6 +261,9 @@ public final class BackendClient {
 
         @Override
         public CompletionStage<?> onText(WebSocket socket, CharSequence data, boolean last) {
+            if (socket != ws) {
+                return null;
+            }
             lastIncoming = System.currentTimeMillis();
             partial.append(data);
             if (!last) {
@@ -265,6 +279,9 @@ public final class BackendClient {
 
         @Override
         public CompletionStage<?> onPong(WebSocket socket, ByteBuffer message) {
+            if (socket != ws) {
+                return null;
+            }
             lastIncoming = System.currentTimeMillis();
             socket.request(1);
             return null;

@@ -43,6 +43,12 @@ func (c *Channel) Detach(conn *ws.Conn) {
 	c.mu.Unlock()
 }
 
+func (c *Channel) Attached() *ws.Conn {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.conn
+}
+
 func (c *Channel) Send(_ context.Context, msg storage.Message) error {
 	return c.SendProtocol(protocol.TypeAgentMessage, protocol.AgentMessage{
 		Text:    msg.Text,

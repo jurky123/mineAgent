@@ -20,3 +20,9 @@ permissions:
   mineagent.approve:
     description: 允许批准/拒绝 MineAgent 的高权限操作
     default: op
+  mineagent.teleport:
+    description: 允许通过 MineAgent 请求传送（仍需管理员批准）
+    default: op
+  mineagent.give:
+    description: 允许通过 MineAgent 请求给予物品（仍需管理员批准）
+    default: op

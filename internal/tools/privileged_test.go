@@ -13,7 +13,7 @@ import (
 	"mineagent/internal/storage"
 )
 
-func testApprovalTool(t *testing.T, sender *fakeSender) (*approvalTool, *Approvals) {
+func testTool(t *testing.T, sender *fakeSender, name string) (*approvalTool, *Approvals) {
 	t.Helper()
 	gw := NewGateway(sender, testLogger(t))
 	gw.timeout = time.Second
@@ -32,11 +32,11 @@ func testApprovalTool(t *testing.T, sender *fakeSender) (*approvalTool, *Approva
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Name == "minecraft_run_command" {
+		if info.Name == name {
 			return tl.(*approvalTool), approvals
 		}
 	}
-	t.Fatal("run_command tool not found")
+	t.Fatalf("%s tool not found", name)
 	return nil, nil
 }
 
@@ -51,9 +51,20 @@ func answerCheck(sender *fakeSender, allowed bool, permission string) {
 	}
 }
 
+func answerPermission(sender *fakeSender, allowed bool, reason string) {
+	sender.onCall = func(call protocol.ToolCall) {
+		if call.Tool != internalCheckPermission {
+			return
+		}
+		payload := map[string]any{"allowed": allowed, "reason": reason}
+		raw, _ := json.Marshal(payload)
+		sender.gw.HandleResult(protocol.ToolResult{CallID: call.CallID, OK: true, Data: raw})
+	}
+}
+
 func TestCommandPermissionDeniedByRequester(t *testing.T) {
 	sender := &fakeSender{}
-	tl, approvals := testApprovalTool(t, sender)
+	tl, approvals := testTool(t, sender, "minecraft_run_command")
 	answerCheck(sender, false, "minecraft.command.gamemode")
 
 	out, err := tl.InvokableRun(context.Background(), `{"command":"gamemode creative SmokeBot"}`)
@@ -70,7 +81,7 @@ func TestCommandPermissionDeniedByRequester(t *testing.T) {
 
 func TestCommandPermissionAllowedCreatesInterrupt(t *testing.T) {
 	sender := &fakeSender{}
-	tl, approvals := testApprovalTool(t, sender)
+	tl, approvals := testTool(t, sender, "minecraft_run_command")
 	answerCheck(sender, true, "minecraft.command.time")
 
 	out, err := tl.InvokableRun(context.Background(), `{"command":"time set day"}`)
@@ -82,5 +93,56 @@ func TestCommandPermissionAllowedCreatesInterrupt(t *testing.T) {
 	}
 	if approvals.Pending() != 1 {
 		t.Fatalf("pending = %d", approvals.Pending())
+	}
+}
+
+func TestGivePermissionDenied(t *testing.T) {
+	sender := &fakeSender{}
+	tl, approvals := testTool(t, sender, "minecraft_give")
+	answerPermission(sender, false, "")
+
+	out, err := tl.InvokableRun(context.Background(), `{"player":"Steve","item":"diamond","count":1}`)
+	if err != nil {
+		t.Fatalf("expected content error, got %v", err)
+	}
+	if !strings.Contains(out, "mineagent.give") {
+		t.Fatalf("out = %s", out)
+	}
+	if approvals.Pending() != 0 {
+		t.Fatalf("approval should not be created, pending=%d", approvals.Pending())
+	}
+}
+
+func TestTeleportPermissionAllowedCreatesInterrupt(t *testing.T) {
+	sender := &fakeSender{}
+	tl, approvals := testTool(t, sender, "minecraft_teleport")
+	answerPermission(sender, true, "")
+
+	out, err := tl.InvokableRun(context.Background(), `{"player":"Steve","target":"Alex"}`)
+	if out != "" {
+		t.Fatalf("out = %q", out)
+	}
+	if err == nil {
+		t.Fatal("expected interrupt error")
+	}
+	if approvals.Pending() != 1 {
+		t.Fatalf("pending = %d", approvals.Pending())
+	}
+}
+
+func TestTeleportOfflineRequester(t *testing.T) {
+	sender := &fakeSender{}
+	tl, approvals := testTool(t, sender, "minecraft_teleport")
+	answerPermission(sender, false, "请求者不在线")
+
+	out, err := tl.InvokableRun(context.Background(), `{"player":"Steve","target":"Alex"}`)
+	if err != nil {
+		t.Fatalf("expected content error, got %v", err)
+	}
+	if !strings.Contains(out, "不在线") {
+		t.Fatalf("out = %s", out)
+	}
+	if approvals.Pending() != 0 {
+		t.Fatalf("approval should not be created, pending=%d", approvals.Pending())
 	}
 }

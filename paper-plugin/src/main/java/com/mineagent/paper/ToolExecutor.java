@@ -57,6 +57,8 @@ public final class ToolExecutor {
                 return runCommand(args, requester);
             case "internal_check_command":
                 return checkCommandPermission(args, requester);
+            case "internal_check_permission":
+                return checkPermission(args, requester);
             default:
                 throw new IllegalArgumentException("未知工具: " + tool);
         }
@@ -198,6 +200,21 @@ public final class ToolExecutor {
         JsonObject out = new JsonObject();
         out.addProperty("ok", true);
         out.addProperty("message", "已以 " + performer.getName() + " 的身份执行: /" + command);
+        return out;
+    }
+
+    private JsonObject checkPermission(JsonObject args, String requester) {
+        String permission = required(args, "permission");
+        JsonObject out = new JsonObject();
+        Player player = requester.isEmpty() ? null : Bukkit.getPlayerExact(requester);
+        if (player == null) {
+            out.addProperty("allowed", false);
+            out.addProperty("permission", permission);
+            out.addProperty("reason", "请求者不在线");
+            return out;
+        }
+        out.addProperty("allowed", player.isOp() || player.hasPermission(permission));
+        out.addProperty("permission", permission);
         return out;
     }
 

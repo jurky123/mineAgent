@@ -38,7 +38,29 @@ func sessionFromContext(ctx context.Context) string {
 	return v
 }
 
-const internalCheckCommand = "internal_check_command"
+const (
+	internalCheckCommand    = "internal_check_command"
+	internalCheckPermission = "internal_check_permission"
+)
+
+func checkPermission(ctx context.Context, gw *Gateway, permission string) (bool, string, error) {
+	raw, err := json.Marshal(map[string]string{"permission": permission})
+	if err != nil {
+		return false, "", err
+	}
+	out, err := gw.Call(ctx, internalCheckPermission, raw)
+	if err != nil {
+		return false, "", err
+	}
+	var res struct {
+		Allowed bool   `json:"allowed"`
+		Reason  string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		return false, "", err
+	}
+	return res.Allowed, res.Reason, nil
+}
 
 func checkCommandPermission(ctx context.Context, gw *Gateway, args map[string]any) (bool, string, error) {
 	raw, err := json.Marshal(args)
@@ -73,11 +95,12 @@ type approvalTool struct {
 	log       *slog.Logger
 	cfg       config.Tools
 
-	name   string
-	desc   string
-	params map[string]*schema.ParameterInfo
-	risk   string
-	prompt func(args map[string]any) string
+	name       string
+	desc       string
+	params     map[string]*schema.ParameterInfo
+	risk       string
+	permission string
+	prompt     func(args map[string]any) string
 }
 
 func (t *approvalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
@@ -119,6 +142,17 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	if err := t.validate(args); err != nil {
 		t.audit(ctx, argsJSON, "policy_denied", "", err.Error())
 		return errorJSON(err.Error()), nil
+	}
+
+	if t.permission != "" {
+		if allowed, reason, err := checkPermission(ctx, t.gw, t.permission); err == nil && !allowed {
+			msg := "你没有执行该操作的权限（" + t.permission + "），我不能执行"
+			if reason != "" {
+				msg = reason + "，无法以本人身份执行该操作"
+			}
+			t.audit(ctx, argsJSON, "permission_denied", "", msg)
+			return errorJSON(msg), nil
+		}
 	}
 
 	if t.name == "minecraft_run_command" {
@@ -177,9 +211,10 @@ func Privileged(gw *Gateway, approvals *Approvals, store *storage.Store, cfg con
 	return []tool.BaseTool{
 		&approvalTool{
 			gw: gw, approvals: approvals, store: store, log: log, cfg: cfg,
-			name: "minecraft_teleport",
-			desc: "将一名在线玩家传送到另一名在线玩家处。属于高权限操作，会先请求管理员批准。",
-			risk: "high",
+			name:       "minecraft_teleport",
+			desc:       "将一名在线玩家传送到另一名在线玩家处。属于高权限操作，会先请求管理员批准。",
+			risk:       "high",
+			permission: "mineagent.teleport",
 			params: map[string]*schema.ParameterInfo{
 				"player": {Type: schema.String, Desc: "被传送的玩家名", Required: true},
 				"target": {Type: schema.String, Desc: "目标玩家名", Required: true},
@@ -190,9 +225,10 @@ func Privileged(gw *Gateway, approvals *Approvals, store *storage.Store, cfg con
 		},
 		&approvalTool{
 			gw: gw, approvals: approvals, store: store, log: log, cfg: cfg,
-			name: "minecraft_give",
-			desc: "给予在线玩家物品。属于高权限操作，会先请求管理员批准。",
-			risk: "high",
+			name:       "minecraft_give",
+			desc:       "给予在线玩家物品。属于高权限操作，会先请求管理员批准。",
+			risk:       "high",
+			permission: "mineagent.give",
 			params: map[string]*schema.ParameterInfo{
 				"player": {Type: schema.String, Desc: "玩家名", Required: true},
 				"item":   {Type: schema.String, Desc: "物品 ID，如 diamond、minecraft:bread", Required: true},

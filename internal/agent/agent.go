@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -57,7 +58,6 @@ type Agent struct {
 
 	runner    *adk.Runner
 	approvals *tools.Approvals
-	outcomes  <-chan tools.Outcome
 	enabled   bool
 
 	jobs chan Request
@@ -79,9 +79,6 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	}
 	if a.replyMode == "" {
 		a.replyMode = "broadcast"
-	}
-	if approvals != nil {
-		a.outcomes = approvals.Outcomes()
 	}
 	if cfg.Model.BaseURL == "" || cfg.Model.Name == "" {
 		log.Warn("model not configured, agent disabled", "hint", "set model.baseURL/model.name/apiKey in config.json or MINEAGENT_MODEL_* env")
@@ -156,9 +153,9 @@ func (a *Agent) Run(ctx context.Context) {
 	if !a.enabled {
 		return
 	}
-	outcomes := a.outcomes
-	if outcomes == nil {
-		outcomes = make(chan tools.Outcome)
+	var decided <-chan struct{}
+	if a.approvals != nil {
+		decided = a.approvals.Decided()
 	}
 	for {
 		select {
@@ -166,9 +163,15 @@ func (a *Agent) Run(ctx context.Context) {
 			return
 		case req := <-a.jobs:
 			a.respond(ctx, req)
-		case out := <-outcomes:
-			a.resume(ctx, out)
+		case <-decided:
+			a.drainOutcomes(ctx)
 		}
+	}
+}
+
+func (a *Agent) drainOutcomes(ctx context.Context) {
+	for _, outcome := range a.approvals.DrainDecided() {
+		a.resume(ctx, outcome)
 	}
 }
 
@@ -331,7 +334,15 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (a *Agent) history(ctx context.Context, upToID int64) ([]*schema.Message, int64, error) {
-	summary, err := a.store.LatestSummary(ctx, a.sessionID)
+	var (
+		summary *storage.Summary
+		err     error
+	)
+	if upToID > 0 {
+		summary, err = a.store.SummaryAtOrBefore(ctx, a.sessionID, upToID)
+	} else {
+		summary, err = a.store.LatestSummary(ctx, a.sessionID)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -341,12 +352,11 @@ func (a *Agent) history(ctx context.Context, upToID int64) ([]*schema.Message, i
 		cutoff = summary.UpToMessageID
 		msgs = append(msgs, schema.UserMessage("[之前聊天的摘要] "+summary.Text))
 	}
-	var recent []storage.Message
-	if upToID > 0 {
-		recent, err = a.store.MessagesBefore(ctx, a.sessionID, upToID, 200)
-	} else {
-		recent, err = a.store.MessagesAfter(ctx, a.sessionID, cutoff, 200)
+	maxID := upToID
+	if maxID <= 0 {
+		maxID = math.MaxInt64
 	}
+	recent, err := a.store.MessagesBetween(ctx, a.sessionID, cutoff, maxID, 200)
 	if err != nil {
 		return nil, 0, err
 	}

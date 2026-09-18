@@ -2,6 +2,7 @@
   "listen": "127.0.0.1:8765",
   "token": "",
   "logLevel": "info",
+  "allowedRoles": ["minecraft"],
   "minecraft": {
     "trigger": "@agent",
     "sessionId": "minecraft-main",

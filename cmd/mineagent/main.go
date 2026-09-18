@@ -79,6 +79,15 @@ func main() {
 	}
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {
+		if !authorizeMessage(c.RemoteRole(), env.Type, mc.Attached() == c) {
+			log.Warn("message rejected",
+				"role", c.RemoteRole(),
+				"type", env.Type,
+				"remote", c.Remote(),
+				"attached", mc.Attached() == c,
+			)
+			return
+		}
 		switch env.Type {
 		case protocol.TypeChatMessage:
 			var chat protocol.ChatMessage
@@ -110,10 +119,6 @@ func main() {
 				}
 			}
 		case protocol.TypeToolResult:
-			if !isCurrentMinecraftConn(c, mc) {
-				log.Warn("tool.result from untrusted connection", "remote", c.Remote(), "role", c.RemoteRole())
-				return
-			}
 			var res protocol.ToolResult
 			if err := env.Decode(&res); err != nil {
 				log.Warn("bad tool.result", "err", err)
@@ -121,10 +126,6 @@ func main() {
 			}
 			gw.HandleResult(res)
 		case protocol.TypeApprovalResult:
-			if !isCurrentMinecraftConn(c, mc) {
-				log.Warn("approval.result from untrusted connection", "remote", c.Remote(), "role", c.RemoteRole())
-				return
-			}
 			var res protocol.ApprovalResult
 			if err := env.Decode(&res); err != nil {
 				log.Warn("bad approval.result", "err", err)
@@ -167,8 +168,20 @@ func main() {
 	}
 }
 
-func isCurrentMinecraftConn(c *ws.Conn, mc *minecraft.Channel) bool {
-	return c.RemoteRole() == protocol.RoleMinecraft && mc.Attached() == c
+var minecraftMessageTypes = map[string]bool{
+	protocol.TypeChatMessage:    true,
+	protocol.TypeToolResult:     true,
+	protocol.TypeApprovalResult: true,
+}
+
+func authorizeMessage(role, msgType string, attached bool) bool {
+	if role != protocol.RoleMinecraft {
+		return false
+	}
+	if !minecraftMessageTypes[msgType] {
+		return false
+	}
+	return attached
 }
 
 func matchTrigger(text, trigger string) (string, bool) {

@@ -14,10 +14,11 @@ public final class SmokeMain {
         String token = args.length > 1 ? args[1] : "";
         int waitSeconds = args.length > 2 ? Integer.parseInt(args[2]) : 3;
         String message = args.length > 3 ? args[3] : "hello from smoke test";
+        long heartbeatMs = args.length > 4 ? Long.parseLong(args[4]) : 30000;
         Logger log = Logger.getLogger("smoke");
 
-        BackendClient client = new BackendClient(log, url, token, 300, 2000, 3000, new JdkScheduler());
-        client.setHelloInfo("smoke", "smoke", "0.0-test");
+        BackendClient client = new BackendClient(log, url, token, 300, 2000, heartbeatMs, new JdkScheduler());
+        client.setHelloInfo("minecraft", "smoke", "0.0-test");
         client.setHandler((type, data) -> System.out.println("recv " + type + " " + data));
         client.start();
 
@@ -32,7 +33,7 @@ public final class SmokeMain {
         data.addProperty("message", message);
         System.out.println("sent=" + client.send("chat.message", data));
 
-        Thread.sleep(500);
+        Thread.sleep(20000);
         client.shutdown();
         System.out.println("done");
         System.exit(0);

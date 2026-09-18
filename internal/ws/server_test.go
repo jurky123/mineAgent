@@ -161,3 +161,10 @@ func TestRejectsProtocolMismatch(t *testing.T) {
 	send(t, c, protocol.TypeHello, protocol.Hello{Protocol: protocol.Version + 1, Role: protocol.RoleMinecraft})
 	expectClosed(t, c)
 }
+
+func TestRejectsDisallowedRole(t *testing.T) {
+	_, url, _ := newTestServer(t, "")
+	c := dial(t, url)
+	send(t, c, protocol.TypeHello, protocol.Hello{Protocol: protocol.Version, Role: protocol.RoleQQ})
+	expectClosed(t, c)
+}

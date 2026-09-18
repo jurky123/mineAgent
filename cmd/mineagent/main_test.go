@@ -1,6 +1,36 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"mineagent/internal/protocol"
+)
+
+func TestAuthorizeMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		role     string
+		msgType  string
+		attached bool
+		want     bool
+	}{
+		{"attached mc chat", protocol.RoleMinecraft, protocol.TypeChatMessage, true, true},
+		{"attached mc tool result", protocol.RoleMinecraft, protocol.TypeToolResult, true, true},
+		{"attached mc approval result", protocol.RoleMinecraft, protocol.TypeApprovalResult, true, true},
+		{"detached mc chat", protocol.RoleMinecraft, protocol.TypeChatMessage, false, false},
+		{"qq chat rejected", protocol.RoleQQ, protocol.TypeChatMessage, true, false},
+		{"web chat rejected", protocol.RoleWeb, protocol.TypeChatMessage, true, false},
+		{"unknown role rejected", "smoke", protocol.TypeChatMessage, true, false},
+		{"unknown type rejected", protocol.RoleMinecraft, "hello", true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := authorizeMessage(tc.role, tc.msgType, tc.attached); got != tc.want {
+				t.Fatalf("authorizeMessage(%q, %q, %v) = %v, want %v", tc.role, tc.msgType, tc.attached, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestMatchTrigger(t *testing.T) {
 	tests := []struct {

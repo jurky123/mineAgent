@@ -189,10 +189,11 @@ func (s *Store) MessagesAfter(ctx context.Context, sessionID string, afterID int
 	return scanMessages(rows)
 }
 
-func (s *Store) MessagesBefore(ctx context.Context, sessionID string, maxID int64, limit int) ([]Message, error) {
+func (s *Store) MessagesBetween(ctx context.Context, sessionID string, afterID, maxID int64, limit int) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, session_id, channel, author_kind, author_id, author_name, text, target, created_at
-		 FROM messages WHERE session_id=? AND id<=? ORDER BY id DESC LIMIT ?`, sessionID, maxID, limit)
+		 FROM messages WHERE session_id=? AND id>? AND id<=? ORDER BY id DESC LIMIT ?`,
+		sessionID, afterID, maxID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +229,22 @@ func (s *Store) LatestSummary(ctx context.Context, sessionID string) (*Summary, 
 	err := s.db.QueryRowContext(ctx,
 		`SELECT id, session_id, up_to_message_id, text, created_at
 		 FROM summaries WHERE session_id=? ORDER BY id DESC LIMIT 1`, sessionID).
+		Scan(&sum.ID, &sum.SessionID, &sum.UpToMessageID, &sum.Text, &sum.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &sum, nil
+}
+
+func (s *Store) SummaryAtOrBefore(ctx context.Context, sessionID string, maxMessageID int64) (*Summary, error) {
+	var sum Summary
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, session_id, up_to_message_id, text, created_at
+		 FROM summaries WHERE session_id=? AND up_to_message_id<=? ORDER BY id DESC LIMIT 1`,
+		sessionID, maxMessageID).
 		Scan(&sum.ID, &sum.SessionID, &sum.UpToMessageID, &sum.Text, &sum.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

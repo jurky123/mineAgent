@@ -104,6 +104,18 @@ func (s *Server) Connections() int {
 	return len(s.conns)
 }
 
+func (s *Server) allowedRole(role string) bool {
+	if len(s.cfg.AllowedRoles) == 0 {
+		return true
+	}
+	for _, allowed := range s.cfg.AllowedRoles {
+		if allowed == role {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) addConn(c *Conn) {
 	s.mu.Lock()
 	s.conns[c] = struct{}{}
@@ -137,6 +149,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	c.role = hello.Role
 	if c.role == "" {
 		c.role = protocol.RoleMinecraft
+	}
+	if !s.allowedRole(c.role) {
+		s.log.Warn("role rejected", "remote", c.remote, "role", c.role)
+		c.close(websocket.StatusPolicyViolation, "role not allowed")
+		return
 	}
 	c.plugin = hello.Plugin
 	c.pluginVersion = hello.PluginVersion

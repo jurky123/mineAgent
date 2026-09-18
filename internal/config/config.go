@@ -9,13 +9,14 @@ import (
 )
 
 type Config struct {
-	Listen    string    `json:"listen"`
-	Token     string    `json:"token"`
-	LogLevel  string    `json:"logLevel"`
-	Minecraft Minecraft `json:"minecraft"`
-	Model     Model     `json:"model"`
-	Storage   Storage   `json:"storage"`
-	Tools     Tools     `json:"tools"`
+	Listen       string    `json:"listen"`
+	Token        string    `json:"token"`
+	LogLevel     string    `json:"logLevel"`
+	AllowedRoles []string  `json:"allowedRoles"`
+	Minecraft    Minecraft `json:"minecraft"`
+	Model        Model     `json:"model"`
+	Storage      Storage   `json:"storage"`
+	Tools        Tools     `json:"tools"`
 }
 
 type Minecraft struct {
@@ -46,11 +47,12 @@ func DefaultTools() Tools {
 
 func Default() Config {
 	return Config{
-		Listen:    "127.0.0.1:8765",
-		LogLevel:  "info",
-		Minecraft: Minecraft{Trigger: "@agent", SessionID: "minecraft-main", ReplyMode: "broadcast"},
-		Storage:   Storage{Path: "data/mineagent.db"},
-		Tools:     DefaultTools(),
+		Listen:       "127.0.0.1:8765",
+		LogLevel:     "info",
+		AllowedRoles: []string{"minecraft"},
+		Minecraft:    Minecraft{Trigger: "@agent", SessionID: "minecraft-main", ReplyMode: "broadcast"},
+		Storage:      Storage{Path: "data/mineagent.db"},
+		Tools:        DefaultTools(),
 	}
 }
 

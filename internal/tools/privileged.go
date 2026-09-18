@@ -187,12 +187,16 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		}
 	}
 
-	info := t.approvals.Create(ApprovalInfo{
+	info, err := t.approvals.Create(ApprovalInfo{
 		Tool:      t.name,
 		Args:      json.RawMessage(argsJSON),
 		Requester: RequesterFromContext(ctx),
 		Prompt:    t.prompt(args),
 	})
+	if err != nil {
+		t.audit(ctx, argsJSON, "policy_denied", "", err.Error())
+		return errorJSON(err.Error()), nil
+	}
 	return "", compose.Interrupt(ctx, &info)
 }
 

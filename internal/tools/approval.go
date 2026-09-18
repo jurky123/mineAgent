@@ -17,6 +17,8 @@ func init() {
 	gob.Register(&ApprovalDecision{})
 }
 
+const defaultMaxPending = 64
+
 type ApprovalDecision struct {
 	Approved bool   `json:"approved"`
 	Operator string `json:"operator,omitempty"`
@@ -43,13 +45,15 @@ type pendingApproval struct {
 }
 
 type Approvals struct {
-	sender   Sender
-	log      *slog.Logger
-	timeout  time.Duration
-	outcomes chan Outcome
+	sender     Sender
+	log        *slog.Logger
+	timeout    time.Duration
+	maxPending int
 
 	mu      sync.Mutex
 	pending map[string]*pendingApproval
+	decided map[string]Outcome
+	notify  chan struct{}
 	seq     atomic.Uint64
 }
 
@@ -58,23 +62,30 @@ func NewApprovals(sender Sender, timeout time.Duration, log *slog.Logger) *Appro
 		timeout = 3 * time.Minute
 	}
 	return &Approvals{
-		sender:   sender,
-		log:      log,
-		timeout:  timeout,
-		outcomes: make(chan Outcome, 16),
-		pending:  make(map[string]*pendingApproval),
+		sender:     sender,
+		log:        log,
+		timeout:    timeout,
+		maxPending: defaultMaxPending,
+		pending:    make(map[string]*pendingApproval),
+		decided:    make(map[string]Outcome),
+		notify:     make(chan struct{}, 1),
 	}
 }
 
-func (a *Approvals) Outcomes() <-chan Outcome { return a.outcomes }
+func (a *Approvals) Decided() <-chan struct{} { return a.notify }
 
-func (a *Approvals) Create(info ApprovalInfo) ApprovalInfo {
-	info.ApprovalID = fmt.Sprintf("ap-%d-%d", time.Now().UnixMilli(), a.seq.Add(1))
+func (a *Approvals) Create(info ApprovalInfo) (ApprovalInfo, error) {
 	a.mu.Lock()
+	if len(a.pending) >= a.maxPending {
+		n := len(a.pending)
+		a.mu.Unlock()
+		return info, fmt.Errorf("待审批请求过多（%d），请稍后再试", n)
+	}
+	info.ApprovalID = fmt.Sprintf("ap-%d-%d", time.Now().UnixMilli(), a.seq.Add(1))
 	a.pending[info.ApprovalID] = &pendingApproval{info: info}
 	a.mu.Unlock()
 	a.log.Info("approval created", "approvalId", info.ApprovalID, "tool", info.Tool, "requester", info.Requester)
-	return info
+	return info, nil
 }
 
 func (a *Approvals) Notify(info ApprovalInfo) {
@@ -118,6 +129,20 @@ func (a *Approvals) Pending() int {
 	return len(a.pending)
 }
 
+func (a *Approvals) DrainDecided() []Outcome {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.decided) == 0 {
+		return nil
+	}
+	out := make([]Outcome, 0, len(a.decided))
+	for _, outcome := range a.decided {
+		out = append(out, outcome)
+	}
+	a.decided = make(map[string]Outcome)
+	return out
+}
+
 func (a *Approvals) finish(id string, decision ApprovalDecision) {
 	a.mu.Lock()
 	p, ok := a.pending[id]
@@ -126,6 +151,9 @@ func (a *Approvals) finish(id string, decision ApprovalDecision) {
 		if p.timer != nil {
 			p.timer.Stop()
 		}
+	}
+	if ok {
+		a.decided[id] = Outcome{ApprovalID: id, Info: p.info, Decision: decision}
 	}
 	a.mu.Unlock()
 	if !ok {
@@ -139,17 +167,8 @@ func (a *Approvals) finish(id string, decision ApprovalDecision) {
 		"operator", decision.Operator,
 		"reason", decision.Reason,
 	)
-	outcome := Outcome{ApprovalID: id, Info: p.info, Decision: decision}
 	select {
-	case a.outcomes <- outcome:
+	case a.notify <- struct{}{}:
 	default:
-		a.log.Warn("approval outcome channel full, delivering async", "approvalId", id)
-		go func() {
-			select {
-			case a.outcomes <- outcome:
-			case <-time.After(30 * time.Second):
-				a.log.Error("approval outcome dropped after retry", "approvalId", id)
-			}
-		}()
 	}
 }

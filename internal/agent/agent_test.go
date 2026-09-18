@@ -127,6 +127,62 @@ func TestAgentResponds(t *testing.T) {
 	t.Fatal("agent did not reply in time")
 }
 
+func TestHistorySummaryBoundary(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+
+	hub := session.NewHub(st, log)
+	sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]int64, 0, 6)
+	for i := 0; i < 6; i++ {
+		msg, err := sess.Ingest(ctx, storage.Message{Channel: "minecraft", AuthorKind: "player", AuthorName: "Steve", Text: fmt.Sprintf("m%d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, msg.ID)
+	}
+	if _, err := st.SaveSummary(ctx, cfg.Minecraft.SessionID, ids[1], "前两条摘要", 1); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
+
+	msgs, cutoff, err := ag.history(ctx, ids[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("len = %d, want 3 (summary + m2 + m3)", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "前两条摘要") {
+		t.Fatalf("first = %q", msgs[0].Content)
+	}
+	if msgs[1].Content != "[Steve] m2" || msgs[2].Content != "[Steve] m3" {
+		t.Fatalf("history = %+v", msgs)
+	}
+	if cutoff != ids[3] {
+		t.Fatalf("cutoff = %d, want %d", cutoff, ids[3])
+	}
+
+	msgs, _, err = ag.history(ctx, ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "[Steve] m0" {
+		t.Fatalf("trigger before summary should not include future summary: %+v", msgs)
+	}
+}
+
 func TestHistoryBoundedByTriggerMessage(t *testing.T) {
 	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

@@ -5,11 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 )
+
+// isFatalGatewayErr 判断是否为配置类错误（重试没用）：
+//   - err_code=40023002：接口访问源 IP 不在白名单（去 q.qq.com 配 43.160.211.42）
+//   - ws 关闭码 4914（机器人已下架）/4915（机器人已封禁）
+// 其他一律按可恢复处理。
+func isFatalGatewayErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "40023002") || strings.Contains(msg, "不在白名单") {
+		return true
+	}
+	if strings.Contains(msg, "4914") || strings.Contains(msg, "4915") {
+		return true
+	}
+	if websocket.CloseStatus(err) == 4914 || websocket.CloseStatus(err) == 4915 {
+		return true
+	}
+	return false
+}
 
 // Gateway 是 QQ 官方 wss 网关长连接：
 // hello -> identify（token=QQBot access_token, intents=1<<25, shard=[0,1]）
@@ -89,7 +111,21 @@ func (g *Gateway) loop() {
 			return
 		default:
 		}
-		if err := g.runOnce(); err != nil {
+		fatal, err := g.runOnce()
+		if fatal {
+			// 40023002（IP 白名单）、4914/4915 这类配错了重试也没用的错误：
+			// 记 ERROR 提醒去修配置，然后按 5 分钟慢轮询等人工修好，
+			// 不再打爆 OpenAPI 限流（code=100017）。
+			g.log.Error("qq gateway stopped, waiting for config fix (check IP whitelist at q.qq.com)",
+				"err", err, "retryIn", "5m")
+			select {
+			case <-g.stopCh:
+				return
+			case <-time.After(5 * time.Minute):
+			}
+			continue
+		}
+		if err != nil {
 			g.log.Warn("qq gateway disconnected", "err", err, "retryIn", backoff.String())
 		}
 		select {
@@ -104,9 +140,9 @@ func (g *Gateway) loop() {
 	}
 }
 
-var errFatal = fmt.Errorf("qq gateway fatal, stop retrying")
-
-func (g *Gateway) runOnce() error {
+// runOnce 跑一次连接。返回 (fatal, err)：fatal=true 表示配置类错误
+// （IP 白名单 40023002 等），重试没用，loop 会转 5 分钟慢轮询。
+func (g *Gateway) runOnce() (bool, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
@@ -116,11 +152,11 @@ func (g *Gateway) runOnce() error {
 
 	url, err := g.api.GatewayURL(ctx)
 	if err != nil {
-		return fmt.Errorf("gateway url: %w", err)
+		return isFatalGatewayErr(err), fmt.Errorf("gateway url: %w", err)
 	}
 	conn, _, err := websocket.Dial(ctx, url, nil)
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return false, fmt.Errorf("dial: %w", err)
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	conn.SetReadLimit(1 << 20)
@@ -131,10 +167,10 @@ func (g *Gateway) runOnce() error {
 		D  helloData `json:"d"`
 	}
 	if err := readJSON(ctx, conn, &hello); err != nil {
-		return fmt.Errorf("hello: %w", err)
+		return false, fmt.Errorf("hello: %w", err)
 	}
 	if hello.Op != opHello {
-		return fmt.Errorf("expected hello, got op=%d", hello.Op)
+		return false, fmt.Errorf("expected hello, got op=%d", hello.Op)
 	}
 	interval := time.Duration(hello.D.HeartbeatInterval) * time.Millisecond
 	if interval <= 0 || interval > 2*time.Minute {
@@ -145,13 +181,13 @@ func (g *Gateway) runOnce() error {
 	session, seq := g.snapshot()
 	tok, err := g.tokens.Token(ctx)
 	if err != nil {
-		return fmt.Errorf("token: %w", err)
+		return false, fmt.Errorf("token: %w", err)
 	}
 	if session != "" {
 		if err := writeJSON(ctx, conn, wsPayload{Op: opResume, D: resumeData{
 			Token: "QQBot " + tok, SessionID: session, Seq: seq,
 		}}); err != nil {
-			return fmt.Errorf("resume: %w", err)
+			return false, fmt.Errorf("resume: %w", err)
 		}
 	} else {
 		var id identifyData
@@ -162,7 +198,7 @@ func (g *Gateway) runOnce() error {
 		id.Properties.Browser = "mineagent"
 		id.Properties.Device = "mineagent"
 		if err := writeJSON(ctx, conn, wsPayload{Op: opIdentify, D: id}); err != nil {
-			return fmt.Errorf("identify: %w", err)
+			return false, fmt.Errorf("identify: %w", err)
 		}
 	}
 
@@ -187,7 +223,7 @@ func (g *Gateway) runOnce() error {
 	for {
 		raw, err := readRaw(ctx, conn)
 		if err != nil {
-			return fmt.Errorf("read: %w", err)
+			return isFatalGatewayErr(err), fmt.Errorf("read: %w", err)
 		}
 		var env struct {
 			ID string          `json:"id"`
@@ -210,11 +246,11 @@ func (g *Gateway) runOnce() error {
 			// 心跳正常，无事可做。
 		case opReconnect:
 			g.log.Info("qq gateway asked reconnect")
-			return fmt.Errorf("server asked reconnect")
+			return false, fmt.Errorf("server asked reconnect")
 		case opInvalidSession:
 			g.log.Warn("qq gateway invalid session, re-identify")
 			g.setSession("")
-			return fmt.Errorf("invalid session")
+			return false, fmt.Errorf("invalid session")
 		case opHeartbeat:
 			// 服务端心跳，按文档回 ACK 即可；coder 库底层已处理 ping，这里忽略。
 		default:

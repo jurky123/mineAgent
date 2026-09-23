@@ -2,6 +2,7 @@ package qq
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -98,5 +99,23 @@ func TestSplitTarget(t *testing.T) {
 	kind, _, _ = splitTarget("bad")
 	if kind != "" {
 		t.Fatalf("bad target should give empty kind, got %q", kind)
+	}
+}
+
+func TestIsFatalGatewayErr(t *testing.T) {
+	if !isFatalGatewayErr(fmt.Errorf("gateway url: qq gateway: http 401 {\"code\":11298,\"err_code\":40023002}")) {
+		t.Fatal("whitelist error should be fatal")
+	}
+	if !isFatalGatewayErr(fmt.Errorf("接口访问源IP不在白名单")) {
+		t.Fatal("whitelist message should be fatal")
+	}
+	if isFatalGatewayErr(fmt.Errorf("gateway url: qq gateway: http 400 {\"code\":100017}")) {
+		t.Fatal("rate limit should not be fatal")
+	}
+	if isFatalGatewayErr(fmt.Errorf("dial: connection refused")) {
+		t.Fatal("dial error should not be fatal")
+	}
+	if isFatalGatewayErr(nil) {
+		t.Fatal("nil should not be fatal")
 	}
 }

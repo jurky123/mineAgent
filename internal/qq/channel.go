@@ -41,7 +41,6 @@ type Channel struct {
 	ag      *agent.Agent
 	api     *API
 	gw      *Gateway
-	mc      *momentaryMCStatus
 	qqTools []tool.BaseTool
 
 	mu       sync.Mutex
@@ -51,8 +50,6 @@ type Channel struct {
 
 	minInterval time.Duration
 }
-
-type momentaryMCStatus struct{}
 
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
 	ag *agent.Agent, api *API, qqTools []tool.BaseTool) *Channel {
@@ -170,14 +167,18 @@ func (c *Channel) onMessage(m InboundMessage) {
 		return
 	}
 
-	// 身份绑定留痕：union_openid 优先（跨应用稳定），其次 user/member openid。
-	// /qq bind 命令写 display_name=MC名；LinkedMC 供工具链查绑定。
+	// 身份绑定留痕：只记昵称，不覆盖绑定。
+	// qq_bind 工具把 display_name 写成 MC 名；这里如果每次都用昵称覆盖，
+	// 会把已有绑定冲掉（这就是刚才"绑定查出来是 QQ用户"的原因）。
+	// 所以：查到 display_name 非空就保留，只在空时写昵称。
 	now := time.Now().UnixMilli()
 	for _, id := range []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID} {
 		if id == "" {
 			continue
 		}
-		_ = c.store.UpsertIdentity(ctx, "qq", id, display, now)
+		if name, err := c.store.LinkedMC(ctx, "qq", id); err != nil || name == "" {
+			_ = c.store.UpsertIdentity(ctx, "qq", id, display, now)
+		}
 	}
 
 	stored, err := sess.Ingest(ctx, storage.Message{
@@ -220,6 +221,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		MCRequester:       mcName,
 		Query:             text,
 		TriggerMessageID:  stored.ID,
+		ReplyTarget:       target,
 		Tools:             c.qqTools,
 		SystemInstruction: qqInstruction,
 	}) {

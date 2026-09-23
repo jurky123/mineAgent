@@ -44,6 +44,10 @@ type Request struct {
 	MCRequester      string
 	Query            string
 	TriggerMessageID int64
+	// ReplyTarget 本次回复要发到哪。MC 侧是玩家名（broadcast 模式为空）；
+	// QQ 侧是 "c2c:<openid>:<msgID>" / "group:<groupid>:<msgID>"，
+	// 由 channel 填好，consume 回复时直接用，不再经 replyMode 推导。
+	ReplyTarget       string
 	// Tools 为空则用默认集；QQ 通道传入自己的工具集（只读+workspace+MC高权限）。
 	// 用 systemInstruction 区分两个通道的人设与约束。
 	Tools             []tool.BaseTool
@@ -56,6 +60,7 @@ type pendingRun struct {
 	player      string
 	requesterID string
 	mcRequester string
+	replyTarget string
 	cpID        string
 	runnerKey   string
 	interruptID string
@@ -205,9 +210,14 @@ func (a *Agent) drainOutcomes(ctx context.Context) {
 	}
 }
 
-func (a *Agent) target(player string) string {
+func (a *Agent) target(req Request) string {
+	// QQ 请求自带 ReplyTarget（c2c:/group:），直接用；
+	// MC 请求走原来的 replyMode（broadcast="" 全服广播，player=私聊请求者）。
+	if req.ReplyTarget != "" {
+		return req.ReplyTarget
+	}
 	if a.replyMode == "player" {
-		return player
+		return req.Player
 	}
 	return ""
 }
@@ -323,7 +333,7 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 		}
 		if ev.Err != nil {
 			a.log.Error("agent run failed", "err", ev.Err)
-			_ = req.Session.Reply(ctx, "抱歉，我暂时无法回答（模型调用失败）。", a.target(req.Player))
+			_ = req.Session.Reply(ctx, "抱歉，我暂时无法回答（模型调用失败）。", a.target(req))
 			return true
 		}
 		if ev.Action != nil && ev.Action.Interrupted != nil {
@@ -349,7 +359,7 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 	if reply == "" {
 		reply = "唔，我没有想好怎么回答。"
 	}
-	if err := req.Session.Reply(ctx, reply, a.target(req.Player)); err != nil {
+	if err := req.Session.Reply(ctx, reply, a.target(req)); err != nil {
 		a.log.Error("agent reply", "err", err)
 	}
 	return true
@@ -372,6 +382,7 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, ru
 			player:      req.Player,
 			requesterID: req.RequesterID,
 			mcRequester: tools.MCRequesterFromContext(ctx),
+			replyTarget: req.ReplyTarget,
 			cpID:        cpID,
 			runnerKey:   runnerKey,
 			interruptID: ictx.ID,
@@ -387,10 +398,10 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, ru
 	}
 	if !notified {
 		a.log.Warn("interrupt without approval info", "session", sessionKey, "player", req.Player)
-		_ = req.Session.Reply(ctx, "这个操作需要人工确认，但审批信息丢失了。", a.target(req.Player))
+		_ = req.Session.Reply(ctx, "这个操作需要人工确认，但审批信息丢失了。", a.target(req))
 		return
 	}
-	_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", a.target(req.Player))
+	_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", a.target(req))
 }
 
 func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
@@ -423,13 +434,14 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		"operator", out.Decision.Operator,
 	)
 	runner := a.mcRunner
+	resumeReq := Request{Session: run.session, SessionKey: run.sessionKey, Player: run.player, ReplyTarget: run.replyTarget, Tools: run.tools, SystemInstruction: run.instruction}
 	if run.runnerKey != "" {
 		a.mu.Lock()
 		r, ok := a.runners[run.runnerKey]
 		a.mu.Unlock()
 		if !ok {
 			a.log.Error("resume runner gone", "approvalId", out.ApprovalID, "runnerKey", run.runnerKey)
-			_ = run.session.Reply(rctx, "恢复执行失败：会话已过期，请重新提问。", a.target(run.player))
+			_ = run.session.Reply(rctx, "恢复执行失败：会话已过期，请重新提问。", a.target(resumeReq))
 			return
 		}
 		runner = r
@@ -439,10 +451,10 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	})
 	if err != nil {
 		a.log.Error("resume failed", "err", err, "checkpoint", run.cpID)
-		_ = run.session.Reply(rctx, "恢复执行失败："+err.Error(), a.target(run.player))
+		_ = run.session.Reply(rctx, "恢复执行失败："+err.Error(), a.target(resumeReq))
 		return
 	}
-	a.consume(rctx, Request{Session: run.session, SessionKey: run.sessionKey, Player: run.player, Tools: run.tools, SystemInstruction: run.instruction}, run.sessionKey, run.runnerKey, run.cpID, iter)
+	a.consume(rctx, resumeReq, run.sessionKey, run.runnerKey, run.cpID, iter)
 }
 
 type headerTransport struct {

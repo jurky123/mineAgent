@@ -237,12 +237,17 @@ func TestHistoryBoundedByTriggerMessage(t *testing.T) {
 
 func TestReplyTargetModes(t *testing.T) {
 	a := &Agent{replyMode: "broadcast"}
-	if got := a.target("Steve"); got != "" {
+	if got := a.target(Request{Player: "Steve"}); got != "" {
 		t.Fatalf("broadcast target = %q", got)
 	}
 	a.replyMode = "player"
-	if got := a.target("Steve"); got != "Steve" {
+	if got := a.target(Request{Player: "Steve"}); got != "Steve" {
 		t.Fatalf("player target = %q", got)
+	}
+	// QQ 请求自带 ReplyTarget，不受 replyMode 影响。
+	a.replyMode = "broadcast"
+	if got := a.target(Request{Player: "qq:U1", ReplyTarget: "c2c:U1:ROBOT1.0_x"}); got != "c2c:U1:ROBOT1.0_x" {
+		t.Fatalf("qq target = %q", got)
 	}
 }
 

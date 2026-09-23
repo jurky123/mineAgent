@@ -21,12 +21,27 @@ type requesterIDCtxKey struct{}
 
 type sessionCtxKey struct{}
 
+// mcRequesterCtxKey 只有 QQ 通道会设置：QQ 身份绑定的 MC 玩家名（可能为空=未绑定）。
+// Gateway.Call 用它作为发给 MC 插件的 requester；
+// audit 用 qq:<openid>（见 WithRequester），两者不混淆。
+type mcRequesterCtxKey struct{}
+
 func WithRequester(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, requesterCtxKey{}, name)
 }
 
 func RequesterFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(requesterCtxKey{}).(string)
+	return v
+}
+
+// WithMCRequester 供 QQ 通道设置绑定的 MC 玩家名。
+func WithMCRequester(ctx context.Context, name string) context.Context {
+	return context.WithValue(ctx, mcRequesterCtxKey{}, name)
+}
+
+func MCRequesterFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(mcRequesterCtxKey{}).(string)
 	return v
 }
 
@@ -46,6 +61,12 @@ func WithSession(ctx context.Context, sessionID string) context.Context {
 func sessionFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(sessionCtxKey{}).(string)
 	return v
+}
+
+// SessionFromContext 供 agent 摘要中间件从 ctx 里取当前会话，
+// 这样 MC/QQ 共用一套中间件逻辑也能把摘要存到各自会话下。
+func SessionFromContext(ctx context.Context) string {
+	return sessionFromContext(ctx)
 }
 
 const (
@@ -153,7 +174,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		return errorJSON(err.Error()), nil
 	}
 
-	if t.permission != "" {
+	if t.permission != "" && !strings.HasPrefix(RequesterFromContext(ctx), QQRequesterPrefix) {
 		allowed, reason, err := checkPermission(ctx, t.gw, t.permission)
 		if err != nil {
 			msg := "权限校验失败（无法联系 Minecraft 服务器），已拒绝执行"
@@ -170,7 +191,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		}
 	}
 
-	if t.name == "minecraft_run_command" {
+	if t.name == "minecraft_run_command" && !strings.HasPrefix(RequesterFromContext(ctx), QQRequesterPrefix) {
 		allowed, detail, err := checkCommandPermission(ctx, t.gw, args)
 		if err != nil {
 			msg := "权限校验失败（无法联系 Minecraft 服务器），已拒绝执行"

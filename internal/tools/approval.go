@@ -44,11 +44,27 @@ type pendingApproval struct {
 	timer *time.Timer
 }
 
+// PendingFor 返回某请求者当前挂起的审批数。
+func (a *Approvals) PendingFor(requester string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := 0
+	for _, p := range a.pending {
+		if p.info.Requester == requester {
+			n++
+		}
+	}
+	return n
+}
+
 type Approvals struct {
 	sender     Sender
 	log        *slog.Logger
 	timeout    time.Duration
 	maxPending int
+	// 同一请求者最多同时挂起数（>0 生效），QQ 侧防刷审批用。
+	// MC 侧不设限（传 0），保持原有行为。
+	maxPerRequester int
 
 	mu      sync.Mutex
 	pending map[string]*pendingApproval
@@ -72,6 +88,13 @@ func NewApprovals(sender Sender, timeout time.Duration, log *slog.Logger) *Appro
 	}
 }
 
+// SetMaxPerRequester 限制同一请求者同时挂起的审批数（QQ 防刷用）。
+func (a *Approvals) SetMaxPerRequester(n int) {
+	a.mu.Lock()
+	a.maxPerRequester = n
+	a.mu.Unlock()
+}
+
 func (a *Approvals) Decided() <-chan struct{} { return a.notify }
 
 func (a *Approvals) Create(info ApprovalInfo) (ApprovalInfo, error) {
@@ -80,6 +103,18 @@ func (a *Approvals) Create(info ApprovalInfo) (ApprovalInfo, error) {
 		n := len(a.pending)
 		a.mu.Unlock()
 		return info, fmt.Errorf("待审批请求过多（%d），请稍后再试", n)
+	}
+	if a.maxPerRequester > 0 && info.Requester != "" {
+		n := 0
+		for _, p := range a.pending {
+			if p.info.Requester == info.Requester {
+				n++
+			}
+		}
+		if n >= a.maxPerRequester {
+			a.mu.Unlock()
+			return info, fmt.Errorf("你已有 %d 个待审批请求，先等管理员处理完再试", n)
+		}
 	}
 	info.ApprovalID = fmt.Sprintf("ap-%d-%d", time.Now().UnixMilli(), a.seq.Add(1))
 	a.pending[info.ApprovalID] = &pendingApproval{info: info}

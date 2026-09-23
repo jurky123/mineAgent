@@ -147,7 +147,7 @@ func TestToolFailureReturnedToModel(t *testing.T) {
 func TestReadOnlyTools(t *testing.T) {
 	gw, _ := testGateway(t)
 	ts := ReadOnly(gw)
-	if len(ts) != 5 {
+	if len(ts) != 7 {
 		t.Fatalf("tools = %d", len(ts))
 	}
 	names := map[string]bool{}
@@ -164,6 +164,8 @@ func TestReadOnlyTools(t *testing.T) {
 		"minecraft_server_status",
 		"minecraft_world_time",
 		"minecraft_weather",
+		"minecraft_world_info",
+		"minecraft_plugin_list",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %s", want)

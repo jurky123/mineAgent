@@ -73,5 +73,15 @@ func ReadOnly(gw *Gateway) []tool.BaseTool {
 			name: "minecraft_weather",
 			desc: "查询各世界当前天气：是否下雨、是否雷暴。",
 		},
+		&rpcTool{
+			gw:   gw,
+			name: "minecraft_world_info",
+			desc: "查询各世界的详细信息：名称、环境（主世界/地狱/末地/自定义）、难度、玩家数、区块数、游戏时间。回答“有哪些世界/世界情况”必须调用此工具。",
+		},
+		&rpcTool{
+			gw:   gw,
+			name: "minecraft_plugin_list",
+			desc: "列出服务器安装的插件及版本、是否启用。回答“装了什么插件/有没有XX插件”必须调用此工具。",
+		},
 	}
 }

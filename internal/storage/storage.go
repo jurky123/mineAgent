@@ -263,6 +263,23 @@ func (s *Store) UpsertIdentity(ctx context.Context, platform, platformID, displa
 	return err
 }
 
+// LinkedMC 查 QQ 身份绑定的 MC 玩家名，未绑定返回 ""。
+// QQ 事件里能拿到的身份有好几种（union_openid / user_openid / member_openid），
+// 调用方把候选按优先级逐个来查，命中即返回。
+func (s *Store) LinkedMC(ctx context.Context, platform, platformID string) (string, error) {
+	var name string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT display_name FROM identity_links WHERE platform=? AND platform_id=?`,
+		platform, platformID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
 func (s *Store) SaveAudit(ctx context.Context, e AuditEntry) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO tool_audit(session_id, call_id, tool, risk, requester, args, decision, operator, result, created_at)

@@ -50,6 +50,10 @@ public final class ToolExecutor {
                 return worldTime();
             case "minecraft_weather":
                 return weather();
+            case "minecraft_world_info":
+                return worldInfo();
+            case "minecraft_plugin_list":
+                return pluginList();
             case "minecraft_teleport":
                 return teleport(args, requester, requesterUuid);
             case "minecraft_give":
@@ -147,7 +151,58 @@ public final class ToolExecutor {
         return out;
     }
 
+    private JsonObject worldInfo() {
+        JsonArray worlds = new JsonArray();
+        for (World world : Bukkit.getWorlds()) {
+            JsonObject o = new JsonObject();
+            o.addProperty("name", world.getName());
+            o.addProperty("environment", world.getEnvironment().name());
+            o.addProperty("difficulty", world.getDifficulty().name());
+            o.addProperty("players", world.getPlayers().size());
+            o.addProperty("chunks", world.getLoadedChunks().length);
+            long time = world.getTime();
+            o.addProperty("time", time);
+            o.addProperty("day", world.getFullTime() / 24000L);
+            o.addProperty("period", time < 13000 ? "白天" : "夜晚");
+            worlds.add(o);
+        }
+        JsonObject out = new JsonObject();
+        out.addProperty("count", worlds.size());
+        out.add("worlds", worlds);
+        return out;
+    }
+
+    private JsonObject pluginList() {
+        JsonArray plugins = new JsonArray();
+        for (org.bukkit.plugin.Plugin plugin : Bukkit.getPluginManager().getPlugins()) {
+            JsonObject o = new JsonObject();
+            o.addProperty("name", plugin.getName());
+            o.addProperty("version", plugin.getPluginMeta().getVersion());
+            o.addProperty("enabled", plugin.isEnabled());
+            plugins.add(o);
+        }
+        JsonObject out = new JsonObject();
+        out.addProperty("count", plugins.size());
+        out.add("plugins", plugins);
+        return out;
+    }
+
     private JsonObject teleport(JsonObject args, String requester, String requesterUuid) {
+        // QQ 外部请求：requester 可能是 "qq:<openid>" 或绑定的 MC 名（mcRequester）。
+        // resolveRequester 按玩家名解析必然失败 -> 走外部审批路径：只做参数校验，
+        // 真正执行仍要游戏内管理员先 approve（后端 approvalTool 已保证先审批），
+        // 执行时用控制台身份，避免冒充在线玩家。
+        if (isExternalRequester(requester)) {
+            Player player = requirePlayer(args, "player");
+            Player target = requirePlayer(args, "target");
+            if (!player.teleport(target)) {
+                throw new IllegalArgumentException("传送被服务器阻止（可能被其他插件取消）");
+            }
+            JsonObject out = new JsonObject();
+            out.addProperty("ok", true);
+            out.addProperty("message", player.getName() + " 已传送到 " + target.getName() + " 身边（QQ 审批执行）");
+            return out;
+        }
         requirePermittedRequester(requester, requesterUuid, "mineagent.teleport", "传送");
         Player player = requirePlayer(args, "player");
         Player target = requirePlayer(args, "target");
@@ -161,6 +216,31 @@ public final class ToolExecutor {
     }
 
     private JsonObject give(JsonObject args, String requester, String requesterUuid) {
+        if (isExternalRequester(requester)) {
+            Player player = requirePlayer(args, "player");
+            String itemName = required(args, "item");
+            Material material = Material.matchMaterial(itemName);
+            if (material == null || !material.isItem()) {
+                throw new IllegalArgumentException("未知物品: " + itemName);
+            }
+            int count = args.has("count") ? args.get("count").getAsInt() : 1;
+            if (count < 1 || count > 64) {
+                throw new IllegalArgumentException("数量需在 1-64 之间");
+            }
+            ItemStack stack = new ItemStack(material, count);
+            Map<Integer, ItemStack> leftover = player.getInventory().addItem(stack);
+            JsonObject out = new JsonObject();
+            out.addProperty("ok", leftover.isEmpty());
+            if (leftover.isEmpty()) {
+                out.addProperty("message", "已给予 " + player.getName() + " " + count + " 个 " + itemName + "（QQ 审批执行）");
+            } else {
+                for (ItemStack rest : leftover.values()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), rest);
+                }
+                out.addProperty("message", "背包已满，多余物品已掉落在 " + player.getName() + " 脚下（QQ 审批执行）");
+            }
+            return out;
+        }
         requirePermittedRequester(requester, requesterUuid, "mineagent.give", "给予物品");
         Player player = requirePlayer(args, "player");
         String itemName = required(args, "item");
@@ -192,6 +272,20 @@ public final class ToolExecutor {
         if (command.startsWith("/")) {
             command = command.substring(1);
         }
+        // QQ 外部请求没有"本人"可冒充：用控制台身份执行。
+        // 危险面：控制台权限高于任何玩家，所以后端保证 QQ 侧 run_command 必先过
+        // 游戏内管理员审批（approvalTool interrupt），且审批单上有完整命令；
+        // 插件这里再加一层命令黑名单，禁掉高危命令。
+        if (isExternalRequester(requester)) {
+            checkExternalCommand(command);
+            if (!Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command)) {
+                throw new IllegalArgumentException("命令未执行：命令不存在或执行失败");
+            }
+            JsonObject out = new JsonObject();
+            out.addProperty("ok", true);
+            out.addProperty("message", "已以控制台身份提交命令: /" + command + "（QQ 审批执行，结果以服务器为准）");
+            return out;
+        }
         Player performer = resolveRequester(requester, requesterUuid);
         if (performer == null) {
             throw new IllegalArgumentException("请求者不在线，无法以本人身份执行命令");
@@ -205,9 +299,42 @@ public final class ToolExecutor {
         return out;
     }
 
+    private boolean isExternalRequester(String requester) {
+        if (requester == null || requester.isBlank()) {
+            return true;
+        }
+        if (requester.startsWith("qq:")) {
+            return true;
+        }
+        // 绑定的 MC 名也算外部：不能因为重名就冒充在线玩家执行。
+        return Bukkit.getPlayerExact(requester) == null;
+    }
+
+    private void checkExternalCommand(String command) {
+        String name = command.split("\\s+")[0].toLowerCase(java.util.Locale.ROOT);
+        switch (name) {
+            case "stop", "restart", "reload", "op", "deop", "ban", "ban-ip", "pardon",
+                 "whitelist", "save-all", "save-off", "minecraft:stop" -> throw new IllegalArgumentException(
+                    "QQ 审批执行禁止高危命令: " + name);
+            default -> {
+            }
+        }
+        if (command.toLowerCase(java.util.Locale.ROOT).contains("luckperms")
+                || command.toLowerCase(java.util.Locale.ROOT).contains("lp ")) {
+            throw new IllegalArgumentException("QQ 审批执行禁止权限组命令（防提权）");
+        }
+    }
+
     private JsonObject checkPermission(JsonObject args, String requester, String requesterUuid) {
         String permission = required(args, "permission");
         JsonObject out = new JsonObject();
+        // QQ 外部请求：直接报无权限，让后端 approvalTool 跳过预检、走游戏内审批。
+        if (isExternalRequester(requester)) {
+            out.addProperty("allowed", false);
+            out.addProperty("permission", permission);
+            out.addProperty("reason", "QQ 外部请求，需游戏内管理员审批");
+            return out;
+        }
         Player player = resolveRequester(requester, requesterUuid);
         if (player == null) {
             out.addProperty("allowed", false);
@@ -227,6 +354,12 @@ public final class ToolExecutor {
         }
         String name = command.split("\\s+")[0].toLowerCase(java.util.Locale.ROOT);
         JsonObject out = new JsonObject();
+        if (isExternalRequester(requester)) {
+            out.addProperty("allowed", false);
+            out.addProperty("permission", "");
+            out.addProperty("reason", "QQ 外部请求，需游戏内管理员审批");
+            return out;
+        }
         Player player = resolveRequester(requester, requesterUuid);
         if (player == null) {
             out.addProperty("allowed", false);

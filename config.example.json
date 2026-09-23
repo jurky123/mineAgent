@@ -8,6 +8,14 @@
     "sessionId": "minecraft-main",
     "replyMode": "broadcast"
   },
+  "qq": {
+    "appId": "",
+    "appSecret": "",
+    "apiBase": "https://api.bot.qq.com",
+    "adminOpenIds": [],
+    "minIntervalMs": 1500,
+    "maxPendingPerUser": 2
+  },
   "model": {
     "baseURL": "",
     "apiKey": "",
@@ -18,5 +26,11 @@
   },
   "tools": {
     "approvalTimeoutSeconds": 180
+  },
+  "workspace": {
+    "root": "workspace",
+    "maxFileBytes": 65536,
+    "execTimeoutSec": 15,
+    "maxOutputBytes": 8192
   }
 }

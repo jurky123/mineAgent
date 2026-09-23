@@ -155,9 +155,9 @@ func TestHistorySummaryBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
+	ag := &Agent{store: st, log: log, sessionKey: cfg.Minecraft.SessionID}
 
-	msgs, cutoff, err := ag.history(ctx, ids[3])
+	msgs, cutoff, err := ag.history(cfg.Minecraft.SessionID, ids[3])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestHistorySummaryBoundary(t *testing.T) {
 		t.Fatalf("cutoff = %d, want %d", cutoff, ids[3])
 	}
 
-	msgs, _, err = ag.history(ctx, ids[0])
+	msgs, _, err = ag.history(cfg.Minecraft.SessionID, ids[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,8 +213,8 @@ func TestHistoryBoundedByTriggerMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
-	msgs, cutoff, err := ag.history(ctx, triggerID)
+	ag := &Agent{store: st, log: log, sessionKey: cfg.Minecraft.SessionID}
+	msgs, cutoff, err := ag.history(cfg.Minecraft.SessionID, triggerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,8 +266,7 @@ func TestAgentDisabledWithoutModel(t *testing.T) {
 	}
 }
 
-func TestHistoryRoles(t *testing.T) {
-	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+func TestHistoryRoles(t *testing.T) {	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,8 +288,8 @@ func TestHistoryRoles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ag := &Agent{store: st, log: log, sessionID: cfg.Minecraft.SessionID}
-	msgs, cutoff, err := ag.history(ctx, 0)
+	ag := &Agent{store: st, log: log, sessionKey: cfg.Minecraft.SessionID}
+	msgs, cutoff, err := ag.history(cfg.Minecraft.SessionID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,4 +371,92 @@ func TestSummarizationPersistsSummary(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatal("summary not persisted in time")
+}
+
+func TestHistoryIsolatedBySession(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	hub := session.NewHub(st, log)
+	mc, err := hub.Session(ctx, "minecraft-main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	qq, err := hub.Session(ctx, "qq:c2c:U1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mc.Ingest(ctx, storage.Message{Channel: "minecraft", AuthorKind: "player", AuthorName: "Steve", Text: "mc消息"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := qq.Ingest(ctx, storage.Message{Channel: "qq", AuthorKind: "player", AuthorName: "小明", Text: "qq消息"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ag := &Agent{store: st, log: log, sessionKey: "minecraft-main"}
+	mcMsgs, _, err := ag.history("minecraft-main", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mcMsgs) != 1 || mcMsgs[0].Content != "[Steve] mc消息" {
+		t.Fatalf("mc history = %+v", mcMsgs)
+	}
+	qqMsgs, _, err := ag.history("qq:c2c:U1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(qqMsgs) != 1 || qqMsgs[0].Content != "[小明] qq消息" {
+		t.Fatalf("qq history = %+v", qqMsgs)
+	}
+}
+
+func TestQQRunnerCachedBySession(t *testing.T) {
+	srv := completionServer(t, "ok")
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+	cfg.Model.BaseURL = srv.URL
+	cfg.Model.APIKey = "test-key"
+	cfg.Model.Name = "test-model"
+
+	ctx := context.Background()
+	ag, err := New(ctx, cfg, st, log, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := session.NewHub(st, log)
+	sess, err := hub.Session(ctx, "qq:c2c:U1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := Request{Session: sess, SessionKey: "qq:c2c:U1", Player: "qq:U1", Tools: nil, SystemInstruction: "你是QQ助手"}
+	r1, k1, err := ag.runnerFor(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, k2, err := ag.runnerFor(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1 != r2 || k1 != k2 || k1 == "" {
+		t.Fatalf("runner should be cached, k1=%q k2=%q", k1, k2)
+	}
+	// MC 请求走预建 runner，key 为空。
+	r3, k3, err := ag.runnerFor(ctx, Request{Session: sess})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r3 != ag.mcRunner || k3 != "" {
+		t.Fatal("mc request should use mcRunner")
+	}
 }

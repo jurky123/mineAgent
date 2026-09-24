@@ -17,6 +17,7 @@ type Config struct {
 	QQ           QQ        `json:"qq"`
 	WeCom        WeCom     `json:"wecom"`
 	AIBot        AIBot     `json:"aibot"`
+	WeChat       WeChat    `json:"wechat"`
 	Model        Model     `json:"model"`
 	Storage      Storage   `json:"storage"`
 	Tools        Tools     `json:"tools"`
@@ -104,6 +105,23 @@ type AIBot struct {
 
 func DefaultAIBot() AIBot {
 	return AIBot{MinIntervalMS: 1500}
+}
+
+// WeChat 是「个人微信 ClawBot」通道（直连腾讯 iLink，不跑 OpenClaw）：
+// 协议来自官方插件 @tencent-weixin/openclaw-weixin（MIT）的 HTTP JSON 接口。
+// 登录：mineagent --wechat-login 扫码，凭证存 data/wechat.json。
+// 留空/未登录则不启用，不影响其它通道。
+type WeChat struct {
+	// 管理员 userid（ilink_user_id，登录成功后日志会打印）。
+	AdminUserIDs []string `json:"adminUserIds"`
+	// 同一会话回复最小间隔毫秒。
+	MinIntervalMS int `json:"minIntervalMs"`
+	// 自声明客户端标识（比照 User-Agent，仅用于腾讯后台归因）。
+	BotAgent string `json:"botAgent"`
+}
+
+func DefaultWeChat() WeChat {
+	return WeChat{MinIntervalMS: 1500}
 }
 
 // Workspace 是写代码/执行代码工具的沙箱根目录。
@@ -211,6 +229,7 @@ func Default() Config {
 		QQ:           QQ{APIBase: "https://api.bot.qq.com", MinIntervalMS: 1500, MaxPendingPerUser: 2},
 		WeCom:        DefaultWeCom(),
 		AIBot:        DefaultAIBot(),
+		WeChat:       DefaultWeChat(),
 		Storage:      Storage{Path: "data/mineagent.db"},
 		Tools:        DefaultTools(),
 		Workspace: Workspace{
@@ -263,6 +282,10 @@ func Load(path string) (Config, error) {
 	dab := DefaultAIBot()
 	if cfg.AIBot.MinIntervalMS <= 0 {
 		cfg.AIBot.MinIntervalMS = dab.MinIntervalMS
+	}
+	dwc2 := DefaultWeChat()
+	if cfg.WeChat.MinIntervalMS <= 0 {
+		cfg.WeChat.MinIntervalMS = dwc2.MinIntervalMS
 	}
 	if cfg.Workspace.Root == "" {
 		cfg.Workspace.Root = Default().Workspace.Root

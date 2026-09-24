@@ -35,6 +35,11 @@
     "adminUserIds": [],
     "minIntervalMs": 1500
   },
+  "wechat": {
+    "adminUserIds": [],
+    "minIntervalMs": 1500,
+    "botAgent": ""
+  },
   "model": {
     "baseURL": "",
     "apiKey": "",

@@ -26,6 +26,7 @@ import (
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
 	"mineagent/internal/version"
+	"mineagent/internal/wechat"
 	"mineagent/internal/wecom"
 	"mineagent/internal/ws"
 )
@@ -33,6 +34,7 @@ import (
 func main() {
 	configPath := flag.String("config", "config.json", "path to config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	wechatLogin := flag.Bool("wechat-login", false, "扫码登录个人微信 ClawBot（登录后退出）")
 	flag.Parse()
 
 	if *showVersion {
@@ -45,6 +47,26 @@ func main() {
 		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
 		os.Exit(1)
 	}
+
+	// 扫码登录：独立流程，登完退出，由 systemd 常驻进程使用登录后的凭证。
+	if *wechatLogin {
+		log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		statePath := wechat.StatePathFor(cfg.Storage.Path)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+		defer cancel()
+		state, err := wechat.Login(ctx, log, "/tmp/opencode/wechat-qr.png")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "wechat login failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := wechat.SaveState(statePath, state); err != nil {
+			fmt.Fprintf(os.Stderr, "save state failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("登录成功，凭证已保存到 %s\nilink_user_id=%s\n", statePath, state.ILinkUserID)
+		return
+	}
+
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
 	log.Info("starting mineagent", "version", version.Version, "protocol", protocol.Version, "config", *configPath)
 
@@ -194,6 +216,26 @@ func main() {
 		log.Info("aibot channel enabled", "botId", cfg.AIBot.BotID)
 	} else {
 		log.Info("aibot channel disabled (aibot.botId/secret empty)")
+	}
+
+	// 个人微信 ClawBot（直连腾讯 iLink，不跑 OpenClaw）：扫码登录过才启用。
+	var wechatCh *wechat.Channel
+	wechatStatePath := wechat.StatePathFor(cfg.Storage.Path)
+	wechatTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
+		append(wsTools.Tools(), bindTools.Tools()...)...)
+	wechatCh, err = wechat.NewChannel(log, cfg, wechatStatePath, hub, store, ag,
+		wrapWeComTools(wechatTools, wsTools, store, sessionsFn, senderFn))
+	if err != nil {
+		log.Error("init wechat channel", "err", err)
+		wechatCh = nil
+	}
+	if wechatCh != nil {
+		wechatCh.WithMCStatus(mcStatusFn)
+		wechatCh.Start()
+		defer wechatCh.Stop()
+		log.Info("wechat channel enabled", "state", wechatStatePath)
+	} else if err == nil {
+		log.Info("wechat channel disabled (未登录：跑 mineagent --wechat-login 扫码)", "state", wechatStatePath)
 	}
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {

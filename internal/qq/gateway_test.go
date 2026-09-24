@@ -119,3 +119,27 @@ func TestIsFatalGatewayErr(t *testing.T) {
 		t.Fatal("nil should not be fatal")
 	}
 }
+
+func TestSplitImageTarget(t *testing.T) {
+	// 真实 msgID 含冒号：ROBOT1.0_xxx:xxx:...!
+	kind, id, msgID, path := splitImageTarget("c2c:U1:ROBOT1.0_abc:def.ghi!:weather_card.png")
+	if kind != "c2c" || id != "U1" || msgID != "ROBOT1.0_abc:def.ghi!" || path != "weather_card.png" {
+		t.Fatalf("got %q %q %q %q", kind, id, msgID, path)
+	}
+	kind, id, msgID, path = splitImageTarget("group:G1:ROBOT1.0_x:y!:sub/plot.png")
+	if kind != "group" || id != "G1" || msgID != "ROBOT1.0_x:y!" || path != "sub/plot.png" {
+		t.Fatalf("got %q %q %q %q", kind, id, msgID, path)
+	}
+	// 非法：段数不对 / 非 ROBOT / path 含冒号 / kind 非法。
+	for _, bad := range []string{
+		"c2c:U1:MSG1",
+		"c2c:U1:MSG1:xxx:a:b",
+		"c2c:U1:NOTROBOT:x:p.png",
+		"dm:U1:ROBOT1.0_a:b:p.png",
+		"c2c:U1:ROBOT1.0_a:b:",
+	} {
+		if k, _, _, _ := splitImageTarget(bad); k != "" {
+			t.Fatalf("%q should fail", bad)
+		}
+	}
+}

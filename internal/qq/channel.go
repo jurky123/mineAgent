@@ -165,16 +165,17 @@ func (c *Channel) sendMarkdown(ctx context.Context, target, markdown string) err
 	}
 }
 
-// sendImage 发 workspace 内图片：target="img:<c2c|group>:<id>:<msgID>:<relPath>"，
+// sendImage 发 workspace 内图片。Send 调进来时 target 已剥掉 "img:" 前缀，
+// 格式 "<c2c|group>:<id>:<msgID>:<relPath>"——注意 msgID 是 ROBOT1.0_...，
+// 里面本身就带冒号，所以必须 SplitN(: , 5) 再取 [1:3] 拼回 msgID。
 // caption 放 msg.Text（v1 图片不带 caption，只发图；caption 记日志备查）。
 // 失败返回 error（agent 工具转告用户），不静默吞。
 func (c *Channel) sendImage(ctx context.Context, target, caption string) error {
-	parts := strings.SplitN(target, ":", 4)
-	if len(parts) != 4 {
+	kind, id, msgID, relPath := splitImageTarget(target)
+	if kind == "" {
 		c.log.Warn("qq image with bad target", "target", target)
 		return nil
 	}
-	kind, id, msgID, relPath := parts[0], parts[1], parts[2], parts[3]
 	if relPath == "" {
 		c.log.Warn("qq image with empty path", "target", target)
 		return nil
@@ -368,6 +369,28 @@ func splitTarget(target string) (kind, id, msgID string) {
 		return "", "", ""
 	}
 	return parts[0], parts[1], parts[2]
+}
+
+// splitImageTarget 切 "<c2c|group>:<id>:<ROBOT1.0_...含冒号>:<path>"。
+// msgID 本身含冒号（ROBOT1.0_xxx:xxx:...!），所以按 5 段切：
+// [kind, id, ROBOT1.0_xxx, xxx, path...]，msgID=中间拼回，path=最后一段。
+// path 本身不许含冒号（workspace 相对路径，冒号无意义，含了就拒）。
+func splitImageTarget(target string) (kind, id, msgID, relPath string) {
+	parts := strings.SplitN(target, ":", 5)
+	if len(parts) != 5 {
+		return "", "", "", ""
+	}
+	if parts[0] != "c2c" && parts[0] != "group" {
+		return "", "", "", ""
+	}
+	if !strings.HasPrefix(parts[2], "ROBOT") {
+		return "", "", "", ""
+	}
+	relPath = parts[4]
+	if relPath == "" || strings.Contains(relPath, ":") {
+		return "", "", "", ""
+	}
+	return parts[0], parts[1], parts[2] + ":" + parts[3], relPath
 }
 
 func firstLine(s string, max int) string {

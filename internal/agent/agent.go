@@ -310,7 +310,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 			},
 		},
 		Handlers:      middlewares,
-		MaxIterations: 25,
+		MaxIterations: 40,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("init qq chat model agent: %w", err)

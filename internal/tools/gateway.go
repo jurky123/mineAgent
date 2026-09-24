@@ -15,9 +15,19 @@ import (
 )
 
 // QQRequesterPrefix 是 QQ 侧发起 MC 高权限审批时的 requester 前缀，
-// 格式为 qq:<openid>。approvalTool 只做"本人身份"预检，对此外部身份一律
+// 格式为 qq:<openid>。WeCom 同理，前缀 wecom:<userid>。
+// approvalTool 只做"本人身份"预检，对此外部身份一律
 // 跳过玩家权限预检，直接走游戏内管理员审批（见 approvalTool.InvokableRun）。
 const QQRequesterPrefix = "qq:"
+
+// WeComRequesterPrefix 是 WeCom 侧的外部身份前缀，格式 wecom:<userid>。
+const WeComRequesterPrefix = "wecom:"
+
+// IsExternalRequester 判外部身份（QQ/WeCom）：跳过本人权限预检、直转游戏内审批。
+func IsExternalRequester(requester string) bool {
+	return strings.HasPrefix(requester, QQRequesterPrefix) ||
+		strings.HasPrefix(requester, WeComRequesterPrefix)
+}
 
 type Sender interface {
 	SendProtocol(typ string, data any) error
@@ -59,10 +69,10 @@ func (g *Gateway) Call(ctx context.Context, name string, args json.RawMessage) (
 	if len(args) == 0 {
 		args = json.RawMessage(`{}`)
 	}
-	// QQ 侧发起时 tool.call 的 requester 必须是绑定的 MC 名（或空=未绑定），
-	// 不能把 qq:<openid> 发给插件（插件按玩家名解析）。MC 侧保持原行为。
+	// QQ/WeCom 侧发起时 tool.call 的 requester 必须是绑定的 MC 名（或空=未绑定），
+	// 不能把 qq:<openid>/wecom:<userid> 发给插件（插件按玩家名解析）。MC 侧保持原行为。
 	toolRequester := RequesterFromContext(ctx)
-	if strings.HasPrefix(toolRequester, QQRequesterPrefix) {
+	if IsExternalRequester(toolRequester) {
 		toolRequester = MCRequesterFromContext(ctx)
 	}
 	callID := fmt.Sprintf("%d-%d", time.Now().UnixMilli(), g.seq.Add(1))

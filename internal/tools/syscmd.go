@@ -129,7 +129,8 @@ func ExecSystemCommand(s SysCtx, cmd, arg string) string {
 
 func sysHelp(s SysCtx) string {
 	var b strings.Builder
-	if s.Channel == "qq" {
+	switch s.Channel {
+	case "qq":
 		b.WriteString("MineAgent 命令（QQ）：\n")
 		b.WriteString("/help —— 显示这份帮助\n")
 		b.WriteString("/status —— 服状态、连接状态、会话消息数\n")
@@ -141,7 +142,19 @@ func sysHelp(s SysCtx) string {
 		} else {
 			b.WriteString("写代码跑代码仅管理员可用")
 		}
-	} else {
+	case "wecom":
+		b.WriteString("MineAgent 命令（企业微信）：\n")
+		b.WriteString("/help —— 显示这份帮助\n")
+		b.WriteString("/status —— 服状态、回调状态、会话消息数\n")
+		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
+		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
+		b.WriteString("直接说话就是聊天；要版式说一声，要图说一声\n")
+		if s.IsAdmin {
+			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
+		} else {
+			b.WriteString("写代码跑代码仅管理员可用")
+		}
+	default:
 		b.WriteString("MineAgent 命令（服内，@agent 提问外再加）：\n")
 		b.WriteString("@agent /help —— 显示这份帮助\n")
 		b.WriteString("@agent /status —— 服状态、在线玩家\n")
@@ -166,8 +179,12 @@ func sysStatus(s SysCtx) string {
 			b.WriteString("MC 服：" + truncate(out, 200) + "\n")
 		}
 	}
-	if s.Channel == "qq" && s.QQStatus != nil {
-		fmt.Fprintf(&b, "QQ 网关：%s\n", s.QQStatus())
+	if (s.Channel == "qq" || s.Channel == "wecom") && s.QQStatus != nil {
+		label := "QQ 网关"
+		if s.Channel == "wecom" {
+			label = "企微回调"
+		}
+		fmt.Fprintf(&b, "%s：%s\n", label, s.QQStatus())
 		if s.IsAdmin {
 			b.WriteString("你是管理员（workspace 可用）")
 		} else {
@@ -212,11 +229,11 @@ func sysMemory(s SysCtx, action string) string {
 }
 
 func sysBind(s SysCtx, player string) string {
-	if s.Channel != "qq" {
-		return "服内说话的本来就是玩家本人，不用绑定，去 QQ 里绑"
+	if s.Channel != "qq" && s.Channel != "wecom" {
+		return "服内说话的本来就是玩家本人，不用绑定，去 QQ/企业微信里绑"
 	}
 	if len(s.QQIDs) == 0 {
-		return "取不到 QQ 身份，绑定失败"
+		return "取不到身份，绑定失败"
 	}
 	now := time.Now().UnixMilli()
 	if player == "" {
@@ -246,7 +263,7 @@ func sysBind(s SysCtx, player string) string {
 func sysMyID(s SysCtx) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "你是 %s", s.Requester)
-	if s.Channel == "qq" {
+	if s.Channel == "qq" || s.Channel == "wecom" {
 		var bound string
 		for _, id := range s.QQIDs {
 			if id == "" {

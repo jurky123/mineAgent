@@ -190,7 +190,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		return errorJSON(err.Error()), nil
 	}
 
-	if t.permission != "" && !strings.HasPrefix(RequesterFromContext(ctx), QQRequesterPrefix) {
+	if t.permission != "" && !IsExternalRequester(RequesterFromContext(ctx)) {
 		allowed, reason, err := checkPermission(ctx, t.gw, t.permission)
 		if err != nil {
 			msg := "权限校验失败（无法联系 Minecraft 服务器），已拒绝执行"
@@ -207,7 +207,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		}
 	}
 
-	if t.name == "minecraft_run_command" && !strings.HasPrefix(RequesterFromContext(ctx), QQRequesterPrefix) {
+	if t.name == "minecraft_run_command" && !IsExternalRequester(RequesterFromContext(ctx)) {
 		allowed, detail, err := checkCommandPermission(ctx, t.gw, args)
 		if err != nil {
 			msg := "权限校验失败（无法联系 Minecraft 服务器），已拒绝执行"

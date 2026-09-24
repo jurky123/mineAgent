@@ -15,6 +15,7 @@ type Config struct {
 	AllowedRoles []string  `json:"allowedRoles"`
 	Minecraft    Minecraft `json:"minecraft"`
 	QQ           QQ        `json:"qq"`
+	WeCom        WeCom     `json:"wecom"`
 	Model        Model     `json:"model"`
 	Storage      Storage   `json:"storage"`
 	Tools        Tools     `json:"tools"`
@@ -52,6 +53,38 @@ func (c Config) WorkspaceRoot() string {
 		return c.Workspace.Root
 	}
 	return "workspace"
+}
+
+// WeCom 是企业微信自建应用通道（个人可注册，无需认证，无封号风险）。
+// 留空 CorpID 即禁用，不影响 QQ/MC 链路。
+// 架构：企微服务器 --HTTP回调--> 本机 :WeComPort/wecom（只支持 80/443，
+// 微信侧要求 URL 必须 80 或 443 端口）。本机已有腾讯云控制台防火墙，
+// 用到时去放行对应端口即可（ufw 未启用）。
+// 会话隔离：wecom:c2c:<userid> 按人，wecom:group:<chatid> 按群，
+// 与 qq:/minecraft- 会话天然隔离。requester 前缀 wecom:，复用 QQ 同款
+// 外部审批路径（privileged.go 的 ExternalRequesterPrefixes）。
+type WeCom struct {
+	CorpID string `json:"corpId"`
+	// 自建应用的 AgentID（数字，配成字符串也行，调 API 时转 int）。
+	AgentID int `json:"agentId"`
+	// 应用 Secret（应用详情页"查看"获取）。
+	Secret string `json:"secret"`
+	// 回调 Token / EncodingAESKey（"设置 API 接收"页随机获取）。
+	Token       string `json:"token"`
+	EncodingAES string `json:"encodingAesKey"`
+	// 回调监听端口（微信只允许 80/443，默认 80）。Listen 还是内部 8765 不变，
+	// 这个端口是专给企微回调开的 HTTP 入口。
+	Port int `json:"port"`
+	// 能用 workspace 的企微 userid（企业内明文 userid）。留空则谁都不能用。
+	AdminUserIDs []string `json:"adminUserIds"`
+	// 同一会话回复最小间隔毫秒（默认 1500，同 QQ）。
+	MinIntervalMS int `json:"minIntervalMs"`
+	// 每用户最多挂起 MC 审批数（默认 2，同 QQ）。
+	MaxPendingPerUser int `json:"maxPendingPerUser"`
+}
+
+func DefaultWeCom() WeCom {
+	return WeCom{Port: 80, MinIntervalMS: 1500, MaxPendingPerUser: 2}
 }
 
 // Workspace 是写代码/执行代码工具的沙箱根目录。
@@ -157,6 +190,7 @@ func Default() Config {
 		AllowedRoles: []string{"minecraft"},
 		Minecraft:    Minecraft{Trigger: "@agent", SessionID: "minecraft-main", ReplyMode: "broadcast"},
 		QQ:           QQ{APIBase: "https://api.bot.qq.com", MinIntervalMS: 1500, MaxPendingPerUser: 2},
+		WeCom:        DefaultWeCom(),
 		Storage:      Storage{Path: "data/mineagent.db"},
 		Tools:        DefaultTools(),
 		Workspace: Workspace{
@@ -195,6 +229,16 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.QQ.MaxPendingPerUser <= 0 {
 		cfg.QQ.MaxPendingPerUser = Default().QQ.MaxPendingPerUser
+	}
+	dwc := DefaultWeCom()
+	if cfg.WeCom.Port <= 0 {
+		cfg.WeCom.Port = dwc.Port
+	}
+	if cfg.WeCom.MinIntervalMS <= 0 {
+		cfg.WeCom.MinIntervalMS = dwc.MinIntervalMS
+	}
+	if cfg.WeCom.MaxPendingPerUser <= 0 {
+		cfg.WeCom.MaxPendingPerUser = dwc.MaxPendingPerUser
 	}
 	if cfg.Workspace.Root == "" {
 		cfg.Workspace.Root = Default().Workspace.Root
@@ -265,6 +309,12 @@ func (c Config) Redacted() Config {
 	if c.Workspace.Review.APIKey != "" {
 		c.Workspace.Review.APIKey = "<set>"
 	}
+	if c.WeCom.Secret != "" {
+		c.WeCom.Secret = "<set>"
+	}
+	if c.WeCom.EncodingAES != "" {
+		c.WeCom.EncodingAES = "<set>"
+	}
 	return c
 }
 
@@ -282,6 +332,10 @@ func applyEnv(cfg *Config) {
 	set(&cfg.Minecraft.Trigger, "MINEAGENT_TRIGGER")
 	set(&cfg.QQ.AppID, "MINEAGENT_QQ_APPID")
 	set(&cfg.QQ.Secret, "MINEAGENT_QQ_SECRET")
+	set(&cfg.WeCom.CorpID, "MINEAGENT_WECOM_CORPID")
+	set(&cfg.WeCom.Secret, "MINEAGENT_WECOM_SECRET")
+	set(&cfg.WeCom.Token, "MINEAGENT_WECOM_TOKEN")
+	set(&cfg.WeCom.EncodingAES, "MINEAGENT_WECOM_AESKEY")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")
@@ -291,6 +345,8 @@ func applyEnv(cfg *Config) {
 	setInt(&cfg.Agent.HistoryLimit, "MINEAGENT_HISTORY_LIMIT")
 	setInt(&cfg.Agent.BackgroundAfterSec, "MINEAGENT_BACKGROUND_AFTER_SEC")
 	setInt(&cfg.Workspace.ExecTimeoutSec, "MINEAGENT_EXEC_TIMEOUT_SEC")
+	setInt(&cfg.WeCom.AgentID, "MINEAGENT_WECOM_AGENTID")
+	setInt(&cfg.WeCom.Port, "MINEAGENT_WECOM_PORT")
 }
 
 func setInt(dst *int, key string) {

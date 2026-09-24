@@ -16,6 +16,17 @@
     "minIntervalMs": 1500,
     "maxPendingPerUser": 2
   },
+  "wecom": {
+    "corpId": "",
+    "agentId": 0,
+    "secret": "",
+    "token": "",
+    "encodingAesKey": "",
+    "port": 80,
+    "adminUserIds": [],
+    "minIntervalMs": 1500,
+    "maxPendingPerUser": 2
+  },
   "model": {
     "baseURL": "",
     "apiKey": "",

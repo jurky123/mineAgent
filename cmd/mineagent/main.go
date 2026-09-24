@@ -23,6 +23,7 @@ import (
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
 	"mineagent/internal/version"
+	"mineagent/internal/wecom"
 	"mineagent/internal/ws"
 )
 
@@ -114,8 +115,11 @@ func main() {
 	}
 	bindTools := tools.NewQQBind(store, log)
 	sendTools := tools.NewQQSend()
+	wecomSendTools := tools.NewWeComSend()
 	qqBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
 		append(append(wsTools.Tools(), bindTools.Tools()...), sendTools.Tools()...)...)
+	wecomBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
+		append(append(wsTools.Tools(), bindTools.Tools()...), wecomSendTools.Tools()...)...)
 
 	ag, err := agent.New(ctx, cfg, store, log, agentTools, approvals)
 	if err != nil {
@@ -127,17 +131,16 @@ func main() {
 	}
 
 	// QQ 通道：配了 appId+secret 才启动，否则完全不影响 MC 链路。
+	sessionsFn := func(ctx context.Context, sessionKey string) (*session.Session, error) {
+		return hub.Session(ctx, sessionKey)
+	}
+	senderFn := func(ctx context.Context, sess *session.Session, target, text string) error {
+		return sess.Reply(ctx, text, target)
+	}
 	var qqCh *qq.Channel
 	if cfg.QQ.AppID != "" && cfg.QQ.Secret != "" {
 		tokens := qq.NewTokenSource(cfg.QQ.AppID, cfg.QQ.Secret, cfg.QQ.APIBase, log)
 		api := qq.NewAPI(cfg.QQ.APIBase, tokens, log)
-		// sessions 按 key 取 Session（hub 成功后必有）；sender 调 Reply 走 fanout。
-		sessionsFn := func(ctx context.Context, sessionKey string) (*session.Session, error) {
-			return hub.Session(ctx, sessionKey)
-		}
-		senderFn := func(ctx context.Context, sess *session.Session, target, text string) error {
-			return sess.Reply(ctx, text, target)
-		}
 		qqCh = qq.NewChannel(log, cfg, hub, store, ag, api, wrapQQTools(qqBaseTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
 		qqCh.Start()
@@ -145,6 +148,27 @@ func main() {
 		log.Info("qq channel enabled")
 	} else {
 		log.Info("qq channel disabled (qq.appId/appSecret empty)")
+	}
+
+	// 企业微信通道：corpId/secret/token/aesKey 都配齐才启动。
+	// 回调服务监听 cfg.WeCom.Port（默认 80，微信只允许 80/443），
+	// 腾讯云控制台需放行该端口；被动回复走主动 SendText，无 5 秒窗口压力。
+	var wecomCh *wecom.Channel
+	if cfg.WeCom.CorpID != "" && cfg.WeCom.Secret != "" && cfg.WeCom.Token != "" && cfg.WeCom.EncodingAES != "" {
+		wecomTokens := wecom.NewTokenSource(cfg.WeCom.CorpID, cfg.WeCom.Secret, log)
+		wecomAPI := wecom.NewAPI(wecomTokens, cfg.WeCom.AgentID, log)
+		wecomCh = wecom.NewChannel(log, cfg, hub, store, ag, wecomAPI,
+			wrapWeComTools(wecomBaseTools, wsTools, store, sessionsFn, senderFn)).
+			WithMCStatus(mcStatusFn)
+		go func() {
+			if err := wecomCh.Start(); err != nil {
+				log.Error("wecom callback stopped", "err", err)
+			}
+		}()
+		defer wecomCh.Stop()
+		log.Info("wecom channel enabled", "port", cfg.WeCom.Port)
+	} else {
+		log.Info("wecom channel disabled (wecom.corpId/secret/token/encodingAesKey incomplete)")
 	}
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {
@@ -279,6 +303,17 @@ func wrapQQTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.
 	out := make([]tool.BaseTool, 0, len(base))
 	for _, tl := range base {
 		out = append(out, &qqToolGate{inner: tl, ws: wsTools, store: store, sessions: sessions, sender: sender})
+	}
+	return out
+}
+
+// wrapWeComTools 与 wrapQQTools 同构，只是识别 wecom: 前缀与 wecom_* 发送工具。
+func wrapWeComTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store,
+	sessions func(ctx context.Context, sessionKey string) (*session.Session, error),
+	sender func(ctx context.Context, sess *session.Session, target, text string) error) []tool.BaseTool {
+	out := make([]tool.BaseTool, 0, len(base))
+	for _, tl := range base {
+		out = append(out, &wecomToolGate{inner: tl, ws: wsTools, store: store, sessions: sessions, sender: sender})
 	}
 	return out
 }

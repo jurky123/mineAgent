@@ -22,6 +22,7 @@ import (
 //   - receiver 固定为本次对话的 ReplyTarget（gate 从 Request 注入 ctx），
 //     agent 只能发回当前会话，不能跨会话发，防滥用。
 //   - 图片 path 必须 workspace 内相对路径（gate 调 resolve 校验，media.go 再拦一次）。
+//
 // MC 通道拿不到这两个工具（main.go 只装给 QQ）。
 type QQSend struct{}
 
@@ -40,7 +41,7 @@ func (s *QQSend) Tools() []tool.BaseTool {
 			name: "qq_image",
 			desc: "发一张 workspace 内的图片到当前 QQ 会话。先用 workspace_write/exec 把图做好（png/jpg，20MB内），再调这个发。path 写 workspace 相对路径，如 plot.png。",
 			params: map[string]*schema.ParameterInfo{
-				"path": {Type: schema.String, Desc: "workspace 内相对路径，如 plot.png", Required: true},
+				"path":    {Type: schema.String, Desc: "workspace 内相对路径，如 plot.png", Required: true},
 				"caption": {Type: schema.String, Desc: "图片说明，可空（v1 只发图不带字）"},
 			},
 		},
@@ -130,4 +131,17 @@ func splitQQTarget(target string) (kind, id, msgID string) {
 		return "", "", ""
 	}
 	return parts[0], parts[1], parts[2]
+}
+
+// splitIMTarget 切两段式会话目标 "<c2c|group>:<id>"（企微/网页没有 msgID 段）。
+// 只校验前两段，第三段（QQ 的 msgID）有就返回、没有也接受。
+func splitIMTarget(target string) (kind, id string, ok bool) {
+	parts := strings.SplitN(target, ":", 3)
+	if len(parts) < 2 || parts[1] == "" {
+		return "", "", false
+	}
+	if parts[0] != "c2c" && parts[0] != "group" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }

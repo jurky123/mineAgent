@@ -34,7 +34,7 @@ func (s *WeComSend) Tools() []tool.BaseTool {
 			name: "wecom_image",
 			desc: "发一张 workspace 内的图片到当前企业微信会话。先用 workspace_write/exec 把图做好（jpg/png，10MB内），再调这个发。path 写 workspace 相对路径，如 plot.png。",
 			params: map[string]*schema.ParameterInfo{
-				"path": {Type: schema.String, Desc: "workspace 内相对路径，如 plot.png", Required: true},
+				"path":    {Type: schema.String, Desc: "workspace 内相对路径，如 plot.png", Required: true},
 				"caption": {Type: schema.String, Desc: "图片说明，可空（v1 只发图不带字）"},
 			},
 		},
@@ -63,8 +63,7 @@ func (t *wecomSendTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 	if target == "" {
 		return errorJSON("取不到当前会话回执目标，无法发送"), nil
 	}
-	kind, _, _ := splitQQTarget(target)
-	if kind != "c2c" && kind != "group" {
+	if _, _, ok := splitIMTarget(target); !ok {
 		return errorJSON("回执目标非法，无法发送"), nil
 	}
 	var args map[string]any

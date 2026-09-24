@@ -18,6 +18,7 @@ type Config struct {
 	WeCom        WeCom     `json:"wecom"`
 	AIBot        AIBot     `json:"aibot"`
 	WeChat       WeChat    `json:"wechat"`
+	Web          Web       `json:"web"`
 	Model        Model     `json:"model"`
 	Storage      Storage   `json:"storage"`
 	Tools        Tools     `json:"tools"`
@@ -122,6 +123,38 @@ type WeChat struct {
 
 func DefaultWeChat() WeChat {
 	return WeChat{MinIntervalMS: 1500}
+}
+
+// Web 是网页入口通道：浏览器直接聊，支持收发图片/文件，按名字隔离会话。
+// 账号暂时只用一个名字区分（无密码），users 可配白名单（空=任何合法名字都能进）。
+// 后续要嵌进别的网页：页面本身允许 iframe（frame-ancestors *），API 支持跨域
+// 带 Authorization 头（无 Cookie 凭证），allowedOrigins 控制允许的来源，默认 *。
+type Web struct {
+	// HTTP 监听地址，默认 0.0.0.0:8766（公网访问要在腾讯云控制台放行该端口）。
+	// 置空字符串则禁用网页入口。
+	Listen string `json:"listen"`
+	// 允许登录的名字白名单；空 = 不限制（任何合法名字）。
+	Users []string `json:"users"`
+	// 管理员名字：workspace 写代码/跑代码 + MC 高权限审批路径。
+	AdminUsers []string `json:"adminUsers"`
+	// 允许跨域访问 API 的来源；空或 ["*"] = 都允许。
+	AllowedOrigins []string `json:"allowedOrigins"`
+	// 单文件上传上限（MB），默认 20。
+	MaxUploadMB int `json:"maxUploadMB"`
+	// 同一会话两次请求最小间隔毫秒（默认 1000，防手抖刷 token）。
+	MinIntervalMS int `json:"minIntervalMs"`
+	// 登录令牌/运行时数据目录，默认 data/webui。
+	DataDir string `json:"dataDir"`
+}
+
+func DefaultWeb() Web {
+	return Web{
+		Listen:         "0.0.0.0:8766",
+		MaxUploadMB:    20,
+		MinIntervalMS:  1000,
+		AllowedOrigins: []string{"*"},
+		DataDir:        "data/webui",
+	}
 }
 
 // Workspace 是写代码/执行代码工具的沙箱根目录。
@@ -230,6 +263,7 @@ func Default() Config {
 		WeCom:        DefaultWeCom(),
 		AIBot:        DefaultAIBot(),
 		WeChat:       DefaultWeChat(),
+		Web:          DefaultWeb(),
 		Storage:      Storage{Path: "data/mineagent.db"},
 		Tools:        DefaultTools(),
 		Workspace: Workspace{
@@ -286,6 +320,18 @@ func Load(path string) (Config, error) {
 	dwc2 := DefaultWeChat()
 	if cfg.WeChat.MinIntervalMS <= 0 {
 		cfg.WeChat.MinIntervalMS = dwc2.MinIntervalMS
+	}
+	dweb := DefaultWeb()
+	// cfg 从 Default() 起底，所以没写 web 段时 Listen 已是默认值；
+	// 显式写 "listen": "" 即禁用网页入口（Load 后为空）。
+	if cfg.Web.MaxUploadMB <= 0 {
+		cfg.Web.MaxUploadMB = dweb.MaxUploadMB
+	}
+	if cfg.Web.MinIntervalMS <= 0 {
+		cfg.Web.MinIntervalMS = dweb.MinIntervalMS
+	}
+	if cfg.Web.DataDir == "" {
+		cfg.Web.DataDir = dweb.DataDir
 	}
 	if cfg.Workspace.Root == "" {
 		cfg.Workspace.Root = Default().Workspace.Root
@@ -388,6 +434,7 @@ func applyEnv(cfg *Config) {
 	set(&cfg.WeCom.EncodingAES, "MINEAGENT_WECOM_AESKEY")
 	set(&cfg.AIBot.BotID, "MINEAGENT_AIBOT_BOTID")
 	set(&cfg.AIBot.Secret, "MINEAGENT_AIBOT_SECRET")
+	set(&cfg.Web.Listen, "MINEAGENT_WEB_LISTEN")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")

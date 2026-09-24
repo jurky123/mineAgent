@@ -26,6 +26,7 @@ import (
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
 	"mineagent/internal/version"
+	"mineagent/internal/webui"
 	"mineagent/internal/wechat"
 	"mineagent/internal/wecom"
 	"mineagent/internal/ws"
@@ -110,9 +111,10 @@ func main() {
 	// 注意 workspace_exec 的管理员门禁不在工具里写死，而是在 Submit 前按消息身份
 	// 动态放进 ctx（WithQQAdmin），这样同一套工具对管理员/普通群友表现不同。
 	// qq_bind/qq_unbind 的身份同样走 ctx（WithQQIdentity）。
-	// workspace 的管理员名单：三个 IM 通道的 admin 列表取并集
-	//（同一个人在不同通道有不同 ID：QQ openid / 企微 userid）。
+	// workspace 的管理员名单：四个 IM 通道的 admin 列表取并集
+	//（同一个人在不同通道有不同 ID：QQ openid / 企微 userid / 网页名字）。
 	adminIDs := append(append(append([]string{}, cfg.QQ.AdminOpenIDs...), cfg.WeCom.AdminUserIDs...), cfg.AIBot.AdminUserIDs...)
+	adminIDs = append(adminIDs, cfg.Web.AdminUsers...)
 	wsTools := tools.NewWorkspace(cfg.Workspace, adminIDs, store, log)
 	// workspace_exec 的 LLM 二审：默认复用主模型（省一个配置），
 	// 想用更便宜/更严的模型就填 workspace.review.baseURL/apiKey/model。
@@ -144,10 +146,13 @@ func main() {
 	bindTools := tools.NewQQBind(store, log)
 	sendTools := tools.NewQQSend()
 	wecomSendTools := tools.NewWeComSend()
+	webSendTools := tools.NewWebSend()
 	qqBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
 		append(append(wsTools.Tools(), bindTools.Tools()...), sendTools.Tools()...)...)
 	wecomBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
 		append(append(wsTools.Tools(), bindTools.Tools()...), wecomSendTools.Tools()...)...)
+	webBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
+		append(append(wsTools.Tools(), bindTools.Tools()...), webSendTools.Tools()...)...)
 
 	ag, err := agent.New(ctx, cfg, store, log, agentTools, approvals)
 	if err != nil {
@@ -236,6 +241,25 @@ func main() {
 		log.Info("wechat channel enabled", "state", wechatStatePath)
 	} else if err == nil {
 		log.Info("wechat channel disabled (未登录：跑 mineagent --wechat-login 扫码)", "state", wechatStatePath)
+	}
+
+	// 网页入口：web.listen 非空即启用（默认 0.0.0.0:8766，公网访问要在
+	// 腾讯云控制台放行端口）。账号只用一个名字区分（无密码），
+	// 支持收发图片/文件，会话隔离 web:c2c:<名字>，页面允许 iframe 嵌入。
+	var webCh *webui.Channel
+	if cfg.Web.Listen != "" {
+		webCh = webui.NewChannel(log, cfg, hub, store, ag,
+			wrapWebTools(webBaseTools, wsTools, store, sessionsFn, senderFn)).
+			WithMCStatus(mcStatusFn)
+		go func() {
+			if err := webCh.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("web ui stopped", "err", err)
+			}
+		}()
+		defer webCh.Stop()
+		log.Info("webui channel enabled", "listen", cfg.Web.Listen, "url", "http://<公网IP>:"+webPort(cfg.Web.Listen))
+	} else {
+		log.Info("webui channel disabled (web.listen empty)")
 	}
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {
@@ -384,6 +408,25 @@ func wrapWeComTools(base []tool.BaseTool, wsTools *tools.Workspace, store *stora
 		out = append(out, &wecomToolGate{inner: tl, ws: wsTools, store: store, sessions: sessions, sender: sender})
 	}
 	return out
+}
+
+// wrapWebTools 与 wrapWeComTools 同构，识别 web: 前缀与 web_file 发送工具。
+func wrapWebTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store,
+	sessions func(ctx context.Context, sessionKey string) (*session.Session, error),
+	sender func(ctx context.Context, sess *session.Session, target, text string) error) []tool.BaseTool {
+	out := make([]tool.BaseTool, 0, len(base))
+	for _, tl := range base {
+		out = append(out, &webToolGate{inner: tl, ws: wsTools, store: store, sessions: sessions, sender: sender})
+	}
+	return out
+}
+
+// webPort 从监听地址里抠端口，仅用于启动日志展示。
+func webPort(listen string) string {
+	if i := strings.LastIndex(listen, ":"); i >= 0 {
+		return listen[i+1:]
+	}
+	return listen
 }
 
 func authorizeMessage(role, msgType string, attached bool) bool {

@@ -29,13 +29,15 @@ type Message struct {
 	CreatedAt int64  `json:"createdAt"`
 }
 
-// QQ 富媒体/版式消息的 Target 前缀。纯文本无前缀（历史兼容）。
+// 富媒体/版式消息的 Target 前缀。纯文本无前缀（历史兼容）。
 // 图片 Target="img:<c2c|group>:<id>:<msgID>:<workspace相对路径>"；
 // markdown Target="md:<c2c|group>:<id>:<msgID>"，正文放 Text。
+// 文件（网页通道）Target="file:c2c:<name>:<workspace相对路径>"，Text 放展示名。
 const (
 	KindText     = ""
 	KindMarkdown = "md:"
 	KindImage    = "img:"
+	KindFile     = "file:"
 )
 
 type Summary struct {
@@ -217,6 +219,21 @@ func (s *Store) MessagesBetween(ctx context.Context, sessionID string, afterID, 
 		msgs[i], msgs[j] = msgs[j], msgs[i]
 	}
 	return msgs, nil
+}
+
+// MessageByID 按主键取单条消息（网页通道下载附件时校验归属用）。
+func (s *Store) MessageByID(ctx context.Context, id int64) (*Message, error) {
+	var m Message
+	err := scanMessage(s.db.QueryRowContext(ctx,
+		`SELECT id, session_id, channel, author_kind, author_id, author_name, text, target, created_at
+		 FROM messages WHERE id=?`, id), &m)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 func (s *Store) CountMessages(ctx context.Context, sessionID string) (int64, error) {

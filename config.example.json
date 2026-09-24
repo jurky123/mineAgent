@@ -40,6 +40,17 @@
     "minIntervalMs": 1500,
     "botAgent": ""
   },
+  "web": {
+    "listen": "0.0.0.0:8766",
+    "users": [],
+    "adminUsers": [],
+    "allowedOrigins": [
+      "*"
+    ],
+    "maxUploadMB": 20,
+    "minIntervalMs": 1000,
+    "dataDir": "data/webui"
+  },
   "model": {
     "baseURL": "",
     "apiKey": "",

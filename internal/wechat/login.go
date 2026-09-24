@@ -89,21 +89,25 @@ func Login(ctx context.Context, log *slog.Logger, qrOutPath string) (*State, err
 		return nil, err
 	}
 
-	deadline := time.Now().Add(5 * time.Minute)
+	// 腾讯侧二维码有效期偏短（约 2 分钟），本地按 2 分钟主动续期，最多 8 次。
+	const qrTTL = 2 * time.Minute
+	const maxRefreshes = 8
+	deadline := time.Now().Add(qrTTL)
 	for {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		if time.Now().After(deadline) {
-			if refreshes >= 3 {
+			if refreshes >= maxRefreshes {
 				return nil, fmt.Errorf("二维码多次过期，登录未完成")
 			}
 			refreshes++
-			log.Info("wechat login: qrcode expired, refreshing", "count", refreshes)
+			fmt.Println("（上一个二维码已过期，已自动换新，请用最新的链接/图片）")
+			log.Info("wechat login: qrcode refreshed", "count", refreshes)
 			if err := loadQR(); err != nil {
 				return nil, err
 			}
-			deadline = time.Now().Add(5 * time.Minute)
+			deadline = time.Now().Add(qrTTL)
 			continue
 		}
 		st, err := cli.PollQRStatus(ctx, qr.QRCode, verify)

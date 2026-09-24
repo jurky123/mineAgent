@@ -329,6 +329,42 @@ func TestMsgFileCookieAuthAndName(t *testing.T) {
 	}
 }
 
+// 老会话（localStorage 里有 token、从不经过 /api/login）刷新页面时，
+// /api/me 必须把 cookie 补上，否则 <img>/下载一直 401。
+func TestAuthCookiePlantedOnAPIUse(t *testing.T) {
+	_, ts, _ := newTestChannel(t)
+	tok := loginTest(t, ts, "jzk") // 裸登录，不接 cookie
+
+	req, _ := http.NewRequest("GET", ts.URL+"/api/me", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	var cookie string
+	for _, ck := range res.Cookies() {
+		if ck.Name == "mineagent_token" {
+			cookie = ck.Name + "=" + ck.Value
+		}
+	}
+	if cookie == "" {
+		t.Fatal("/api/me 没有补种 cookie")
+	}
+
+	// 仅靠这个 cookie 上传（不带头）
+	ureq, _ := http.NewRequest("POST", ts.URL+"/api/upload?name=x.txt", strings.NewReader("hi"))
+	ureq.Header.Set("Cookie", cookie)
+	ures, err := http.DefaultClient.Do(ureq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ures.Body.Close()
+	if ures.StatusCode != 200 {
+		t.Fatalf("cookie 上传 status=%d", ures.StatusCode)
+	}
+}
+
 func TestFakeMarkerEscaped(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")

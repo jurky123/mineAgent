@@ -375,6 +375,11 @@
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
+  // 附件 URL 兜底拼 token：cookie 没种上/被浏览器拦时 <img>、下载也能用。
+  function withTok(u) {
+    if (!u || u.startsWith('blob:') || u.startsWith('data:')) return u;
+    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(token);
+  }
   function fmtSize(n) {
     if (!n && n !== 0) return '';
     if (n < 1024) return n + ' B';
@@ -449,15 +454,16 @@
   function fileBubble(f) {
     const name = f.name || '文件';
     if (f.image) {
-      return '<div class="imgbox"><img src="' + esc(f.url) + '" alt="' + esc(name) +
-        '" loading="lazy" data-zoom="' + esc(f.url) + '" data-name="' + esc(name) + '">' +
+      const src = withTok(f.url);
+      return '<div class="imgbox"><img src="' + esc(src) + '" alt="' + esc(name) +
+        '" loading="lazy" data-zoom="' + esc(src) + '" data-name="' + esc(name) + '">' +
         '<div class="imgtools">' +
         '<button class="itool" data-preview title="查看">' + ICON_EXPAND + '</button>' +
-        '<a class="itool" href="' + esc(f.url) + '" download="' + esc(name) + '" title="下载">' + ICON_DOWNLOAD + '</a>' +
+        '<a class="itool" href="' + esc(src) + '" download="' + esc(name) + '" title="下载">' + ICON_DOWNLOAD + '</a>' +
         '</div></div>';
     }
     const [label, cls] = extInfo(name);
-    return '<a class="filecard" href="' + esc(f.url) + '" download="' + esc(name) + '" title="' + esc(name) + '">' +
+    return '<a class="filecard" href="' + esc(withTok(f.url)) + '" download="' + esc(name) + '" title="' + esc(name) + '">' +
       '<span class="ext ' + cls + '">' + label + '</span>' +
       '<span class="fmeta"><span class="fname">' + esc(name) + '</span>' +
       (f.size ? '<span class="fsize">' + fmtSize(f.size) + '</span>' : '') + '</span>' +

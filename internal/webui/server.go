@@ -122,14 +122,40 @@ func tokenOf(r *http.Request) string {
 	return ""
 }
 
-// withAuth 用令牌换账号名放 context，失败 401。
+// auth 校验请求令牌（header/query/cookie 任一来源），返回账号名与令牌。
+func (c *Channel) auth(r *http.Request) (name, tok string) {
+	tok = tokenOf(r)
+	if tok == "" {
+		return "", ""
+	}
+	return c.nameByToken(tok), tok
+}
+
+// setAuthCookie 补种登录 cookie：老会话的页面只用 Bearer 调 /api/me，
+// 从不经过 /api/login，若只在登录时种 cookie，附件（<img>/下载链接）
+// 就会一直 401。所以任何一次已认证请求都顺手把 cookie 补上。
+func (c *Channel) setAuthCookie(w http.ResponseWriter, r *http.Request, tok string) {
+	if tok == "" {
+		return
+	}
+	if ck, err := r.Cookie("mineagent_token"); err == nil && ck.Value == tok {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "mineagent_token", Value: tok, Path: "/", MaxAge: 30 * 24 * 3600,
+		SameSite: http.SameSiteLaxMode, HttpOnly: true,
+	})
+}
+
+// withAuth 用令牌换账号名放 context，失败 401；顺带补种 cookie。
 func (c *Channel) withAuth(next func(w http.ResponseWriter, r *http.Request, name string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		name := c.nameByToken(tokenOf(r))
+		name, tok := c.auth(r)
 		if name == "" {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录或令牌已失效，请重新进入"})
 			return
 		}
+		c.setAuthCookie(w, r, tok)
 		next(w, r, name)
 	}
 }
@@ -238,11 +264,12 @@ func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name strin
 }
 
 func (c *Channel) handleEvents(w http.ResponseWriter, r *http.Request) {
-	name := c.nameByToken(tokenOf(r))
+	name, tok := c.auth(r)
 	if name == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 		return
 	}
+	c.setAuthCookie(w, r, tok)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "流式响应不可用"})
@@ -383,11 +410,12 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 //
 // 只允许取自己会话的消息；用户上传还必须落在自己的 web-files/<账号>/ 下。
 func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
-	name := c.nameByToken(tokenOf(r))
+	name, tok := c.auth(r)
 	if name == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 		return
 	}
+	c.setAuthCookie(w, r, tok)
 	id, err := strconv.ParseInt(r.URL.Query().Get("m"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数非法"})

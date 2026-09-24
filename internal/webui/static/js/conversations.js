@@ -6,7 +6,7 @@
 //   S.conv === "id"  -> 已存在会话
 // 草稿在发送第一条消息时由 /api/send 原子创建，返回值回填 S.conv。
 
-import { $, esc, bus, toast, showError, ICON } from './ui.js';
+import { $, esc, bus, toast, showError, askConfirm, askInput, ICON } from './ui.js';
 import { S, setConv } from './state.js';
 import { apiGet, apiPost } from './api.js';
 import { clearMessages, loadHistory } from './chat.js';
@@ -15,7 +15,18 @@ let search = '';
 
 export function initConversations() {
   $('newchat').onclick = newChat;
-  $('conv-search').addEventListener('input', () => { search = $('conv-search').value.trim().toLowerCase(); render(); });
+  const searchBox = $('searchbox');
+  const searchInput = $('conv-search');
+  const clearBtn = $('search-clear');
+  const syncClear = () => { clearBtn.hidden = !searchInput.value; };
+  searchBox.addEventListener('click', (e) => { if (!e.target.closest('.search-clear')) searchInput.focus(); });
+  searchInput.addEventListener('input', () => {
+    search = searchInput.value.trim().toLowerCase();
+    syncClear();
+    render();
+  });
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { searchInput.value = ''; search = ''; syncClear(); render(); } });
+  clearBtn.onclick = () => { searchInput.value = ''; search = ''; syncClear(); render(); searchInput.focus(); };
   bus.on('conversations-changed', () => { refresh().catch(() => {}); });
   bus.on('message-other', ({ conv }) => {
     if (!S.conversations.some((c) => c.conv === conv)) return;
@@ -113,16 +124,21 @@ async function switchTo(conv) {
 
 async function rename(c) {
   if (c.conv === null) return;
-  const title = prompt('重命名聊天', c.title || '新聊天');
-  if (title === null) return;
+  const title = await askInput({ title: '重命名聊天', text: '', value: c.title || '', okLabel: '保存' });
+  if (title === null || title === (c.title || '')) return;
   try {
-    await apiPost('/api/conversations/rename', { conv: c.conv, title: title.trim() });
+    await apiPost('/api/conversations/rename', { conv: c.conv, title: title });
     await refresh();
   } catch (e) { showError(e.message); }
 }
 
 async function del(c) {
-  if (!confirm('删除这个聊天？记录和记忆都会被清除，不能恢复。')) return;
+  const ok = await askConfirm({
+    title: '删除这个聊天？',
+    text: '聊天记录和记忆都会被清除，不能恢复。',
+    okLabel: '删除'
+  });
+  if (!ok) return;
   try {
     await apiPost('/api/conversations/delete', { conv: c.conv });
     if (c.conv === S.conv) {

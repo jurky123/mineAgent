@@ -31,6 +31,27 @@
 .ws-row .i { color: var(--text-3); }
 .ws-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 26px; }
 
+/* 通用确认 / 输入弹窗 */
+.dlg-card { max-width: 400px; padding: 20px 20px 16px; }
+.dlg-title { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.dlg-text { margin-top: 8px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
+.dlg-input {
+  width: 100%; margin-top: 14px; padding: 9px 12px; border: 1px solid var(--border-control);
+  border-radius: 10px; background: var(--control-bg); color: var(--text); font: inherit;
+  font-size: 14px; outline: none;
+}
+.dlg-input:focus { border-color: var(--interactive-border); background: var(--surface); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.btn {
+  padding: 8px 15px; border-radius: 10px; border: 1px solid var(--border-control);
+  background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 500;
+}
+.btn:hover { background: var(--control-hover); }
+.btn.primary { background: var(--interactive); border-color: var(--interactive); color: #fff; }
+.btn.primary:hover { filter: brightness(.95); background: var(--interactive); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger:hover { filter: brightness(.95); background: var(--danger); }
+
 /* 外观 */
 .ap-title { font-weight: 600; font-size: 14.5px; }
 .ap-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 16px; }

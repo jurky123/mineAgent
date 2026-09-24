@@ -50,6 +50,53 @@ export function hideAnimated(el, done) {
   setTimeout(() => { el.classList.remove('on', 'closing'); if (done) done(); }, 140);
 }
 
+// 通用弹窗（替代原生 confirm/prompt）：返回 Promise，点击遮罩/Esc 视为取消
+export function askDialog(opts) {
+  return new Promise((resolve) => {
+    const modal = $('dlgmodal');
+    const input = $('dlg-input');
+    const ok = $('dlg-ok');
+    const cancel = $('dlg-cancel');
+    $('dlg-title').textContent = opts.title || '';
+    const textEl = $('dlg-text');
+    if (opts.text) { textEl.textContent = opts.text; textEl.hidden = false; } else { textEl.hidden = true; }
+    const hasInput = !!opts.input;
+    input.hidden = !hasInput;
+    if (hasInput) input.value = opts.value || '';
+    ok.textContent = opts.okLabel || '确定';
+    ok.className = 'btn ' + (opts.danger ? 'danger' : 'primary');
+    cancel.textContent = opts.cancelLabel || '取消';
+
+    const done = (val) => {
+      modal.classList.remove('on');
+      modal.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey, true);
+      resolve(val);
+    };
+    const onOk = () => done(hasInput ? input.value.trim() : true);
+    const onCancel = () => done(hasInput ? null : false);
+    const onBackdrop = (e) => { if (e.target === modal) onCancel(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onCancel(); }
+      else if (e.key === 'Enter' && !e.isComposing) { e.stopPropagation(); onOk(); }
+    };
+    ok.onclick = onOk;
+    cancel.onclick = onCancel;
+    modal.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey, true);
+    modal.classList.add('on');
+    if (hasInput) { input.focus(); input.select(); } else ok.focus();
+  });
+}
+
+export function askConfirm(opts) {
+  return askDialog(Object.assign({ danger: true, okLabel: '删除' }, opts)).then((v) => v === true);
+}
+
+export function askInput(opts) {
+  return askDialog(Object.assign({ okLabel: '保存' }, opts, { input: true })).then((v) => (typeof v === 'string' ? v : null));
+}
+
 export const ICON = {
   copy: '<svg class="i"><use href="#i-copy"/></svg>',
   download: '<svg class="i"><use href="#i-download"/></svg>',

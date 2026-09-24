@@ -283,9 +283,12 @@ export function openIntelPopover() {
   const box = $('popover');
   const idx = intelIndex(S.options && S.options.effort);
   const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';
-  box.innerHTML = '<div class="intel-title">Intelligence</div>' +
+  box.innerHTML = '<div class="intel-head">' + INTEL[idx].name + '<svg class="i"><use href="#i-chevron"/></svg></div>' +
     '<div class="reason" id="reason">' +
-    '<div class="reason-track" id="reason-track"><div class="reason-rail"><div class="reason-fill" id="reason-fill"></div></div>' +
+    '<div class="reason-track" id="reason-track">' +
+    '<div class="reason-rail"><div class="reason-fill" id="reason-fill"></div></div>' +
+    '<div class="reason-dots" id="reason-dots"></div>' +
+    '<svg class="reason-lock i"><use href="#i-lock"/></svg>' +
     '<div class="reason-thumb" id="reason-thumb"></div></div>' +
     '<div class="reason-labels" id="reason-labels">' + INTEL.map((x, i) =>
       '<span class="' + (i === idx ? 'on' : '') + '" data-i="' + i + '">' + x.name + '</span>').join('') + '</div>' +
@@ -297,18 +300,27 @@ export function openIntelPopover() {
   box.classList.add('on');   // 先可见，量宽度才算得准
   const posOf = (i) => {
     const r = track.getBoundingClientRect();
-    const pad = 11;
+    const pad = 12;
     return pad + (r.width - pad * 2) * (i / (INTEL.length - 1));
   };
   const paint = (i) => {
     const x = posOf(i);
     $('reason-thumb').style.left = x + 'px';
-    $('reason-fill').style.width = Math.max(0, x - 11) + 'px';
+    $('reason-fill').style.width = Math.max(0, x - 12) + 'px';
     $('reason-labels').querySelectorAll('span').forEach((n, k) => n.classList.toggle('on', k === i));
+    const head = document.querySelector('.intel-head');
+    if (head) head.firstChild.textContent = INTEL[i].name;
+    const dots = $('reason-dots');
+    if (dots) {
+      dots.innerHTML = INTEL.map((_, k) => {
+        const dx = posOf(k);
+        return '<div class="reason-dot' + (dx <= x + 0.5 ? ' on' : '') + '" style="left:' + dx + 'px"></div>';
+      }).join('');
+    }
   };
   const idxFromX = (clientX) => {
     const r = track.getBoundingClientRect();
-    const pad = 11;
+    const pad = 12;
     const rel = Math.min(Math.max(clientX - r.left, pad), r.width - pad);
     return Math.max(0, Math.min(INTEL.length - 1, Math.round((rel - pad) / ((r.width - pad * 2) / (INTEL.length - 1)))));
   };

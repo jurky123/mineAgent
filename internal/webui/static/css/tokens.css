@@ -29,10 +29,11 @@
   --send-off-fg: #b0b0b0;
 
   /* 交互（蓝） */
-  --interactive: #2f6fed;
-  --interactive-soft: rgba(47, 111, 237, .10);
-  --interactive-border: rgba(47, 111, 237, .32);
-  --link: #2f6fed;
+  --interactive: #0285ff;
+  --interactive-soft: rgba(2, 133, 255, .10);
+  --interactive-border: rgba(2, 133, 255, .32);
+  --link: #0285ff;
+  --reason-track: #f3f3f3;
   --accent: var(--interactive);
   --accent-contrast: #ffffff;
 
@@ -68,10 +69,11 @@ html[data-theme="dark"] {
   --code-inline: #2f2f2f;
   --send-off-bg: #2a2a2a;
   --send-off-fg: #7a7a7a;
-  --interactive: #6f9bff;
-  --interactive-soft: rgba(111, 155, 255, .16);
-  --interactive-border: rgba(111, 155, 255, .38);
-  --link: #8ab4ff;
+  --interactive: #4da3ff;
+  --interactive-soft: rgba(77, 163, 255, .16);
+  --interactive-border: rgba(77, 163, 255, .38);
+  --link: #7cb8ff;
+  --reason-track: #2f2f2f;
   --accent: var(--interactive);
   --accent-contrast: #0d0d0d;
   --shadow-popover: 0 8px 28px rgba(0, 0, 0, .5);

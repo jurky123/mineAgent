@@ -20,6 +20,7 @@
 .tool-btn:hover { background: var(--surface-hover); color: var(--text); }
 .tool-btn .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-btn .i { width: 15px; height: 15px; }
+.tool-btn .i.chev-right { transform: rotate(-90deg); }
 .send {
   display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: 0; border-radius: 50%; background: var(--send-off-bg); color: var(--send-off-fg); padding: 0;
@@ -55,7 +56,11 @@
 #popover { right: 0; bottom: calc(100% + 10px); width: 380px; padding: 0; }
 .po-title { font-size: 11.5px; color: var(--text-3); padding: 6px 10px 4px; }
 /* Intelligence 面板（对齐 GPT：宽面板/粗滑轨/大圆钮/通栏分隔线） */
-.intel-title { text-align: center; font-size: 13px; color: var(--text-3); padding: 14px 0 12px; }
+.intel-head {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  font-size: 15px; font-weight: 500; color: var(--text); padding: 14px 0 12px;
+}
+.intel-head .i { color: var(--text-3); width: 15px; height: 15px; transform: rotate(-90deg); }
 .intel-sep { height: 1px; background: var(--border); margin: 4px 18px 4px; }
 .intel-model {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 18px;
@@ -89,26 +94,37 @@
 
 /* Intelligence：蓝白滑杆（放在 picker 弹层里） */
 .reason { padding: 0 18px 14px; user-select: none; touch-action: none; }
-.reason-track { position: relative; height: 28px; cursor: pointer; }
+.reason-track { position: relative; height: 34px; cursor: pointer; }
 .reason-rail {
-  position: absolute; left: 11px; right: 11px; top: 50%; height: 8px; border-radius: 999px;
-  background: #e8e8e8; transform: translateY(-50%);
+  position: absolute; left: 12px; right: 12px; top: 50%; height: 24px; border-radius: 999px;
+  background: var(--reason-track); transform: translateY(-50%); overflow: hidden;
 }
-html[data-theme="dark"] .reason-rail { background: #3a3a3a; }
 .reason-fill {
-  position: absolute; inset: 0 auto 0 0; width: 11px; border-radius: 999px;
+  position: absolute; inset: 0 auto 0 0; width: 12px; border-radius: 999px;
   background: var(--interactive); transition: width .18s cubic-bezier(.2,.8,.2,1);
 }
+.reason-dots { position: absolute; inset: 0; }
+.reason-dot {
+  position: absolute; top: 50%; width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(0,0,0,.10); transform: translate(-50%,-50%); transition: background .15s;
+}
+.reason-dot.on { background: rgba(255,255,255,.62); }
+html[data-theme="dark"] .reason-dot { background: rgba(255,255,255,.16); }
+html[data-theme="dark"] .reason-dot.on { background: rgba(255,255,255,.5); }
 .reason-thumb {
-  position: absolute; top: 50%; left: 11px; width: 22px; height: 22px; border-radius: 50%;
+  position: absolute; top: 50%; left: 12px; width: 28px; height: 28px; border-radius: 50%;
   transform: translate(-50%,-50%); background: #fff; cursor: grab;
   box-shadow: 0 1px 3px rgba(0,0,0,.22), 0 0 0 .5px rgba(0,0,0,.06);
   transition: left .18s cubic-bezier(.2,.8,.2,1), transform .12s, box-shadow .12s;
 }
 .reason-thumb:hover { box-shadow: 0 2px 6px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.06); }
-.reason.dragging .reason-thumb { transition: transform .12s, box-shadow .12s; transform: translate(-50%,-50%) scale(1.14); cursor: grabbing; }
+.reason.dragging .reason-thumb { transition: transform .12s, box-shadow .12s; transform: translate(-50%,-50%) scale(1.08); cursor: grabbing; }
 .reason.dragging .reason-fill { transition: none; }
-.reason-labels { display: flex; justify-content: space-between; padding: 12px 11px 0; }
+.reason-lock {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  width: 15px; height: 15px; color: var(--text-3); opacity: .85; pointer-events: none;
+}
+.reason-labels { display: flex; justify-content: space-between; padding: 12px 12px 0; }
 .reason-labels span {
   flex: 1; text-align: center; font-size: 13px; color: var(--text-3); cursor: pointer;
   transition: color .15s; white-space: nowrap;

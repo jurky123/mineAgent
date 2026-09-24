@@ -218,6 +218,8 @@ function intelIndex(effort) {
   const i = INTEL.findIndex((x) => x.v === (effort || ''));
   return i < 0 ? 0 : i;
 }
+let intelPaint = null;
+
 export function renderToolbar() {
   if (!S.options) return;
   $('intellabel').textContent = INTEL[intelIndex(S.options.effort)].name;
@@ -284,11 +286,11 @@ export function openIntelPopover() {
   const idx = intelIndex(S.options && S.options.effort);
   const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';
   box.innerHTML = '<div class="intel-head">' + INTEL[idx].name + '<svg class="i"><use href="#i-chevron"/></svg></div>' +
-    '<div class="reason" id="reason">' +
+    '<div class="reason init" id="reason">' +
     '<div class="reason-track" id="reason-track">' +
-    '<div class="reason-rail"><div class="reason-fill" id="reason-fill"></div></div>' +
+    '<div class="reason-rail"><div class="reason-fill" id="reason-fill"></div>' +
+    '<div class="reason-sparkles" id="reason-sparkles"></div></div>' +
     '<div class="reason-dots" id="reason-dots"></div>' +
-    '<svg class="reason-lock i"><use href="#i-lock"/></svg>' +
     '<div class="reason-thumb" id="reason-thumb"></div></div>' +
     '<div class="reason-labels" id="reason-labels">' + INTEL.map((x, i) =>
       '<span class="' + (i === idx ? 'on' : '') + '" data-i="' + i + '">' + x.name + '</span>').join('') + '</div>' +
@@ -317,7 +319,33 @@ export function openIntelPopover() {
         return '<div class="reason-dot' + (dx <= x + 0.5 ? ' on' : '') + '" style="left:' + dx + 'px"></div>';
       }).join('');
     }
+    const isMax = i === INTEL.length - 1;
+    $('reason').classList.toggle('max', isMax);
+    if (isMax) renderSparkles();
+    intelPaint = paint;   // 供 setPrefs 原地重绘（避免整块重建导致从最左滑过来）
   };
+
+  // 白色粒子：确定性伪随机，尺寸/位置/漂移/时长各不同
+  function renderSparkles() {
+    const box = $('reason-sparkles');
+    if (!box || box.children.length) return;
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    let html = '';
+    for (let k = 0; k < 18; k++) {
+      const size = 1.5 + rnd() * 3.5;
+      html += '<span class="spark" style="' +
+        'left:' + (4 + rnd() * 92).toFixed(1) + '%;' +
+        'top:' + (18 + rnd() * 64).toFixed(1) + '%;' +
+        'width:' + size.toFixed(1) + 'px;height:' + size.toFixed(1) + 'px;' +
+        '--dx:' + ((rnd() - 0.5) * 14).toFixed(1) + 'px;' +
+        '--dy:' + ((rnd() - 0.5) * 10).toFixed(1) + 'px;' +
+        '--dur:' + (1.8 + rnd() * 1.8).toFixed(2) + 's;' +
+        '--delay:' + (-rnd() * 2).toFixed(2) + 's;' +
+        'opacity:' + (0.4 + rnd() * 0.5).toFixed(2) + ';"></span>';
+    }
+    box.innerHTML = html;
+  }
   const idxFromX = (clientX) => {
     const r = track.getBoundingClientRect();
     const pad = 12;
@@ -325,6 +353,7 @@ export function openIntelPopover() {
     return Math.max(0, Math.min(INTEL.length - 1, Math.round((rel - pad) / ((r.width - pad * 2) / (INTEL.length - 1)))));
   };
   paint(idx);
+  requestAnimationFrame(() => $('reason').classList.remove('init'));
   let dragging = false;
   track.addEventListener('pointerdown', (e) => {
     dragging = true; $('reason').classList.add('dragging');
@@ -356,10 +385,12 @@ async function setPrefs(patch) {
     const r = await apiPost('/api/prefs', patch);
     S.options.model = r.model; S.options.effort = r.effort;
     renderToolbar();
-    if ($('popover').classList.contains('on')) {
-      if ('model' in patch) openModelPopover(true); else openIntelPopover();
+    if ('model' in patch) {
+      if ($('popover').classList.contains('on')) openModelPopover(true);
+      toast('模型：' + (r.model || '默认'), 'ok');
+    } else if (intelPaint && $('reason-track')) {
+      intelPaint(intelIndex(r.effort));   // 原地重绘：平滑吸附，不重建 DOM
     }
-    if ('model' in patch) toast('模型：' + (r.model || '默认'), 'ok');
   } catch (e) { showError(e.message); }
 }
 

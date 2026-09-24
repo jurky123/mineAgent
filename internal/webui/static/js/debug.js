@@ -47,6 +47,8 @@ export function startDebug() {
     effort: 'medium',
     admin: true
   };
+  const eff = q.get('effort');
+  if (eff !== null) S.options.effort = eff;   // '' | low | medium | high
   S.conversations = [
     { conv: 'demo', title: 'CUDA kernel 优化', updatedAt: Date.now() },
     { conv: 'b', title: 'MineAudio 架构设计', updatedAt: Date.now() - 3600e3 * 5 },

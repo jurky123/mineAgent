@@ -120,10 +120,26 @@ html[data-theme="dark"] .reason-dot.on { background: rgba(255,255,255,.5); }
 .reason-thumb:hover { box-shadow: 0 2px 6px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.06); }
 .reason.dragging .reason-thumb { transition: transform .12s, box-shadow .12s; transform: translate(-50%,-50%) scale(1.08); cursor: grabbing; }
 .reason.dragging .reason-fill { transition: none; }
-.reason-lock {
-  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
-  width: 15px; height: 15px; color: var(--text-3); opacity: .85; pointer-events: none;
+/* Extra High：紫粉渐变 + 白色粒子（随时间轻动） */
+.reason-sparkles { position: absolute; inset: 0; overflow: hidden; border-radius: 999px; display: none; pointer-events: none; }
+.reason.max .reason-sparkles { display: block; }
+.reason.max .reason-fill {
+  background: linear-gradient(90deg, #4c1d95 0%, #7c3aed 30%, #c084fc 56%, #e879f9 78%, #a21caf 100%);
 }
+.reason.max .reason-thumb { box-shadow: 0 0 0 4px rgba(217,70,239,.22), 0 1px 3px rgba(0,0,0,.22); }
+.spark {
+  position: absolute; border-radius: 50%; background: #fff; opacity: .7;
+  animation: spark var(--dur, 2.6s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes spark {
+  from { transform: translate(0, 0) scale(.65); opacity: .3; }
+  to { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(1.1); opacity: .95; }
+}
+@media (prefers-reduced-motion: reduce) { .spark { animation: none; } }
+
+/* 打开弹层时不要从最左滑过来 */
+.reason.init .reason-thumb, .reason.init .reason-fill { transition: none !important; }
 .reason-labels { display: flex; justify-content: space-between; padding: 12px 12px 0; }
 .reason-labels span {
   flex: 1; text-align: center; font-size: 13px; color: var(--text-3); cursor: pointer;

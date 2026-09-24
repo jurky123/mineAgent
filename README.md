@@ -97,3 +97,38 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 配置项见 `config.example.json`：`qq.apiBase`（默认正式环境）、
 `qq.minIntervalMs`（同会话回复最小间隔，防刷屏）、
 `qq.maxPendingPerUser`（单用户待审批上限）、`workspace.*`（沙箱根目录与限制）。
+
+## 企业微信接入（自建应用，个人可注册）
+
+个人微信没有官方 bot、Hook 个人号有封号风险，所以微信侧只走
+**企业微信自建应用**：个人可注册（无需企业认证），微信扫码关注"微信插件"后
+可以直接在个人微信里收发消息，无封号风险。
+
+1. 到 [企业微信](https://work.weixin.qq.com/) 注册（个人选"企业"类型，企业信息可不认证），
+   管理员用真实微信扫码
+2. 管理后台 →「我的企业」记企业 ID（`corpId`）
+3. 「应用管理」→ 创建自建应用 → 记 `AgentId`、点"查看"拿 `Secret`
+4. 应用详情 →「接收消息」→「设置 API 接收」：
+   - URL 填 `http://<本机公网IP>:80/wecom`（微信只允许 80/443 端口），
+     本机公网 IP `43.160.211.42`，记得腾讯云控制台放行 TCP 80；
+   - 随机获取 `Token` 和 `EncodingAESKey`（保存时会先请求你的 URL 验证，
+     所以要先填好配置把 `mineagent` 跑起来再点保存）
+5. `config.json` 填 `wecom.corpId` / `agentId` / `secret` / `token` / `encodingAesKey`，
+   重启 `mineagent`；日志出现 `wecom channel enabled` + `wecom callback listening`
+6. 应用详情 →「企业可信 IP」把本机公网 IP 配进去（否则发消息会报错）
+7. 自己先发一条消息，日志里 `wecom trigger ... author=<userid>` 拿到 userid，
+   填进 `wecom.adminUserIds` 重启（之后才能用 workspace）
+8. 「我的企业」→「微信插件」→ 设置 Logo 并分享二维码，个人微信扫码关注后，
+   在微信里就能直接和应用对话；单聊/应用群聊都支持
+
+配置项：`wecom.port`（回调端口，默认 80）、`wecom.minIntervalMs`、
+`wecom.maxPendingPerUser`、`wecom.adminUserIds`。企微回复走主动消息接口
+（应用消息有频控：单成员 30 条/分钟，`minIntervalMs` 默认 1.5s 防抖），
+不受公众号"48 小时客服消息窗口"限制。
+
+## 微信的其它路线（未采用，备查）
+
+- **公众号（订阅号/服务号）**：注册免费但只能单聊（无群聊）；回复受"48 小时内
+  用户互动才能发客服消息"限制，且需要 80/443 回调。适合对外做服务，不适合自己玩。
+- **个人号 Hook（WeChatFerry/wxauto）**：能进真实微信群，但必须挂 Windows 微信
+  客户端+小号，封号率高（社区统计 WCF 用户几乎无一幸免），不做。

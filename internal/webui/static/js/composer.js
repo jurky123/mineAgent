@@ -204,7 +204,7 @@ export function closePopovers(except) {
 document.addEventListener('click', (e) => {
   if (e.target.closest('.popover') || e.target.closest('.tool-btn')) return;
   closePopovers();
-});
+}, true);   // 捕获阶段：处理器重建 DOM 前就判断好，避免"点了却被自己关掉"
 
 // ---------- Intelligence（思考强度 + 模型 合一） ----------
 // UI 四档映射到后端 reasoning_effort：Instant='' / Medium='low' / High='medium' / Extra High='high'。
@@ -256,13 +256,13 @@ export function openModelPopover(back) {
   box.innerHTML = (back ? '<button class="po-item po-back" id="po-back"><svg class="i"><use href="#i-chevron"/></svg>返回</button>' : '') +
     '<div class="po-title">模型</div>' +
     '<input class="po-filter" id="po-filter" placeholder="筛选模型…"><div class="po-scroll" id="po-list"></div>';
-  if (back) $('po-back').onclick = () => openIntelPopover();
+  if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
   const list = $('po-list');
   const mk = (value, label, hint) => {
     const b = document.createElement('button');
     b.className = 'po-item' + (cur === value ? ' on' : '');
     b.innerHTML = '<span>' + esc(label) + (hint ? ' <span class="po-desc">' + esc(hint) + '</span>' : '') + '</span><span class="check">' + ICON.check + '</span>';
-    b.onclick = () => setPrefs({ model: value });
+    b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: value }); };
     list.appendChild(b);
   };
   const build = (f) => {
@@ -288,7 +288,8 @@ export function openIntelPopover() {
   box.innerHTML = '<div class="intel-head">' + INTEL[idx].name + '<svg class="i"><use href="#i-chevron"/></svg></div>' +
     '<div class="reason init" id="reason">' +
     '<div class="reason-track" id="reason-track">' +
-    '<div class="reason-rail"><div class="reason-fill" id="reason-fill"></div>' +
+    '<div class="reason-rail"><div class="reason-fill" id="reason-fill">' +
+    '<div class="fill-aurora"></div></div>' +
     '<div class="reason-sparkles" id="reason-sparkles"></div></div>' +
     '<div class="reason-dots" id="reason-dots"></div>' +
     '<div class="reason-thumb" id="reason-thumb"></div></div>' +
@@ -307,24 +308,29 @@ export function openIntelPopover() {
   };
   const paint = (i) => {
     const x = posOf(i);
-    $('reason-thumb').style.left = x + 'px';
+    // transform 位移（GPU），比 left/width 逐帧改布局平滑
+    $('reason-thumb').style.transform = 'translate3d(' + x + 'px, -50%, 0)';
     $('reason-fill').style.width = Math.max(0, x - 12) + 'px';
     $('reason-labels').querySelectorAll('span').forEach((n, k) => n.classList.toggle('on', k === i));
     const head = document.querySelector('.intel-head');
     if (head) head.firstChild.textContent = INTEL[i].name;
+    // 刻度点：只建一次，之后只更新位置/选中态（拖动时不再重建 DOM）
     const dots = $('reason-dots');
     if (dots) {
-      dots.innerHTML = INTEL.map((_, k) => {
+      if (dots.children.length !== INTEL.length) {
+        dots.innerHTML = INTEL.map(() => '<div class="reason-dot"></div>').join('');
+      }
+      Array.prototype.forEach.call(dots.children, (d, k) => {
         const dx = posOf(k);
-        return '<div class="reason-dot' + (dx <= x + 0.5 ? ' on' : '') + '" style="left:' + dx + 'px"></div>';
-      }).join('');
+        d.style.left = dx + 'px';
+        d.classList.toggle('on', dx <= x + 0.5);
+      });
     }
-    const isMax = i === INTEL.length - 1;
-    $('reason').classList.toggle('max', isMax);
-    if (isMax) renderSparkles();
+    $('reason').classList.toggle('max', i === INTEL.length - 1);
     intelPaint = paint;   // 供 setPrefs 原地重绘（避免整块重建导致从最左滑过来）
   };
 
+  renderSparkles();   // 常驻渲染，靠 .max 透明度淡入
   // 白色粒子：确定性伪随机，尺寸/位置/漂移/时长各不同
   function renderSparkles() {
     const box = $('reason-sparkles');
@@ -377,7 +383,7 @@ export function openIntelPopover() {
       setPrefs({ effort: INTEL[i].v });
     };
   });
-  $('po-model').onclick = () => openModelPopover(true);
+  $('po-model').onclick = (e) => { e.stopPropagation(); openModelPopover(true); };
 }
 
 async function setPrefs(patch) {

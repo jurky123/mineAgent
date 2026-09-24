@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -162,7 +164,7 @@ func main() {
 			wrapWeComTools(wecomBaseTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
 		go func() {
-			if err := wecomCh.Start(); err != nil {
+			if err := wecomCh.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("wecom callback stopped", "err", err)
 			}
 		}()
@@ -297,6 +299,7 @@ var minecraftMessageTypes = map[string]bool{
 //   - WithQQAdmin：union/user/member 任一命中 adminOpenIDs 即管理员。
 //   - WithQQIdentity：openid 候选列表，供 qq_bind/qq_unbind 用。
 //   - WithMCRequester：绑定的 MC 名，供 Gateway.Call 发给插件（requester 字段）。
+//
 // qq_markdown/qq_image 的发送经 sender/sessions 回调走 session fanout。
 func wrapQQTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store,
 	sessions func(ctx context.Context, sessionKey string) (*session.Session, error),

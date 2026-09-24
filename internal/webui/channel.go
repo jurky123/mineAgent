@@ -288,15 +288,27 @@ func (c *Channel) session(key string) (*session.Session, error) {
 }
 
 // HandleUserMessage 是一条来自网页的消息入口：系统命令直回 /
-// 限流 / 入库 / 触发 agent。conv 是会话短 id（空 = 默认会话），files 是本次上传的文件。
-func (c *Channel) HandleUserMessage(ctx context.Context, name, conv, text string, files []UploadedFile) error {
-	sessionKey := webSessionKey(name, conv)
+// 限流 / 入库 / 触发 agent。
+//
+// conv 语义（对应用户端的 Draft 状态机）：
+//   - nil  = 新会话草稿：这里才真正创建会话行（第一条消息原子创建），返回新 id；
+//   - ""   = 旧版默认会话（首次发送时补落会话行）；
+//   - "id" = 已存在会话，不存在返回 ErrConvNotFound。
+//
+// files 是本次上传的文件。返回该消息所属的会话 id。
+func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *string, text string, files []UploadedFile) (string, error) {
+	convID := ""
+	isNew := conv == nil
+	if !isNew {
+		convID = *conv
+	}
+	sessionKey := webSessionKey(name, convID)
 	target := "c2c:" + name
 	nowMs := time.Now().UnixMilli()
 
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
-		return fmt.Errorf("消息为空")
+		return convID, fmt.Errorf("消息为空")
 	}
 
 	// 限流：同一会话两次请求至少间隔 minInterval，防手抖刷屏烧 token。
@@ -304,22 +316,33 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, conv, text string
 	last := c.lastSend[sessionKey]
 	if time.Since(last) < time.Duration(c.cfg.MinIntervalMS)*time.Millisecond {
 		c.mu.Unlock()
-		return fmt.Errorf("慢一点，消息太密了")
+		return convID, fmt.Errorf("慢一点，消息太密了")
 	}
 	c.mu.Unlock()
 
-	// 会话必须存在（默认会话首次使用自动建行）。
-	if conv == "" {
-		_ = c.store.UpsertConversation(ctx, name, conv, "", nowMs)
-	} else if existing, err := c.store.Conversation(ctx, name, conv); err != nil {
-		return err
+	// 会话落库：新会话在这里创建（第一条消息才产生记录）；旧默认会话补行；已有会话校验存在。
+	if isNew {
+		id, err := randomConv()
+		if err != nil {
+			return "", fmt.Errorf("生成会话失败")
+		}
+		convID = id
+		sessionKey = webSessionKey(name, convID)
+		if err := c.store.UpsertConversation(ctx, name, convID, "", nowMs); err != nil {
+			return "", err
+		}
+		c.log.Info("web conversation created", "name", name, "conv", convID)
+	} else if convID == "" {
+		_ = c.store.UpsertConversation(ctx, name, "", "", nowMs)
+	} else if existing, err := c.store.Conversation(ctx, name, convID); err != nil {
+		return "", err
 	} else if existing == nil {
-		return ErrConvNotFound
+		return "", ErrConvNotFound
 	}
 
 	sess, err := c.session(sessionKey)
 	if err != nil {
-		return err
+		return convID, err
 	}
 
 	// 系统命令硬编码直回（与其它通道一致），不进 agent 队列。
@@ -338,7 +361,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, conv, text string
 				Requester: "web:" + name,
 			}, cmd, arg)
 			c.log.Info("web syscmd", "session", sessionKey, "cmd", cmd, "arg", arg)
-			return sess.Reply(ctx, reply, target)
+			return convID, sess.Reply(ctx, reply, target)
 		}
 	}
 
@@ -360,12 +383,12 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, conv, text string
 		Target:     target,
 	})
 	if err != nil {
-		return err
+		return convID, err
 	}
 	// 首条消息自动命名 + 刷新会话时间；多标签页同步广播（带 conv）。
-	_ = c.store.SetConversationTitleIfEmpty(ctx, name, conv, conversationTitle(text, files), nowMs)
-	_ = c.store.UpsertConversation(ctx, name, conv, "", nowMs)
-	c.publish(name, conv, ToWire(stored))
+	_ = c.store.SetConversationTitleIfEmpty(ctx, name, convID, conversationTitle(text, files), nowMs)
+	_ = c.store.UpsertConversation(ctx, name, convID, "", nowMs)
+	c.publish(name, convID, ToWire(stored))
 
 	now := time.Now().UnixMilli()
 	_ = c.store.UpsertIdentity(ctx, "web", name, name, now)
@@ -399,7 +422,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, conv, text string
 	c.mu.Lock()
 	c.lastSend[sessionKey] = time.Now()
 	c.mu.Unlock()
-	return nil
+	return convID, nil
 }
 
 // loadTokens / saveTokens：登录令牌落盘（0600），支持进程重启后浏览器不掉线。

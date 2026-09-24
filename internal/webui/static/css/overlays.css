@@ -36,14 +36,6 @@
 .ap-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 16px; }
 .ap-row .ap-label { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
 .ap-row .seg { margin: 0; }
-.swatches { display: flex; gap: 10px; }
-.swatch {
-  width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; padding: 0;
-  box-shadow: inset 0 0 0 1px rgba(128,128,128,.25);
-}
-.swatch.on { border-color: var(--text); }
-.swatch.default { background: linear-gradient(135deg, #0d0d0d 50%, #fff 50%); }
-
 /* ---------- 图片查看器 ---------- */
 #viewer { position: fixed; inset: 0; background: rgba(10,10,12,.95); display: none; flex-direction: column; z-index: 40; }
 #viewer.on { display: flex; animation: fadein .14s ease; }

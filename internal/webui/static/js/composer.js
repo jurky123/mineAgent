@@ -1,9 +1,10 @@
 // Composer：输入 / 发送 / 附件上传压缩 / 斜杠命令 / ＋菜单 / 模型与思考强度
 
 import { $, esc, fmtSize, bus, ICON, showError, toast } from './ui.js';
-import { S } from './state.js';
+import { S, setConv } from './state.js';
 import { api, apiPost } from './api.js';
-import { setTyping } from './chat.js';
+import { setTyping, syncAfter } from './chat.js';
+import { refresh as refreshConversations } from './conversations.js';
 import { openViewer } from './viewer.js';
 
 // ---------- 输入 ----------
@@ -28,13 +29,22 @@ export async function sendMsg() {
   if (S.pending.some((p) => !p.done && !p.err)) { showError('还有文件在上传，稍等'); return; }
   $('send').disabled = true;
   try {
-    await apiPost('/api/send', { conv: S.conv, text: text, files: files });
+    const payload = { text: text, files: files };
+    if (S.conv !== null) payload.conv = S.conv; // null = 草稿，由服务端新建
+    const wasDraft = S.conv === null;
+    const res = await apiPost('/api/send', payload);
+    if (wasDraft && res && res.conv) {
+      // 第一条消息诞生了新会话：回填并补拉历史（SSE 那条消息可能早于本响应到达）
+      setConv(res.conv);
+      await refreshConversations();
+      await syncAfter();
+    }
     $('text').value = ''; autoGrow();
     S.pending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
     S.pending = []; renderPending();
     setTyping(true);
     setTimeout(() => { if (S.waiting) setTyping(false); }, 180000);
-    bus.emit('conversations-changed');
+    if (!wasDraft) bus.emit('conversations-changed');
   } catch (e) {
     showError(e.message);
   } finally {
@@ -196,12 +206,21 @@ document.addEventListener('click', (e) => {
   closePopovers();
 });
 
-// ---------- 工具条（模型 / 思考） ----------
+// ---------- Intelligence（思考强度 + 模型 合一） ----------
+// UI 四档映射到后端 reasoning_effort：Instant='' / Medium='low' / High='medium' / Extra High='high'。
+const INTEL = [
+  { v: '', name: 'Instant' },
+  { v: 'low', name: 'Medium' },
+  { v: 'medium', name: 'High' },
+  { v: 'high', name: 'Extra High' }
+];
+function intelIndex(effort) {
+  const i = INTEL.findIndex((x) => x.v === (effort || ''));
+  return i < 0 ? 0 : i;
+}
 export function renderToolbar() {
   if (!S.options) return;
-  $('modellabel').textContent = S.options.model || S.options.defaultModel || '模型';
-  const eff = S.options.effort;
-  $('effortlabel').textContent = '思考 · ' + (eff ? ({ low: '低', medium: '中', high: '高' }[eff] || eff) : '自动');
+  $('intellabel').textContent = INTEL[intelIndex(S.options.effort)].name;
 }
 
 function renderPlusMenu() {
@@ -229,11 +248,13 @@ function renderPlusMenu() {
   });
 }
 
-function openModelPopover() {
+function openModelPopover(back) {
   const box = $('popover');
   const cur = S.options ? S.options.model || '' : '';
-  box.innerHTML = '<div class="po-title">模型</div>' +
+  box.innerHTML = (back ? '<button class="po-item po-back" id="po-back"><svg class="i"><use href="#i-chevron"/></svg>返回</button>' : '') +
+    '<div class="po-title">模型</div>' +
     '<input class="po-filter" id="po-filter" placeholder="筛选模型…"><div class="po-scroll" id="po-list"></div>';
+  if (back) $('po-back').onclick = () => openIntelPopover();
   const list = $('po-list');
   const mk = (value, label, hint) => {
     const b = document.createElement('button');
@@ -258,47 +279,62 @@ function openModelPopover() {
   box.classList.add('on');
 }
 
-function openEffortPopover() {
+function openIntelPopover() {
   const box = $('popover');
-  const EFFORTS = ['', 'low', 'medium', 'high'];
-  const LABELS = { '': '自动', low: '低', medium: '中', high: '高' };
-  const cur = (S.options && S.options.effort) || '';
-  box.innerHTML = '<div class="po-title">思考强度</div>' +
-    '<div class="seg" id="effort-seg" style="--segs:4"><div class="seg-thumb" id="seg-thumb"></div>' +
-    EFFORTS.map((v) => '<button class="seg-item" data-effort="' + v + '">' + LABELS[v] + '</button>').join('') +
-    '</div><div class="po-desc" style="padding:0 10px 6px">越高越聪明、也越慢；支持拖动或点击</div>';
-  const seg = $('effort-seg');
-  const idxOf = (v) => Math.max(0, EFFORTS.indexOf(v || ''));
-  const paint = (idx) => {
-    $('seg-thumb').style.transform = 'translateX(' + (idx * 100) + '%)';
-    seg.querySelectorAll('.seg-item').forEach((b, i) => b.classList.toggle('on', i === idx));
+  const idx = intelIndex(S.options && S.options.effort);
+  const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';
+  box.innerHTML = '<div class="po-title">Intelligence</div>' +
+    '<div class="reason" id="reason">' +
+    '<div class="reason-track" id="reason-track"><div class="reason-rail"><div class="reason-fill" id="reason-fill"></div></div>' +
+    '<div class="reason-thumb" id="reason-thumb"></div></div>' +
+    '<div class="reason-labels" id="reason-labels">' + INTEL.map((x, i) =>
+      '<span class="' + (i === idx ? 'on' : '') + '" data-i="' + i + '">' + x.name + '</span>').join('') + '</div>' +
+    '</div>' +
+    '<div class="po-sep"></div>' +
+    '<button class="po-item" id="po-model"><span>Model</span><span class="po-desc" style="margin-left:auto">' + esc(modelName) + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
+  const track = $('reason-track');
+  const posOf = (i) => {
+    const r = track.getBoundingClientRect();
+    const pad = 11;
+    return pad + (r.width - pad * 2) * (i / (INTEL.length - 1));
   };
-  paint(idxOf(cur));
+  const paint = (i) => {
+    const x = posOf(i);
+    $('reason-thumb').style.left = x + 'px';
+    $('reason-fill').style.width = Math.max(0, x - 11) + 'px';
+    $('reason-labels').querySelectorAll('span').forEach((n, k) => n.classList.toggle('on', k === i));
+  };
+  const idxFromX = (clientX) => {
+    const r = track.getBoundingClientRect();
+    const pad = 11;
+    const rel = Math.min(Math.max(clientX - r.left, pad), r.width - pad);
+    return Math.max(0, Math.min(INTEL.length - 1, Math.round((rel - pad) / ((r.width - pad * 2) / (INTEL.length - 1)))));
+  };
+  paint(idx);
   let dragging = false;
-  const frac = (x) => {
-    const r = seg.getBoundingClientRect();
-    const pad = 3, w = (r.width - pad * 2) / EFFORTS.length;
-    return Math.max(0, Math.min(EFFORTS.length - 1, (x - r.left - pad) / w - 0.5));
-  };
-  seg.addEventListener('pointerdown', (e) => {
-    dragging = true; seg.classList.add('dragging');
-    try { seg.setPointerCapture(e.pointerId); } catch (err) {}
-    paint(Math.round(frac(e.clientX)));
+  track.addEventListener('pointerdown', (e) => {
+    dragging = true; $('reason').classList.add('dragging');
+    try { track.setPointerCapture(e.pointerId); } catch (err) {}
+    paint(idxFromX(e.clientX));
   });
-  seg.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    $('seg-thumb').style.transform = 'translateX(' + (frac(e.clientX) * 100) + '%)';
-    paint(Math.round(frac(e.clientX)));
-  });
+  track.addEventListener('pointermove', (e) => { if (dragging) paint(idxFromX(e.clientX)); });
   const stop = (e) => {
     if (!dragging) return;
-    dragging = false; seg.classList.remove('dragging');
-    const v = EFFORTS[Math.round(frac(e.clientX))];
-    if (v === cur) { paint(idxOf(cur)); return; }
+    dragging = false; $('reason').classList.remove('dragging');
+    const v = INTEL[idxFromX(e.clientX)].v;
+    if (v === ((S.options && S.options.effort) || '')) { paint(intelIndex(v)); return; }
     setPrefs({ effort: v });
   };
-  seg.addEventListener('pointerup', stop);
-  seg.addEventListener('pointercancel', stop);
+  track.addEventListener('pointerup', stop);
+  track.addEventListener('pointercancel', stop);
+  $('reason-labels').querySelectorAll('span').forEach((n) => {
+    n.onclick = () => {
+      const i = +n.dataset.i;
+      if (INTEL[i].v === ((S.options && S.options.effort) || '')) return;
+      setPrefs({ effort: INTEL[i].v });
+    };
+  });
+  $('po-model').onclick = () => openModelPopover(true);
   closePopovers('popover');
   box.classList.add('on');
 }
@@ -309,12 +345,9 @@ async function setPrefs(patch) {
     S.options.model = r.model; S.options.effort = r.effort;
     renderToolbar();
     if ($('popover').classList.contains('on')) {
-      if ('model' in patch) openModelPopover(); else openEffortPopover();
+      if ('model' in patch) openModelPopover(true); else openIntelPopover();
     }
-    toast('已切换 · ' + [
-      r.model || '默认模型',
-      '思考 ' + (r.effort ? ({ low: '低', medium: '中', high: '高' }[r.effort] || r.effort) : '自动')
-    ].join(' · '), 'ok');
+    if ('model' in patch) toast('模型：' + (r.model || '默认'), 'ok');
   } catch (e) { showError(e.message); }
 }
 
@@ -322,7 +355,6 @@ export async function loadOptions(force) {
   if (S.options && !force) { renderToolbar(); return S.options; }
   S.options = await api('/api/options');
   renderToolbar();
-  $('nav-ws').hidden = !(S.options.admin || S.admin);
   return S.options;
 }
 
@@ -344,8 +376,7 @@ $('attach').onclick = (e) => {
   if (box.classList.contains('on')) { box.classList.remove('on'); return; }
   renderPlusMenu(); closePopovers('plusmenu'); box.classList.add('on');
 };
-$('modelbtn').onclick = (e) => { e.stopPropagation(); openModelPopover(); };
-$('effortbtn').onclick = (e) => { e.stopPropagation(); openEffortPopover(); };
+$('intelbtn').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
 $('file').onchange = () => { addFiles($('file').files); $('file').value = ''; };
 document.querySelectorAll('.suggests button').forEach((b) => {
   b.onclick = () => { $('text').value = b.dataset.q; autoGrow(); $('text').focus(); };

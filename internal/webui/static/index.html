@@ -65,20 +65,24 @@
     <div class="side-top">
       <div class="brand"><span class="logo-mark">M</span>MineAgent</div>
     </div>
-    <nav class="side-nav">
-      <button class="nav-item" id="newchat"><svg class="i"><use href="#i-plus"/></svg>新会话</button>
-      <button class="nav-item" id="nav-ws" hidden><svg class="i"><use href="#i-workspace"/></svg>Workspace</button>
-      <button class="nav-item" id="nav-theme"><svg class="i"><use href="#i-theme"/></svg>外观</button>
-    </nav>
-    <div class="side-title">历史会话</div>
+    <div class="side-actions">
+      <input id="conv-search" class="side-search" placeholder="搜索聊天">
+      <button class="nav-item" id="newchat"><svg class="i"><use href="#i-plus"/></svg>新聊天</button>
+    </div>
     <div class="conv-list" id="conv-list"></div>
     <div class="side-foot">
-      <div class="userrow">
+      <button class="userbtn" id="userbtn">
         <span class="avatar" id="myavatar">?</span>
         <span class="uname" id="myname"></span>
         <span class="badge" id="myrole"></span>
+        <svg class="i sm"><use href="#i-chevron"/></svg>
+      </button>
+      <div id="accountmenu" class="popover account-menu">
+        <button class="po-item" id="menu-ws"><svg class="i"><use href="#i-workspace"/></svg>Workspace</button>
+        <button class="po-item" id="menu-theme"><svg class="i"><use href="#i-theme"/></svg>外观</button>
+        <div class="po-sep"></div>
+        <button class="po-item" id="menu-logout"><svg class="i"><use href="#i-logout"/></svg>退出登录</button>
       </div>
-      <button class="nav-item" id="logout"><svg class="i"><use href="#i-logout"/></svg>退出登录</button>
     </div>
   </aside>
   <div id="backdrop"></div>
@@ -120,8 +124,7 @@
             <input type="file" id="file" multiple hidden>
             <button class="tool-btn" id="attach" title="添加内容"><svg class="i"><use href="#i-plus"/></svg><span class="label">附件</span></button>
             <div class="spacer"></div>
-            <button class="tool-btn" id="modelbtn" title="切换模型"><span class="label model" id="modellabel">模型</span><svg class="i sm"><use href="#i-chevron"/></svg></button>
-            <button class="tool-btn" id="effortbtn" title="思考强度"><span id="effortlabel">思考</span><svg class="i sm"><use href="#i-chevron"/></svg></button>
+            <button class="tool-btn" id="intelbtn" title="Intelligence / 模型"><span id="intellabel">Medium</span><svg class="i sm"><use href="#i-chevron"/></svg></button>
             <button class="send" id="send" disabled title="发送"><svg class="i"><use href="#i-send"/></svg></button>
           </div>
         </div>
@@ -156,10 +159,6 @@
           <button class="seg-item" data-mode="dark">深色</button>
           <button class="seg-item" data-mode="system">跟随系统</button>
         </div>
-      </div>
-      <div class="ap-row">
-        <div class="ap-label">强调色</div>
-        <div class="swatches" id="accent-swatches"></div>
       </div>
     </div>
   </div>

@@ -399,6 +399,25 @@ func (s *Store) ListConversations(ctx context.Context, account string) ([]Conver
 	return out, rows.Err()
 }
 
+// ConversationPreview 给"旧版单会话"（conv=""，只有 messages 没有会话行）
+// 合成列表项用：第一条玩家消息文本 + 最后一条消息时间。纯读，不写库。
+func (s *Store) ConversationPreview(ctx context.Context, sessionID string) (title string, updatedAt int64, ok bool, err error) {
+	err = s.db.QueryRowContext(ctx,
+		`SELECT text FROM messages WHERE session_id=? AND author_kind='player' ORDER BY id ASC LIMIT 1`,
+		sessionID).Scan(&title)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, err
+	}
+	if err = s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(created_at),0) FROM messages WHERE session_id=?`, sessionID).Scan(&updatedAt); err != nil {
+		return "", 0, false, err
+	}
+	return title, updatedAt, true, nil
+}
+
 func (s *Store) DeleteConversation(ctx context.Context, account, conv string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM web_conversations WHERE account=? AND conv=?`, account, conv)
 	return err

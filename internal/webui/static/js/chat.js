@@ -1,7 +1,7 @@
 // 消息区：渲染 / 历史分页 / SSE / 空状态与 composer 停靠
 
 import { $, esc, fmtSize, fmtTime, bus, ICON, extInfo, showError } from './ui.js';
-import { S, withTok } from './state.js';
+import { S, withTok, convParam } from './state.js';
 import { api } from './api.js';
 import { renderContent } from './markdown.js';
 import { openViewer } from './viewer.js';
@@ -143,8 +143,9 @@ function dockComposer(atBottom, animate) {
 // ---------- 历史 ----------
 export async function loadHistory() {
   clearMessages();
+  if (S.conv === null) return; // 草稿：没有历史
   try {
-    const body = await api('/api/history?conv=' + encodeURIComponent(S.conv));
+    const body = await api('/api/history?conv=' + encodeURIComponent(convParam() || ''));
     for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
     hasMore = !!body.hasMore;
     updateLoadOlder();
@@ -154,8 +155,9 @@ export async function loadHistory() {
 }
 
 export async function syncAfter() {
+  if (S.conv === null) return;
   try {
-    const body = await api('/api/history?after=' + lastId + '&conv=' + encodeURIComponent(S.conv));
+    const body = await api('/api/history?after=' + lastId + '&conv=' + encodeURIComponent(convParam() || ''));
     for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
   } catch (e) { /* SSE 会推 */ }
 }
@@ -164,10 +166,10 @@ export function updateLoadOlder() { $('loadolder').hidden = !hasMore; }
 
 export async function loadOlder() {
   const btn = $('loadolder');
-  if (!oldestId || btn.disabled) return;
+  if (S.conv === null || !oldestId || btn.disabled) return;
   btn.disabled = true; btn.textContent = '加载中…';
   try {
-    const body = await api('/api/history?before=' + oldestId + '&conv=' + encodeURIComponent(S.conv));
+    const body = await api('/api/history?before=' + oldestId + '&conv=' + encodeURIComponent(convParam() || ''));
     const list = body.messages || [];
     const el = $('list');
     const prevH = el.scrollHeight, prevTop = el.scrollTop;
@@ -191,16 +193,17 @@ export function connectSSE() {
     let data = null;
     try { data = JSON.parse(ev.data); } catch (e) { return; }
     if (data.type === 'message' && data.message) {
-      if (data.conv !== (S.conv || '')) {
-        // 其它会话来了新消息：标未读，不打扰当前会话
-        if (data.message.role === 'agent') bus.emit('message-other', { conv: data.conv || '' });
+      const evConv = data.conv || '';
+      // 草稿态（S.conv=null）：不匹配任何会话，交给发送流程回填
+      if (S.conv === null || evConv !== S.conv) {
+        if (data.message.role === 'agent') bus.emit('message-other', { conv: evConv });
         return;
       }
       lastId = Math.max(lastId, data.message.id);
       renderMsg(data.message);
       if (data.message.role === 'agent') setTyping(false);
     } else if (data.type === 'cleared') {
-      if (data.conv === (S.conv || '')) clearMessages();
+      if (S.conv !== null && data.conv === S.conv) clearMessages();
     } else if (data.type === 'conversations') {
       bus.emit('conversations-changed');
     }

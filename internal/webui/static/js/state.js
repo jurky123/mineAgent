@@ -6,7 +6,8 @@ export const S = {
   admin: localStorage.getItem('mineagent.admin') === '1',
   options: null,
   pending: [],
-  conv: localStorage.getItem('mineagent.conv') || '',
+  // null = 新会话草稿（未落库）；"" = 旧版默认会话；"id" = 已存在会话。
+  conv: localStorage.getItem('mineagent.conv'),
   conversations: [],
   unread: new Set(),
   waiting: false
@@ -26,8 +27,14 @@ export function clearAuth() {
 }
 
 export function setConv(conv) {
-  S.conv = conv || '';
-  localStorage.setItem('mineagent.conv', S.conv);
+  S.conv = conv;
+  if (conv === null) localStorage.removeItem('mineagent.conv');
+  else localStorage.setItem('mineagent.conv', conv);
+}
+
+// 请求参数：草稿不带 conv（服务端据此新建）
+export function convParam() {
+  return S.conv === null ? undefined : S.conv;
 }
 
 // 附件 URL 兜底拼 token（cookie 被拦时 <img>/下载也能用）

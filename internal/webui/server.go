@@ -454,35 +454,41 @@ func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name strin
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleConversations 会话列表（GET）/ 新建（POST）。
+// handleConversations 会话列表：纯读，不改库（GET 不产生任何副作用）。
+// 旧版单会话（只有 messages、没有会话行）在这里合成一项返回，不在读路径写库。
 func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, name string) {
-	ctx := r.Context()
-	switch r.Method {
-	case http.MethodGet:
-		// 保证至少有一个默认会话。
-		_ = c.store.UpsertConversation(ctx, name, "", "", time.Now().UnixMilli())
-		list, err := c.store.ListConversations(ctx, name)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"conversations": list})
-	case http.MethodPost:
-		conv, err := randomConv()
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成会话失败"})
-			return
-		}
-		now := time.Now().UnixMilli()
-		if err := c.store.UpsertConversation(ctx, name, conv, "", now); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		c.log.Info("web conversation created", "name", name, "conv", conv)
-		writeJSON(w, http.StatusOK, map[string]any{"conv": conv, "title": ""})
-	default:
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET/POST"})
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET"})
+		return
 	}
+	ctx := r.Context()
+	list, err := c.store.ListConversations(ctx, name)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	hasLegacy := false
+	for _, cv := range list {
+		if cv.Conv == "" {
+			hasLegacy = true
+			break
+		}
+	}
+	if !hasLegacy {
+		if raw, at, ok, err := c.store.ConversationPreview(ctx, webSessionKey(name, "")); err == nil && ok {
+			clean, _ := ParseFileMarkers(raw)
+			title := strings.TrimSpace(clean)
+			if r := []rune(title); len(r) > 24 {
+				title = string(r[:24])
+			}
+			if title == "" {
+				title = "默认会话"
+			}
+			list = append(list, storage.Conversation{Account: name, Conv: "", Title: title, CreatedAt: at, UpdatedAt: at})
+		}
+	}
+	sort.SliceStable(list, func(i, j int) bool { return list[i].UpdatedAt > list[j].UpdatedAt })
+	writeJSON(w, http.StatusOK, map[string]any{"conversations": list})
 }
 
 // handleConversationDelete 删除会话（含消息与摘要）。
@@ -656,8 +662,10 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
 	}
+	// conv 缺省 = 新会话草稿（服务端在发送时原子创建）；
+	// "" = 旧版默认会话；"id" = 已存在会话。
 	var req struct {
-		Conv  string         `json:"conv"`
+		Conv  *string        `json:"conv"`
 		Text  string         `json:"text"`
 		Files []UploadedFile `json:"files"`
 	}
@@ -665,7 +673,7 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
 		return
 	}
-	if !ValidConv(req.Conv) {
+	if req.Conv != nil && !ValidConv(*req.Conv) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
 		return
 	}
@@ -684,7 +692,8 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		}
 		files = append(files, f)
 	}
-	if err := c.HandleUserMessage(r.Context(), name, req.Conv, req.Text, files); err != nil {
+	convID, err := c.HandleUserMessage(r.Context(), name, req.Conv, req.Text, files)
+	if err != nil {
 		if errors.Is(err, ErrConvNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 			return
@@ -692,7 +701,7 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "conv": convID})
 }
 
 // handleMsgFile 下载消息附件：

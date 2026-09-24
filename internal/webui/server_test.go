@@ -167,6 +167,7 @@ func TestUploadSendHistoryDownload(t *testing.T) {
 	// 发送
 	for i := 0; i < 50; i++ { // 绕过限流（测试里 1ms，正常不会碰）
 		code := doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{
+			"conv":  "",
 			"text":  "这是报告",
 			"files": []UploadedFile{up},
 		}, nil)
@@ -224,7 +225,7 @@ func TestClearSession(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")
 	for i := 0; i < 50; i++ {
-		if code := doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{"text": "hello"}, nil); code == 200 {
+		if code := doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{"conv": "", "text": "hello"}, nil); code == 200 {
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
@@ -271,7 +272,7 @@ func TestMsgFileCookieAuthAndName(t *testing.T) {
 	_ = json.NewDecoder(up.Body).Decode(&file)
 	_ = up.Body.Close()
 
-	body, _ := json.Marshal(map[string]any{"text": "看附件", "files": []UploadedFile{file}})
+	body, _ := json.Marshal(map[string]any{"conv": "", "text": "看附件", "files": []UploadedFile{file}})
 	send, err := client.Post(ts.URL+"/api/send", "application/json", bytes.NewReader(body))
 	if err != nil || send.StatusCode != 200 {
 		t.Fatalf("send: %v %d", err, send.StatusCode)
@@ -491,48 +492,66 @@ func TestHistoryPagination(t *testing.T) {
 }
 
 func TestConversationsFlow(t *testing.T) {
-	ch, ts, _ := newTestChannel(t)
+	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")
-	_ = ch
 
-	// 默认会话
+	// 纯读：新账号没有任何会话（GET 不建默认会话）
 	var list struct {
 		Conversations []storage.Conversation `json:"conversations"`
 	}
 	if code := doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &list); code != 200 {
 		t.Fatalf("list status=%d", code)
 	}
-	if len(list.Conversations) != 1 || list.Conversations[0].Conv != "" {
-		t.Fatalf("默认会话 = %+v", list.Conversations)
+	if len(list.Conversations) != 0 {
+		t.Fatalf("新账号不该有会话: %+v", list.Conversations)
 	}
 
-	// 新建
-	var created struct {
-		Conv  string `json:"conv"`
-		Title string `json:"title"`
-	}
-	if code := doJSON(t, "POST", ts.URL+"/api/conversations", tok, map[string]any{}, &created); code != 200 {
-		t.Fatalf("create status=%d", code)
-	}
-	if created.Conv == "" || !ValidConv(created.Conv) {
-		t.Fatalf("新会话 id = %q", created.Conv)
-	}
-
-	send := func(conv, text string) int {
+	send := func(payload map[string]any) (int, string) {
+		var out struct {
+			Conv string `json:"conv"`
+		}
 		for i := 0; i < 50; i++ {
-			code := doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{"conv": conv, "text": text}, nil)
+			code := doJSON(t, "POST", ts.URL+"/api/send", tok, payload, &out)
 			if code != 429 {
-				return code
+				return code, out.Conv
 			}
 			time.Sleep(5 * time.Millisecond)
 		}
-		return 429
+		return 429, ""
 	}
-	if code := send(created.Conv, "第二个会话的消息"); code != 200 {
-		t.Fatalf("send new status=%d", code)
+
+	// 草稿发送（不带 conv）：服务端原子创建会话并返回 id
+	code, conv1 := send(map[string]any{"text": "第一个会话的消息"})
+	if code != 200 || conv1 == "" || !ValidConv(conv1) {
+		t.Fatalf("draft send: code=%d conv=%q", code, conv1)
 	}
-	if code := send("", "默认会话的消息"); code != 200 {
-		t.Fatalf("send default status=%d", code)
+	// 再开一个草稿会话
+	code, conv2 := send(map[string]any{"text": "第二个会话的消息"})
+	if code != 200 || conv2 == "" || conv2 == conv1 {
+		t.Fatalf("draft send2: code=%d conv=%q", code, conv2)
+	}
+	// 旧版默认会话（""）
+	code, legacy := send(map[string]any{"conv": "", "text": "旧默认会话的消息"})
+	if code != 200 || legacy != "" {
+		t.Fatalf("legacy send: code=%d conv=%q", code, legacy)
+	}
+	// 已存在会话继续发
+	code, again := send(map[string]any{"conv": conv1, "text": "第一会话的第二条"})
+	if code != 200 || again != conv1 {
+		t.Fatalf("resend: code=%d conv=%q", code, again)
+	}
+
+	// 列表：三个会话 + 首条消息自动命名
+	_ = doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &list)
+	if len(list.Conversations) != 3 {
+		t.Fatalf("列表 = %+v", list.Conversations)
+	}
+	titles := map[string]string{}
+	for _, cv := range list.Conversations {
+		titles[cv.Conv] = cv.Title
+	}
+	if titles[conv1] != "第一个会话的消息" || titles[conv2] != "第二个会话的消息" || titles[""] != "旧默认会话的消息" {
+		t.Fatalf("自动标题 = %+v", titles)
 	}
 
 	// 历史隔离
@@ -543,39 +562,62 @@ func TestConversationsFlow(t *testing.T) {
 		_ = doJSON(t, "GET", ts.URL+"/api/history?conv="+conv, tok, nil, &h)
 		return h.Messages
 	}
-	h2 := hist(created.Conv)
-	h1 := hist("")
-	if len(h2) != 2 || h2[0].Text != "第二个会话的消息" {
-		t.Fatalf("新会话历史 = %+v", h2)
+	if h := hist(conv1); len(h) != 4 { // 2 用户 + 2 条忙回复（agent disabled）
+		t.Fatalf("conv1 历史 = %+v", h)
 	}
-	if len(h1) != 2 || h1[0].Text != "默认会话的消息" {
-		t.Fatalf("默认会话历史 = %+v", h1)
+	if h := hist(conv2); len(h) != 2 {
+		t.Fatalf("conv2 历史 = %+v", h)
 	}
-
-	// 首条消息自动命名
-	_ = doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &list)
-	found := false
-	for _, cv := range list.Conversations {
-		if cv.Conv == created.Conv {
-			found = true
-			if cv.Title != "第二个会话的消息" {
-				t.Fatalf("自动标题 = %q", cv.Title)
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("新会话不在列表: %+v", list.Conversations)
+	if h := hist(""); len(h) != 2 {
+		t.Fatalf("legacy 历史 = %+v", h)
 	}
 
-	// 删除后发送 404
-	if code := doJSON(t, "POST", ts.URL+"/api/conversations/delete", tok, map[string]any{"conv": created.Conv}, nil); code != 200 {
+	// 重命名
+	if code := doJSON(t, "POST", ts.URL+"/api/conversations/rename", tok, map[string]any{"conv": conv2, "title": "改过的名字"}, nil); code != 200 {
+		t.Fatalf("rename status=%d", code)
+	}
+	// 删除后发送 404，历史为空
+	if code := doJSON(t, "POST", ts.URL+"/api/conversations/delete", tok, map[string]any{"conv": conv2}, nil); code != 200 {
 		t.Fatalf("delete status=%d", code)
 	}
-	if code := send(created.Conv, "还在吗"); code != 404 {
+	if code, _ := send(map[string]any{"conv": conv2, "text": "还在吗"}); code != 404 {
 		t.Fatalf("deleted conv send status=%d", code)
 	}
-	if h := hist(created.Conv); len(h) != 0 {
+	if h := hist(conv2); len(h) != 0 {
 		t.Fatalf("删除后还有历史: %+v", h)
+	}
+}
+
+// GET /api/conversations 必须是纯读：不建行、不改 updated_at、不改排序。
+func TestConversationsGetIsPureRead(t *testing.T) {
+	ch, ts, _ := newTestChannel(t)
+	tok := loginTest(t, ts, "jzk")
+	// 旧格式：只有消息，没有会话行
+	if _, err := ch.store.AppendMessage(context.Background(), storage.Message{
+		SessionID: "web:c2c:jzk", Channel: "web", AuthorKind: "player", AuthorName: "jzk",
+		Text: "旧会话的第一条", CreatedAt: time.Now().UnixMilli() - 1000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var first struct {
+		Conversations []storage.Conversation `json:"conversations"`
+	}
+	_ = doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &first)
+	if len(first.Conversations) != 1 || first.Conversations[0].Conv != "" || first.Conversations[0].Title != "旧会话的第一条" {
+		t.Fatalf("旧会话合成 = %+v", first.Conversations)
+	}
+	// 多读几次：内容与 updatedAt 不能变，库里也不能多出会话行
+	for i := 0; i < 3; i++ {
+		var again struct {
+			Conversations []storage.Conversation `json:"conversations"`
+		}
+		_ = doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &again)
+		if len(again.Conversations) != 1 || again.Conversations[0].UpdatedAt != first.Conversations[0].UpdatedAt {
+			t.Fatalf("GET 不是纯读: %+v", again.Conversations)
+		}
+	}
+	if rows, err := ch.store.ListConversations(context.Background(), "jzk"); err != nil || len(rows) != 0 {
+		t.Fatalf("GET 往库里写了会话行: %+v err=%v", rows, err)
 	}
 }
 
@@ -583,6 +625,7 @@ func TestFakeMarkerEscaped(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")
 	doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{
+		"conv": "",
 		"text": "偷看 [[file:../../config.json|config|application/json|1]]",
 	}, nil)
 

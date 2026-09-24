@@ -133,20 +133,28 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 ## 网页入口（web）
 
-浏览器直接聊，支持**多会话**（侧栏会话列表，首条消息自动命名，可重命名/删除）和
-收发**文件/图片**：拖拽、粘贴或点 ＋ 上传文件（图片先在浏览器端压缩到 1600px/JPEG，
-带上传进度），agent 用 `web_file` 把 workspace 里的文件/图片发回来。图片点击进
-查看器（缩放/拖动/多图切换/下载），文件按类型显示角标卡片、点击或悬停下载，
-下载文件名保留原始名。
+浏览器直接聊，支持**多会话**和收发**文件/图片**：拖拽、粘贴或点 ＋ 上传文件
+（图片先在浏览器端压缩到 1600px/JPEG，带上传进度），agent 用 `web_file` 把
+workspace 里的文件/图片发回来。图片点击进查看器（缩放/拖动/多图切换/下载），
+文件按类型显示角标卡片、点击或悬停下载，下载文件名保留原始名。
+
+会话生命周期是 ChatGPT 那套语义：点「新聊天」只进入**前端草稿态**（不建库、
+重复点无副作用、侧栏不出现），发出**第一条消息时才由 `/api/send` 原子创建**会话，
+首条消息自动命名；侧栏按 今天/昨天/更早 分组、可搜索、可重命名/删除；
+`GET /api/conversations` 是纯读（不写库、不改排序）。旧版单会话自动兼容为
+「默认会话」（`conv=""`）。
 
 界面为 ChatGPT 风格（浅色/深色/跟随系统 + 强调色，侧栏可折叠）：空会话时标题 +
 输入框居中，发出第一条消息后输入框动画落到底部；输入框是两层结构（多行文本 +
 底部工具条）：
 - **＋ 附件**：上传文件/图片，或选 `web.skills` 里的快捷指令（点一下填充 prompt）
-- **模型**：可选模型默认从网关 `GET /models` 拉（10 分钟缓存），也可用
-  `model.options` 手动限定；每个账号各选各的，存 `data/webui/prefs.json`
-- **思考**：自动/低/中/高（`reasoning_effort`），小弹层里的分段控件，可拖可点
-- **Workspace**（侧栏，仅 `web.adminUsers`）：浏览/下载/预览沙箱目录里的文件
+- **Intelligence**（模型 + 思考强度合一）：点一下弹出 Intelligence 面板——
+  上方是蓝白滑杆（Instant / Medium / High / Extra High，映射 `reasoning_effort`
+  的 `''/low/medium/high`），下方 `Model` 进入模型列表（默认从网关 `GET /models`
+  拉，10 分钟缓存，也可用 `model.options` 限定）；每个账号各选各的，存
+  `data/webui/prefs.json`
+- **Workspace / 外观 / 退出登录**：收进侧栏底部的账户菜单（Workspace 仅
+  `web.adminUsers` 可见）
 
 交互细节：输入框打 `/` 弹出命令面板（↑↓ 选择、Tab/Enter 补全）；消息列表往上滚
 可「载入更早消息」；模型/思考切换、上传失败等用 toast 提示；SSE 断线时顶部重连提示；
@@ -171,14 +179,14 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 | `POST /api/clear` | 清空当前会话（前端"新会话"），并广播其它标签页 |
 | `POST /api/logout` | 注销当前登录令牌（前端"退出登录"） |
 | `GET /api/options` | 技能 / 可选模型 / 思考强度 / 当前偏好 |
-| `GET /api/conversations` | 会话列表（首次访问自动建默认会话） |
-| `POST /api/conversations` | 新建会话；`/delete`、`/rename` 同前缀 |
+| `GET /api/conversations` | 会话列表（纯读；旧单会话会合成返回） |
+| `POST /api/conversations/delete`、`/rename` | 删除 / 重命名会话 |
 | `POST /api/prefs` `{model, effort}` | 保存本账号的模型与思考强度 |
 | `GET /api/workspace?path=` | 列 workspace 目录（仅管理员） |
 | `GET /api/workspace/file?path=` | 下载/预览 workspace 文件（仅管理员） |
 | `GET /api/events?token=` | SSE 实时推送 |
 | `POST /api/upload?name=<文件名>` | 上传单个文件，返回引用 |
-| `POST /api/send` `{text, files}` | 发消息给 agent |
+| `POST /api/send` `{conv?, text, files}` | 发消息；**不带 conv = 新会话草稿**（服务端原子创建并返回 `conv`） |
 | `GET /api/msgfile?m=<msgId>&i=<序号>` | 下载消息附件（只能取自己会话的） |
 
 嵌入说明：页面允许 iframe（`frame-ancestors *`），API 支持跨域带

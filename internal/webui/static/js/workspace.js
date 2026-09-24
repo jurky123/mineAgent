@@ -7,13 +7,12 @@ import { openViewer } from './viewer.js';
 
 let wsPath = '';
 
+export function openWorkspace() {
+  $('wsmodal').classList.add('on');
+  load();
+}
+
 export function initWorkspace() {
-  $('nav-ws').onclick = () => {
-    $('sidebar').classList.remove('open');
-    $('backdrop').classList.remove('on');
-    $('wsmodal').classList.add('on');
-    load();
-  };
   $('ws-close').onclick = () => hideAnimated($('wsmodal'));
   $('ws-refresh').onclick = () => load();
   $('wsmodal').addEventListener('click', (e) => { if (e.target === $('wsmodal')) hideAnimated($('wsmodal')); });

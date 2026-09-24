@@ -3,8 +3,8 @@
 import { $ } from './ui.js';
 import { S, saveAuth, clearAuth } from './state.js';
 import { api, logoutRequest, setUnauthorizedHandler } from './api.js';
-import { initTheme } from './theme.js';
-import { initWorkspace } from './workspace.js';
+import { initTheme, openAppearance } from './theme.js';
+import { initWorkspace, openWorkspace } from './workspace.js';
 import { initConversations, refresh as refreshConversations } from './conversations.js';
 import * as chat from './chat.js';
 import * as composer from './composer.js';
@@ -71,7 +71,7 @@ async function startChat() {
   $('myavatar').textContent = (S.me[0] || '?').toUpperCase();
   $('myrole').textContent = S.admin ? '管理员' : '';
   $('myrole').className = 'badge' + (S.admin ? ' admin' : '');
-  $('nav-ws').hidden = !S.admin;
+  $('menu-ws').hidden = !S.admin;
   chat.clearMessages();
   await refreshConversations();
   await chat.loadHistory();
@@ -97,7 +97,16 @@ function boot() {
 
   $('enter').onclick = () => doLogin($('name').value.trim());
   $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click(); });
-  $('logout').onclick = () => { logoutRequest(); logout(false); };
+
+  // 账户菜单：Workspace / 外观 / 退出登录
+  const closeAccount = () => $('accountmenu').classList.remove('on');
+  $('userbtn').onclick = (e) => { e.stopPropagation(); $('accountmenu').classList.toggle('on'); };
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#accountmenu') && !e.target.closest('#userbtn')) closeAccount();
+  });
+  $('menu-ws').onclick = () => { closeAccount(); openWorkspace(); };
+  $('menu-theme').onclick = () => { closeAccount(); openAppearance(); };
+  $('menu-logout').onclick = () => { closeAccount(); logoutRequest(); logout(false); };
   $('menu').onclick = () => $('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
   $('backdrop').onclick = closeSidebar;
   $('collapse').onclick = () => {

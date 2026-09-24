@@ -1,27 +1,41 @@
-/* 设计 token：亮色为默认，html[data-theme="dark"] 覆盖为深色。
-   自定义强调色由 JS 覆盖 --accent / --accent-contrast。 */
+/* 设计 token：灰白负责结构、蓝白负责交互。
+   亮色为默认，html[data-theme="dark"] 覆盖；自定义强调色由 theme.js 覆盖 --accent。 */
 :root {
   --bg: #ffffff;
   --sidebar: #f9f9f9;
   --surface: #ffffff;
-  --surface-hover: #f2f2f2;
-  --surface-active: #ececec;
+
+  /* 结构（灰） */
+  --control-bg: #f7f7f7;
+  --control-hover: #eeeeee;
+  --control-active: #e9e9e9;
+  --surface-hover: var(--control-hover);
+  --surface-active: var(--control-active);
+  --border-subtle: #eeeeee;
+  --border-control: #e3e3e3;
+  --border: #e9e9e9;
+  --border-2: #dedede;
   --header-bg: rgba(255, 255, 255, .9);
   --drop-bg: rgba(255, 255, 255, .7);
+
   --text: #0d0d0d;
   --text-2: #5d5d5d;
   --text-3: #8f8f8f;
-  --border: #e5e5e5;
-  --border-2: #d9d9d9;
+
   --user-bubble: #f4f4f4;
   --code-bg: #f7f7f8;
   --code-inline: #f0f0f0;
-  --seg-bg: #f0f0f0;
-  --send-off-bg: #e8e8e8;
+  --send-off-bg: #f7f7f7;
   --send-off-fg: #b0b0b0;
-  --accent: #0d0d0d;
+
+  /* 交互（蓝） */
+  --interactive: #2f6fed;
+  --interactive-soft: rgba(47, 111, 237, .10);
+  --interactive-border: rgba(47, 111, 237, .32);
+  --link: #2f6fed;
+  --accent: var(--interactive);
   --accent-contrast: #ffffff;
-  --link: #0b57d0;
+
   --danger: #d92d20;
   --ok: #067647;
   --shadow-popover: 0 8px 28px rgba(0, 0, 0, .10);
@@ -37,24 +51,29 @@ html[data-theme="dark"] {
   --bg: #212121;
   --sidebar: #171717;
   --surface: #212121;
-  --surface-hover: #2f2f2f;
-  --surface-active: #303030;
+  --control-bg: #2a2a2a;
+  --control-hover: #2f2f2f;
+  --control-active: #303030;
+  --border-subtle: #2c2c2c;
+  --border-control: #3a3a3a;
+  --border: #333333;
+  --border-2: #4a4a4a;
   --header-bg: rgba(33, 33, 33, .9);
   --drop-bg: rgba(33, 33, 33, .72);
   --text: #ececec;
   --text-2: #b4b4b4;
   --text-3: #8f8f8f;
-  --border: #3a3a3a;
-  --border-2: #4d4d4d;
   --user-bubble: #303030;
   --code-bg: #171717;
   --code-inline: #2f2f2f;
-  --seg-bg: #2f2f2f;
-  --send-off-bg: #3a3a3a;
+  --send-off-bg: #2a2a2a;
   --send-off-fg: #7a7a7a;
-  --accent: #ececec;
+  --interactive: #6f9bff;
+  --interactive-soft: rgba(111, 155, 255, .16);
+  --interactive-border: rgba(111, 155, 255, .38);
+  --link: #8ab4ff;
+  --accent: var(--interactive);
   --accent-contrast: #0d0d0d;
-  --link: #7ab7ff;
   --shadow-popover: 0 8px 28px rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
@@ -68,9 +87,8 @@ body {
 }
 button { font: inherit; color: inherit; cursor: pointer; }
 a { color: inherit; }
-::selection { background: #d9d9ff; }
-html[data-theme="dark"] ::selection { background: #3f3f6e; }
-:focus-visible { outline: 2px solid var(--text-3); outline-offset: 2px; border-radius: 6px; }
+::selection { background: var(--interactive-soft); }
+:focus-visible { outline: 2px solid var(--interactive-border); outline-offset: 2px; border-radius: 6px; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 8px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }

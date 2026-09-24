@@ -54,8 +54,9 @@ type Channel struct {
 	lastSend map[string]time.Time
 	// subs: 账号名 -> SSE 订阅者集合。
 	subs map[string]map[chan []byte]struct{}
-	// tokens: 账号名 -> 登录令牌（持久化到 tokensPath，重启不掉线）。
-	tokens     map[string]string
+	// tokens: 账号名 -> 登录令牌列表（同一账号多设备并存，最多 5 个，最旧的淘汰；
+	// 持久化到 tokensPath，重启不掉线）。
+	tokens     map[string][]string
 	tokensPath string
 }
 
@@ -77,7 +78,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		sessions:      make(map[string]*session.Session),
 		lastSend:      make(map[string]time.Time),
 		subs:          make(map[string]map[chan []byte]struct{}),
-		tokens:        make(map[string]string),
+		tokens:        make(map[string][]string),
 		tokensPath:    filepath.Join(dataDir, "tokens.json"),
 	}
 	c.loadTokens()
@@ -165,7 +166,12 @@ func (c *Channel) unsubscribe(name string, ch chan []byte) {
 
 // publish 把一条消息送给该账号所有在线标签页。
 func (c *Channel) publish(name string, msg WireMessage) {
-	data, err := json.Marshal(map[string]any{"type": "message", "message": msg})
+	c.publishRaw(name, map[string]any{"type": "message", "message": msg})
+}
+
+// publishRaw 广播任意 SSE 事件（message / cleared）。
+func (c *Channel) publishRaw(name string, v any) {
+	data, err := json.Marshal(v)
 	if err != nil {
 		return
 	}
@@ -306,16 +312,30 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, text string, file
 }
 
 // loadTokens / saveTokens：登录令牌落盘（0600），支持进程重启后浏览器不掉线。
+// 新格式 name -> [token...]；兼容旧的 name -> token 单值格式。
 func (c *Channel) loadTokens() {
 	b, err := os.ReadFile(c.tokensPath)
 	if err != nil {
 		return
 	}
-	var m map[string]string
-	if json.Unmarshal(b, &m) == nil {
-		for k, v := range m {
-			if ValidAccountName(k) && v != "" {
-				c.tokens[k] = v
+	var m map[string][]string
+	if err := json.Unmarshal(b, &m); err != nil {
+		var old map[string]string
+		if json.Unmarshal(b, &old) != nil {
+			return
+		}
+		m = make(map[string][]string, len(old))
+		for k, v := range old {
+			m[k] = []string{v}
+		}
+	}
+	for k, list := range m {
+		if !ValidAccountName(k) {
+			continue
+		}
+		for _, v := range list {
+			if v != "" {
+				c.tokens[k] = append(c.tokens[k], v)
 			}
 		}
 	}
@@ -323,9 +343,9 @@ func (c *Channel) loadTokens() {
 
 func (c *Channel) saveTokens() {
 	c.mu.Lock()
-	m := make(map[string]string, len(c.tokens))
+	m := make(map[string][]string, len(c.tokens))
 	for k, v := range c.tokens {
-		m[k] = v
+		m[k] = append([]string(nil), v...)
 	}
 	c.mu.Unlock()
 	if err := os.MkdirAll(filepath.Dir(c.tokensPath), 0o700); err != nil {
@@ -343,14 +363,19 @@ func (c *Channel) saveTokens() {
 	}
 }
 
-// login 生成（或复用）账号令牌：同一个名字重复登录换新令牌，旧标签页失效。
+// login 给账号发一个新令牌：多设备/多浏览器可并存（各自保留），
+// 每个名字最多 5 个令牌，最旧的淘汰（防令牌文件无限膨胀）。
 func (c *Channel) login(name string) (string, error) {
 	tok, err := randomToken()
 	if err != nil {
 		return "", err
 	}
 	c.mu.Lock()
-	c.tokens[name] = tok
+	list := append(c.tokens[name], tok)
+	if len(list) > 5 {
+		list = list[len(list)-5:]
+	}
+	c.tokens[name] = list
 	c.mu.Unlock()
 	c.saveTokens()
 	return tok, nil
@@ -363,9 +388,11 @@ func (c *Channel) nameByToken(tok string) string {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for name, t := range c.tokens {
-		if t == tok {
-			return name
+	for name, list := range c.tokens {
+		for _, t := range list {
+			if t == tok {
+				return name
+			}
 		}
 	}
 	return ""

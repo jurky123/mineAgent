@@ -6,136 +6,287 @@
 <title>MineAgent</title>
 <style>
   :root {
-    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a;
-    --text: #e6e8ee; --dim: #9aa3b2; --accent: #4f8cff; --accent2: #2f6fe0;
-    --user: #2f6fe0; --agent: #1e222b; --ok: #39c07a; --warn: #e0a23f; --err: #e05c5c;
+    --bg: #212121; --sidebar: #171717; --panel: #303030; --hover: #2f2f2f;
+    --line: #333; --text: #ececec; --dim: #b4b4b4; --dim2: #8e8e8e;
+    --accent: #fff; --ok: #4ade80; --warn: #e0a23f; --err: #ef4444;
+    --radius: 26px;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont,
-    "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-    display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 16px/1.7 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
   }
-  a { color: var(--accent); }
-  button { font: inherit; cursor: pointer; }
-  #login { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .card {
-    width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 16px; padding: 28px 24px;
+  a { color: #7ab7ff; }
+  button { font: inherit; cursor: pointer; color: inherit; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 4px; }
+
+  /* ---------- 登录 ---------- */
+  #login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); }
+  .login-card { width: 100%; max-width: 380px; text-align: center; }
+  .logo {
+    width: 56px; height: 56px; margin: 0 auto 18px; border-radius: 50%;
+    background: linear-gradient(135deg, #4f8cff, #8b5cf6); display: flex; align-items: center;
+    justify-content: center; font-weight: 800; font-size: 24px; color: #fff;
   }
-  .card h1 { margin: 0 0 6px; font-size: 22px; }
-  .card p { margin: 0 0 18px; color: var(--dim); font-size: 13px; }
-  .card input {
-    width: 100%; padding: 11px 13px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); font: inherit; outline: none;
+  .login-card h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+  .login-card p { margin: 0 0 22px; color: var(--dim); font-size: 14px; }
+  .login-input {
+    width: 100%; padding: 13px 16px; border-radius: 14px; border: 1px solid #444;
+    background: var(--panel); color: var(--text); font: inherit; outline: none;
   }
-  .card input:focus { border-color: var(--accent); }
-  .card button {
-    width: 100%; margin-top: 14px; padding: 11px; border: 0; border-radius: 10px;
-    background: var(--accent); color: #fff; font-weight: 600;
+  .login-input:focus { border-color: #777; }
+  .login-btn {
+    width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 14px;
+    background: #ececec; color: #111; font-weight: 600;
   }
-  .card button:disabled { opacity: .6; }
-  .err { color: var(--err); font-size: 13px; min-height: 18px; margin-top: 8px; }
-  #chat { flex: 1; display: none; flex-direction: column; min-height: 0; }
+  .login-btn:disabled { opacity: .5; }
+  .login-err { color: var(--err); font-size: 13px; min-height: 19px; margin-top: 10px; }
+
+  /* ---------- 布局 ---------- */
+  #app { display: none; height: 100%; }
+  #sidebar {
+    position: fixed; inset: 0 auto 0 0; width: 264px; background: var(--sidebar);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column; z-index: 20;
+    transform: translateX(-100%); transition: transform .2s ease;
+  }
+  #sidebar.open { transform: none; }
+  #backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 15; }
+  #backdrop.on { display: block; }
+  .side-top { padding: 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 8px 10px 14px; font-weight: 600; }
+  .brand .logo { width: 30px; height: 30px; font-size: 14px; margin: 0; border-radius: 8px; }
+  .newchat {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    background: none; border: 1px solid var(--line); border-radius: 12px; font-size: 14px;
+  }
+  .newchat:hover { background: var(--hover); }
+  .side-foot { margin-top: auto; padding: 12px; border-top: 1px solid var(--line); }
+  .userrow { display: flex; align-items: center; gap: 10px; padding: 8px 6px; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex: none; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
+    background: linear-gradient(135deg, #4f8cff, #8b5cf6); color: #fff;
+  }
+  .userrow .uname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim2); }
+  .badge.admin { color: var(--ok); border-color: rgba(74,222,128,.4); }
+  .logout { width: 100%; text-align: left; background: none; border: 0; color: var(--dim); font-size: 13px; padding: 8px 6px; border-radius: 8px; }
+  .logout:hover { background: var(--hover); color: var(--text); }
+
+  main { display: flex; flex-direction: column; height: 100%; }
   header {
     display: flex; align-items: center; gap: 10px; padding: 10px 14px;
-    border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
   }
-  header .title { font-weight: 700; }
-  header .who { color: var(--dim); font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }
-  .badge.admin { color: var(--ok); border-color: var(--ok); }
-  header .leave { background: none; border: 0; color: var(--dim); font-size: 13px; }
-  #list { flex: 1; overflow-y: auto; padding: 16px 14px 8px; scroll-behavior: smooth; }
-  .row { display: flex; margin-bottom: 14px; }
-  .row.user { justify-content: flex-end; }
-  .bubble {
-    max-width: min(680px, 86%); padding: 10px 13px; border-radius: 14px;
-    background: var(--agent); border: 1px solid var(--line); overflow-wrap: anywhere;
+  .menu { display: none; background: none; border: 0; font-size: 20px; padding: 4px 8px; border-radius: 8px; }
+  .menu:hover { background: var(--hover); }
+  header .title { font-weight: 600; font-size: 15px; }
+  header .sub { color: var(--dim2); font-size: 13px; flex: 1; }
+
+  #list { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  #listInner { max-width: 768px; margin: 0 auto; padding: 12px 20px 40px; }
+  .empty { padding: 12vh 0 0; text-align: center; }
+  .empty h2 { font-weight: 600; font-size: 26px; margin: 0 0 26px; }
+  .suggests { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .suggests button {
+    background: none; border: 1px solid var(--line); border-radius: 999px;
+    padding: 9px 16px; font-size: 14px; color: var(--dim);
   }
-  .row.user .bubble { background: var(--user); border-color: var(--accent2); color: #fff; }
-  .meta { font-size: 12px; color: var(--dim); margin-bottom: 4px; }
-  .row.user .meta { color: #cfe0ff; text-align: right; }
-  .bubble .files { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+  .suggests button:hover { background: var(--hover); color: var(--text); }
+
+  .msg { padding: 14px 0; display: flex; gap: 14px; }
+  .msg .avatar { width: 30px; height: 30px; margin-top: 2px; }
+  .msg .body { min-width: 0; flex: 1; }
+  .msg.user { justify-content: flex-end; }
+  .msg.user .body { flex: none; max-width: 82%; display: flex; flex-direction: column; align-items: flex-end; }
+  .msg.user .content { background: var(--panel); border-radius: 20px; padding: 10px 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.assistant .content { overflow-wrap: anywhere; }
+  .msg .meta { font-size: 12px; color: var(--dim2); margin-bottom: 2px; }
+  .msg .actions { opacity: 0; transition: opacity .15s; margin-top: 4px; }
+  .msg:hover .actions { opacity: 1; }
+  .act {
+    background: none; border: 0; color: var(--dim2); font-size: 12px; padding: 3px 8px;
+    border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .act:hover { background: var(--hover); color: var(--text); }
+
+  .content pre {
+    position: relative; background: #0d0d0d; border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px; overflow-x: auto; font-size: 13.5px; margin: 10px 0;
+  }
+  .content code { background: rgba(255,255,255,.09); padding: 1px 5px; border-radius: 5px; font-size: 13.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .content pre code { background: none; padding: 0; }
+  .codecopy {
+    position: absolute; top: 6px; right: 6px; font-size: 11px; padding: 2px 8px;
+    border-radius: 6px; border: 1px solid var(--line); background: #1a1a1a; color: var(--dim);
+  }
+  .codecopy:hover { color: var(--text); }
+  .content h1, .content h2, .content h3 { margin: 14px 0 6px; font-weight: 600; }
+  .content h1 { font-size: 20px; } .content h2 { font-size: 18px; } .content h3 { font-size: 16px; }
+  .content ul { margin: 6px 0; padding-left: 24px; }
+  .content li { margin: 2px 0; }
+  .content > div:empty { height: 8px; }
+
+  .files { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .imgwrap { max-width: 320px; }
+  .imgwrap img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; cursor: zoom-in; }
   .filecard {
-    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
-    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
-    color: inherit; text-decoration: none; font-size: 13px;
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
+    background: var(--bg); border: 1px solid var(--line); color: inherit; text-decoration: none;
+    font-size: 14px; max-width: 340px;
   }
-  .filecard img { max-width: 100%; border-radius: 8px; display: block; }
-  .bubble img.inline { max-width: 100%; border-radius: 10px; margin-top: 6px; display: block; }
-  .bubble pre {
-    background: #0b0d12; border: 1px solid var(--line); border-radius: 8px;
-    padding: 9px 11px; overflow-x: auto; font-size: 13px;
+  .filecard:hover { background: var(--hover); }
+  .filecard .ficon { width: 34px; height: 34px; border-radius: 8px; background: #4a4a4a; display: flex; align-items: center; justify-content: center; flex: none; }
+  .filecard .fmeta { min-width: 0; }
+  .filecard .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .filecard .fsize { color: var(--dim2); font-size: 12px; }
+
+  .typing .dots span {
+    display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%;
+    background: var(--dim); animation: blink 1.2s infinite both;
   }
-  .bubble code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
-  .bubble pre code { background: none; padding: 0; }
-  .bubble h1,.bubble h2,.bubble h3 { margin: 10px 0 5px; font-size: 17px; }
-  .bubble ul { margin: 5px 0; padding-left: 22px; }
-  .bubble a { word-break: break-all; }
-  .typing { color: var(--dim); font-size: 13px; padding: 0 2px 8px; min-height: 20px; }
-  footer { border-top: 1px solid var(--line); background: var(--panel); padding: 10px 12px; }
-  .pending { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .typing .dots span:nth-child(2) { animation-delay: .2s; }
+  .typing .dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25 } 40% { opacity: 1 } }
+
+  #tobottom {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 148px;
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--panel); display: none; align-items: center; justify-content: center; z-index: 6;
+  }
+  #tobottom.on { display: flex; }
+
+  .composer { padding: 0 20px calc(10px + env(safe-area-inset-bottom)); }
+  .composer .inner { max-width: 768px; margin: 0 auto; }
+  #pending { display: flex; flex-wrap: wrap; gap: 10px; padding-bottom: 8px; }
+  #pending:empty { display: none; }
   .chip {
-    display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 9px;
-    border-radius: 999px; background: var(--panel2); border: 1px solid var(--line);
+    position: relative; width: 72px; height: 72px; border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--line); background: var(--panel); flex: none;
   }
-  .chip .x { border: 0; background: none; color: var(--dim); padding: 0 0 0 2px; }
-  .chip.busy { color: var(--warn); }
-  .inputrow { display: flex; gap: 8px; align-items: flex-end; }
-  textarea {
-    flex: 1; resize: none; max-height: 132px; min-height: 42px; padding: 10px 12px;
-    border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
-    color: var(--text); font: inherit; outline: none;
+  .chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .chip .doc { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; }
+  .chip .doc .n { font-size: 10px; color: var(--dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .x {
+    position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%;
+    border: 0; background: rgba(0,0,0,.7); color: #fff; font-size: 12px; line-height: 1; padding: 0;
   }
-  textarea:focus { border-color: var(--accent); }
+  .chip .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: #fff; width: 0; transition: width .15s; }
+  .chip.done .bar { background: var(--ok); }
+  .chip .note { position: absolute; left: 0; right: 0; bottom: 3px; font-size: 9px; text-align: center; color: var(--ok); }
+  .box {
+    display: flex; align-items: flex-end; gap: 6px; background: var(--panel);
+    border-radius: var(--radius); padding: 8px 8px 8px 8px; border: 1px solid transparent;
+  }
+  .box:focus-within { border-color: #555; }
+  .box textarea {
+    flex: 1; resize: none; border: 0; outline: none; background: none; color: var(--text);
+    font: inherit; max-height: 200px; min-height: 28px; padding: 8px 4px;
+  }
+  .box textarea::placeholder { color: var(--dim2); }
   .iconbtn {
-    height: 42px; min-width: 42px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--panel2); color: var(--text); font-size: 18px;
+    width: 36px; height: 36px; border-radius: 50%; border: 0; background: none;
+    display: flex; align-items: center; justify-content: center; flex: none; color: var(--dim);
+    font-size: 20px;
   }
-  .iconbtn.send { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 15px; font-weight: 600; }
-  .iconbtn:disabled { opacity: .5; }
-  .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+  .iconbtn:hover { background: var(--hover); color: var(--text); }
+  .iconbtn.send { background: #4d4d4d; color: #a8a8a8; transition: all .15s; }
+  .iconbtn.send.ready { background: #ececec; color: #111; }
+  .iconbtn.send.ready:hover { background: #fff; }
+  .hint { text-align: center; color: var(--dim2); font-size: 12px; margin-top: 8px; }
   #drop {
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
-    background: rgba(0,0,0,.55); color: #fff; font-size: 20px; z-index: 9; pointer-events: none;
+    background: rgba(0,0,0,.6); color: #fff; font-size: 18px; z-index: 30; pointer-events: none;
   }
   #drop.on { display: flex; }
+  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: none; z-index: 40; cursor: zoom-out; }
+  #lightbox.on { display: flex; align-items: center; justify-content: center; }
+  #lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 8px; }
+
+  @media (min-width: 900px) {
+    #sidebar { transform: none; }
+    main { margin-left: 264px; }
+    .menu { display: none; }
+    #backdrop { display: none !important; }
+  }
+  @media (max-width: 899px) {
+    .menu { display: block; }
+    #listInner { padding: 8px 14px 30px; }
+    .composer { padding-left: 12px; padding-right: 12px; }
+    .msg.user .body { max-width: 88%; }
+  }
 </style>
 </head>
 <body>
+
 <div id="login">
-  <div class="card">
+  <div class="login-card">
+    <div class="logo">M</div>
     <h1>MineAgent</h1>
-    <p>网页入口 · 输入名字进入（每个名字一个独立会话）</p>
-    <input id="name" maxlength="24" placeholder="你的名字，如 jzk" autocomplete="username">
-    <button id="enter">进入</button>
-    <div class="err" id="loginerr"></div>
+    <p>输入名字进入 · 每个名字一个独立会话</p>
+    <input id="name" class="login-input" maxlength="24" placeholder="你的名字，如 jzk" autocomplete="username">
+    <button id="enter" class="login-btn">进入</button>
+    <div class="login-err" id="loginerr"></div>
   </div>
 </div>
 
-<div id="chat">
-  <header>
-    <div class="title">MineAgent</div>
-    <div class="who" id="who"></div>
-    <span class="badge" id="role"></span>
-    <button class="leave" id="leave">退出</button>
-  </header>
-  <div id="list"></div>
-  <div class="typing" id="typing"></div>
-  <footer>
-    <div class="pending" id="pending"></div>
-    <div class="inputrow">
-      <button class="iconbtn" id="attach" title="添加文件">＋</button>
-      <input type="file" id="file" multiple hidden>
-      <textarea id="text" rows="1" placeholder="说点什么…（Enter 发送，Shift+Enter 换行，可拖入文件/粘贴图片）"></textarea>
-      <button class="iconbtn send" id="send">发送</button>
+<div id="app">
+  <aside id="sidebar">
+    <div class="side-top">
+      <div class="brand"><div class="logo">M</div>MineAgent</div>
+      <button class="newchat" id="newchat">✎&nbsp; 新会话</button>
     </div>
-    <div class="hint">支持发送/接收图片与文件 · /help 看命令 · 每个名字独立会话</div>
-  </footer>
+    <div class="side-foot">
+      <div class="userrow">
+        <div class="avatar" id="myavatar">?</div>
+        <div class="uname" id="myname"></div>
+        <span class="badge" id="myrole"></span>
+      </div>
+      <button class="logout" id="logout">退出登录</button>
+    </div>
+  </aside>
+  <div id="backdrop"></div>
+
+  <main>
+    <header>
+      <button class="menu" id="menu">☰</button>
+      <div class="title">MineAgent</div>
+      <div class="sub">网页入口 · /help 看命令</div>
+    </header>
+    <div id="list">
+      <div id="listInner">
+        <div class="empty" id="empty">
+          <h2>有什么可以帮你？</h2>
+          <div class="suggests">
+            <button data-q="看看服务器现在在线有谁">查在线玩家</button>
+            <button data-q="服务器状态怎么样，卡不卡？">服务器状态</button>
+            <button data-q="用 PIL 画一张今天的时间线示意图，然后发给我">画张图发我</button>
+            <button data-q="/help">看看命令</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button id="tobottom">↓</button>
+    <div class="composer">
+      <div class="inner">
+        <div id="pending"></div>
+        <div class="box">
+          <button class="iconbtn" id="attach" title="添加文件">＋</button>
+          <input type="file" id="file" multiple hidden>
+          <textarea id="text" rows="1" placeholder="给 MineAgent 发消息"></textarea>
+          <button class="iconbtn send" id="send" title="发送">↑</button>
+        </div>
+        <div class="hint">可拖拽/粘贴文件与图片（图片会自动压缩）· Enter 发送，Shift+Enter 换行</div>
+      </div>
+    </div>
+  </main>
 </div>
 <div id="drop">松开上传文件</div>
+<div id="lightbox"><img alt=""></div>
 
 <script>
 (function () {
@@ -145,11 +296,12 @@
   let me = localStorage.getItem('mineagent.name') || '';
   let admin = localStorage.getItem('mineagent.admin') === '1';
   let lastId = 0;
-  let pending = [];   // 已上传待发送的文件
+  let pending = [];          // {file, name, progress, done, note, url}
   let msgIds = new Set();
   let es = null;
+  let waiting = false;
 
-  // ---------- 工具 ----------
+  // ---------- 基础 ----------
   async function api(path, opts) {
     opts = opts || {};
     opts.headers = Object.assign({}, opts.headers, { 'Authorization': 'Bearer ' + token });
@@ -164,7 +316,7 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function fmtSize(n) {
-    if (!n) return '';
+    if (!n && n !== 0) return '';
     if (n < 1024) return n + ' B';
     if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
     return (n / 1048576).toFixed(1) + ' MB';
@@ -173,65 +325,131 @@
     const d = new Date(ms || Date.now());
     return d.toTimeString().slice(0, 5);
   }
-  // 轻量 Markdown：标题/列表/加粗/行内码/围栏代码/链接。先转义再放行白名单结构。
-  function md(src) {
+  // 轻量 Markdown：围栏代码/标题/列表/加粗/行内码/链接
+  function renderContent(el, text) {
+    // 先把代码块抽出来（多行安全），再逐行处理其余文本，占位符不会跟行号冲突。
     const blocks = [];
-    src = String(src).replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+    const src = String(text).replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
       blocks.push('<pre><code>' + esc(code.replace(/\n$/, '')) + '</code></pre>');
       return '\u0000' + (blocks.length - 1) + '\u0000';
     });
-    const lines = src.split('\n');
-    let out = [], list = null;
     const inline = (s) => esc(s)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/(^|[^"'>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+    const lines = src.split('\n');
+    let out = [], list = null;
+    const flushList = () => { if (list) { out.push('</ul>'); list = null; } };
     for (const raw of lines) {
-      const line = raw.replace(/\u0000(\d+)\u0000/g, (m, i) => '\u0001' + i + '\u0001');
-      const h = line.match(/^(#{1,3})\s+(.*)$/);
-      const li = line.match(/^\s*[-*]\s+(.*)$/);
-      if (h) { if (list) { out.push('</ul>'); list = null; } out.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); continue; }
+      if (/^\u0000\d+\u0000$/.test(raw.trim())) { flushList(); out.push(raw.trim()); continue; }
+      const h = raw.match(/^(#{1,3})\s+(.*)$/);
+      const li = raw.match(/^\s*[-*]\s+(.*)$/);
+      if (h) { flushList(); out.push('<h' + h[1].length + '>' + inline(h[2]) + '</h' + h[1].length + '>'); continue; }
       if (li) { if (!list) { out.push('<ul>'); list = true; } out.push('<li>' + inline(li[1]) + '</li>'); continue; }
-      if (list) { out.push('</ul>'); list = null; }
-      out.push(line.trim() === '' ? '<br>' : '<div>' + inline(line) + '</div>');
+      flushList();
+      out.push(raw.trim() === '' ? '<div></div>' : '<div>' + inline(raw) + '</div>');
     }
-    if (list) out.push('</ul>');
-    return out.join('').replace(/\u0001(\d+)\u0001/g, (m, i) => blocks[+i]);
+    flushList();
+    el.innerHTML = out.join('').replace(/\u0000(\d+)\u0000/g, (m, i) => blocks[+i]);
   }
   function scrollNearBottom() {
     const el = $('list');
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 160;
   }
-  function toBottom() { $('list').scrollTop = $('list').scrollHeight; }
+  function toBottom() { const el = $('list'); el.scrollTop = el.scrollHeight; updateToBottom(); }
+  function updateToBottom() {
+    const el = $('list');
+    $('tobottom').classList.toggle('on', el.scrollHeight - el.scrollTop - el.clientHeight > 320);
+  }
+  $('list').addEventListener('scroll', updateToBottom);
+  $('tobottom').onclick = toBottom;
 
-  // ---------- 渲染 ----------
+  // ---------- 消息渲染 ----------
   function fileBubble(f) {
     if (f.image) {
-      return '<a class="filecard" href="' + esc(f.url) + '" target="_blank" rel="noopener">' +
-        '<img src="' + esc(f.url) + '" alt="' + esc(f.name || '图片') + '"></a>';
+      return '<div class="imgwrap"><img src="' + esc(f.url) + '" alt="' + esc(f.name || '图片') +
+        '" loading="lazy" data-zoom="' + esc(f.url) + '"></div>';
     }
     return '<a class="filecard" href="' + esc(f.url) + '" download>' +
-      '<span>📄</span><span>' + esc(f.name || '文件') + '</span>' +
-      (f.size ? '<span style="color:var(--dim)">' + fmtSize(f.size) + '</span>' : '') + '</a>';
+      '<span class="ficon">📄</span><span class="fmeta"><span class="fname">' + esc(f.name || '文件') + '</span>' +
+      (f.size ? '<div class="fsize">' + fmtSize(f.size) + '</div>' : '') + '</span></a>';
   }
-  function renderMsg(m, prepend) {
+  function addCodeCopy(row) {
+    row.querySelectorAll('pre').forEach((pre) => {
+      const btn = document.createElement('button');
+      btn.className = 'codecopy';
+      btn.textContent = '复制';
+      btn.onclick = () => {
+        const code = pre.querySelector('code');
+        navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
+          btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制'; }, 1200);
+        });
+      };
+      pre.appendChild(btn);
+    });
+  }
+  function renderMsg(m) {
     if (msgIds.has(m.id)) return;
     msgIds.add(m.id);
     const row = document.createElement('div');
-    row.className = 'row ' + (m.role === 'user' ? 'user' : 'agent');
-    let html = '<div class="bubble">';
-    if (m.role === 'agent') html += '<div class="meta">MineAgent · ' + fmtTime(m.at) + '</div>';
-    if (m.text) html += m.role === 'agent' ? md(m.text) : esc(m.text).replace(/\n/g, '<br>');
-    if (m.files && m.files.length) {
-      html += '<div class="files">' + m.files.map(fileBubble).join('') + '</div>';
+    row.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+    row.dataset.raw = m.text || '';
+    let html = '';
+    if (m.role === 'assistant') {
+      html += '<div class="avatar">M</div><div class="body">' +
+        '<div class="meta">MineAgent · ' + fmtTime(m.at) + '</div><div class="content"></div>' +
+        (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
+        '<div class="actions"><button class="act copy">⧉ 复制</button></div></div>';
+    } else {
+      html += '<div class="body">' +
+        '<div class="content bubble"></div>' +
+        (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
+        '</div>';
     }
-    html += '</div>';
     row.innerHTML = html;
-    const list = $('list');
-    if (prepend) list.prepend(row); else list.append(row);
-    if (!prepend && scrollNearBottom()) toBottom();
+    const content = row.querySelector('.content');
+    if (content) {
+      if (m.role === 'assistant') renderContent(content, m.text || '');
+      else content.textContent = m.text || '';
+    }
+    const copy = row.querySelector('.copy');
+    if (copy) copy.onclick = () => {
+      navigator.clipboard.writeText(row.dataset.raw).then(() => {
+        copy.textContent = '✓ 已复制'; setTimeout(() => { copy.textContent = '⧉ 复制'; }, 1200);
+      });
+    };
+    addCodeCopy(row);
+    const nearBottom = scrollNearBottom();
+    $('listInner').appendChild(row);
+    $('empty').style.display = 'none';
+    if (nearBottom) toBottom(); else updateToBottom();
   }
+  function clearMessages() {
+    $('listInner').querySelectorAll('.msg,.typing').forEach((n) => n.remove());
+    msgIds.clear(); lastId = 0;
+    $('empty').style.display = '';
+    setTyping(false);
+  }
+  function setTyping(on) {
+    waiting = on;
+    const old = $('listInner').querySelector('.typing');
+    if (!on) { if (old) old.remove(); return; }
+    if (old) return;
+    const row = document.createElement('div');
+    row.className = 'msg assistant typing';
+    row.innerHTML = '<div class="avatar">M</div><div class="body"><div class="content">' +
+      '<span class="dots"><span></span><span></span><span></span></span> 正在输入…</div></div>';
+    $('listInner').appendChild(row);
+    if (scrollNearBottom()) toBottom();
+  }
+
+  // 图片点击放大
+  $('list').addEventListener('click', (e) => {
+    const img = e.target.closest('img[data-zoom]');
+    if (img) { $('lightbox').querySelector('img').src = img.dataset.zoom; $('lightbox').classList.add('on'); }
+  });
+  $('lightbox').onclick = () => $('lightbox').classList.remove('on');
 
   // ---------- 登录 ----------
   async function doLogin(name) {
@@ -261,39 +479,41 @@
     localStorage.removeItem('mineagent.name');
     localStorage.removeItem('mineagent.admin');
     if (es) { es.close(); es = null; }
-    $('chat').style.display = 'none';
+    clearMessages();
+    $('app').style.display = 'none';
     $('login').style.display = 'flex';
     if (!silent) $('loginerr').textContent = '';
   }
   $('enter').onclick = () => doLogin($('name').value.trim());
   $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click(); });
-  $('leave').onclick = () => logout(false);
+  $('logout').onclick = () => logout(false);
 
-  // ---------- 聊天 ----------
+  // ---------- 会话 ----------
   async function startChat() {
     $('login').style.display = 'none';
-    $('chat').style.display = 'flex';
-    $('who').textContent = me;
-    $('role').textContent = admin ? '管理员' : '普通';
-    $('role').className = 'badge' + (admin ? ' admin' : '');
-    $('list').innerHTML = ''; msgIds.clear(); lastId = 0;
+    $('app').style.display = 'block';
+    $('myname').textContent = me;
+    $('myavatar').textContent = (me[0] || '?').toUpperCase();
+    $('myrole').textContent = admin ? '管理员' : '普通';
+    $('myrole').className = 'badge' + (admin ? ' admin' : '');
+    clearMessages();
     await loadHistory();
     connectSSE();
+    closeSidebar();
     $('text').focus();
   }
   async function loadHistory() {
     try {
       const body = await api('/api/history');
       for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
-      toBottom();
-    } catch (e) { $('typing').textContent = e.message; }
+      if ((body.messages || []).length) toBottom();
+    } catch (e) { showError(e.message); }
   }
   async function syncAfter() {
     try {
       const body = await api('/api/history?after=' + lastId);
-      const list = body.messages || [];
-      for (const m of list) { lastId = Math.max(lastId, m.id); renderMsg(m); }
-    } catch (e) { /* 静默，SSE 仍会推 */ }
+      for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
+    } catch (e) { /* SSE 会推 */ }
   }
   function connectSSE() {
     if (es) es.close();
@@ -305,19 +525,52 @@
           lastId = Math.max(lastId, data.message.id);
           renderMsg(data.message);
           if (data.message.role === 'agent') setTyping(false);
+        } else if (data.type === 'cleared') {
+          clearMessages();
         }
       } catch (e) { /* ignore */ }
     });
-    es.onopen = () => { syncAfter(); };
+    es.onopen = () => syncAfter();
   }
+  $('newchat').onclick = async () => {
+    if ($('listInner').querySelectorAll('.msg').length && !confirm('开始新会话？当前对话记录和记忆会被清空。')) return;
+    try { await api('/api/clear', { method: 'POST' }); clearMessages(); closeSidebar(); $('text').focus(); }
+    catch (e) { showError(e.message); }
+  };
 
-  // ---------- 发送 ----------
-  function setTyping(on, text) { $('typing').textContent = on ? (text || 'MineAgent 正在输入…') : ''; }
+  // ---------- 弹层 ----------
+  function showError(msg) { setTyping(false); const t = $('listInner'); let n = t.querySelector('.errline'); if (!n) { n = document.createElement('div'); n.className = 'hint errline'; t.appendChild(n); } n.textContent = msg; setTimeout(() => n.remove(), 5000); }
+  function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); }
+  function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); }
+  $('menu').onclick = () => $('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
+  $('backdrop').onclick = closeSidebar;
+
+  // ---------- 输入 ----------
+  function autoGrow() {
+    const t = $('text');
+    t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 200) + 'px';
+    updateSendBtn();
+  }
+  function updateSendBtn() {
+    const ready = ($('text').value.trim() || pending.some((p) => p.done)) &&
+      !pending.some((p) => !p.done && !p.err);
+    $('send').classList.toggle('ready', !!ready);
+    $('send').disabled = !ready;
+  }
+  $('text').addEventListener('input', autoGrow);
+  $('text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMsg(); }
+  });
+  document.querySelectorAll('.suggests button').forEach((b) => {
+    b.onclick = () => { $('text').value = b.dataset.q; autoGrow(); $('text').focus(); };
+  });
+
   async function sendMsg() {
     const text = $('text').value.trim();
-    if (!text && !pending.length) return;
-    if (pending.some((p) => p.busy)) { setTyping(false); $('typing').textContent = '还有文件在上传，稍等'; return; }
-    const files = pending.map((p) => p.file);
+    const files = pending.filter((p) => p.done).map((p) => p.file);
+    if (!text && !files.length) return;
+    if (pending.some((p) => !p.done && !p.err)) { showError('还有文件在上传，稍等'); return; }
     $('send').disabled = true;
     try {
       await api('/api/send', {
@@ -325,68 +578,129 @@
         body: JSON.stringify({ text: text, files: files })
       });
       $('text').value = ''; autoGrow();
+      pending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
       pending = []; renderPending();
       setTyping(true);
-      setTimeout(() => setTyping(false), 120000);
+      setTimeout(() => { if (waiting) setTyping(false); }, 180000);
     } catch (e) {
-      $('typing').textContent = e.message;
-      setTimeout(() => setTyping(false), 4000);
+      showError(e.message);
     } finally {
-      $('send').disabled = false;
+      updateSendBtn();
     }
   }
   $('send').onclick = sendMsg;
-  $('text').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMsg(); }
-  });
-  function autoGrow() {
-    const t = $('text');
-    t.style.height = 'auto';
-    t.style.height = Math.min(t.scrollHeight, 132) + 'px';
-  }
-  $('text').addEventListener('input', autoGrow);
 
   // ---------- 上传 ----------
   function renderPending() {
     const box = $('pending');
     box.innerHTML = '';
-    pending.forEach((p, i) => {
+    pending.forEach((p) => {
       const chip = document.createElement('div');
-      chip.className = 'chip' + (p.busy ? ' busy' : '');
-      chip.innerHTML = '<span>' + esc(p.file.name) + (p.busy ? ' · 上传中…' : '') + '</span>';
+      chip.className = 'chip' + (p.done ? ' done' : '');
+      if (p.isImage) {
+        chip.innerHTML = '<img src="' + p.url + '" alt="">';
+      } else {
+        chip.innerHTML = '<div class="doc"><span style="font-size:20px">📄</span><span class="n">' + esc(p.name) + '</span></div>';
+      }
+      if (!p.done) {
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        bar.style.width = Math.round((p.progress || 0) * 100) + '%';
+        chip.appendChild(bar);
+      }
+      p.el = chip;
+      if (p.note && p.done) {
+        const note = document.createElement('div');
+        note.className = 'note';
+        note.textContent = p.note;
+        chip.appendChild(note);
+      }
       const x = document.createElement('button');
-      x.className = 'x'; x.textContent = '✕';
-      x.onclick = () => { pending.splice(i, 1); renderPending(); };
-      if (!p.busy) chip.appendChild(x);
+      x.className = 'x';
+      x.textContent = '✕';
+      x.onclick = () => {
+        if (p.url) URL.revokeObjectURL(p.url);
+        pending.splice(pending.indexOf(p), 1);
+        renderPending(); updateSendBtn();
+      };
+      chip.appendChild(x);
       box.appendChild(chip);
     });
+    updateSendBtn();
   }
+
+  // 图片先压缩再传：聊天截图/照片动辄好几 MB，压到 1600px/JPEG 后通常小一个数量级。
+  async function compressImage(file) {
+    const type = (file.type || '').toLowerCase();
+    if (!/^image\/(png|jpe?g|webp|bmp|avif)$/.test(type)) return null; // gif/svg 不动
+    if (file.size < 400 * 1024) return null;                          // 小图不折腾
+    let bitmap;
+    try { bitmap = await createImageBitmap(file); } catch (e) { return null; }
+    const maxDim = 1600;
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) try { bitmap.close(); } catch (e) {}
+    const blob = await new Promise((res) => { try { canvas.toBlob(res, 'image/jpeg', 0.85); } catch (e) { res(null); } });
+    if (!blob || blob.size >= file.size) return null;
+    const base = (file.name || 'image').replace(/\.[^.]+$/, '');
+    return new File([blob], base + '.jpg', { type: 'image/jpeg' });
+  }
+
+  function uploadOne(file, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload?name=' + encodeURIComponent(file.name));
+      xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      xhr.onload = () => {
+        let body = null;
+        try { body = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+        else if (xhr.status === 401) { logout(true); reject(new Error('登录已失效')); }
+        else reject(new Error((body && body.error) || ('HTTP ' + xhr.status)));
+      };
+      xhr.onerror = () => reject(new Error('网络错误'));
+      xhr.send(file);
+    });
+  }
+
   async function addFiles(fileList) {
+    const jobs = [];
     for (const f of Array.from(fileList)) {
-      if (f.size > 20 * 1024 * 1024) { alert('「' + f.name + '」超过 20MB 上限'); continue; }
-      const item = { file: null, busy: true };
+      if (f.size > 20 * 1024 * 1024) { showError('「' + f.name + '」超过 20MB 上限'); continue; }
+      const isImage = /^image\//.test(f.type || '');
+      jobs.push({ original: f, isImage: isImage });
+    }
+    // 压缩（并行）之后逐个登记
+    const prepared = await Promise.all(jobs.map(async (j) => {
+      const smaller = await compressImage(j.original);
+      return { file: smaller || j.original, isImage: j.isImage, saved: smaller ? j.original.size - smaller.size : 0 };
+    }));
+    for (const p of prepared) {
+      const item = {
+        file: p.file, name: p.file.name, isImage: p.isImage || /^image\//.test(p.file.type || ''),
+        progress: 0, done: false, note: p.saved > 0 ? '已压缩 ' + fmtSize(p.saved) : '',
+        url: p.isImage ? URL.createObjectURL(p.file) : ''
+      };
       pending.push(item); renderPending();
-      try {
-        const res = await fetch('/api/upload?name=' + encodeURIComponent(f.name), {
-          method: 'POST', body: f,
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/octet-stream' }
-        });
-        const body = await res.json().catch(() => null);
-        if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-        item.file = body; item.busy = false;
-      } catch (e) {
-        item.busy = false; item.err = true;
-        pending.splice(pending.indexOf(item), 1);
-        alert('上传失败：' + e.message);
-      }
-      renderPending();
+      uploadOne(p.file, (v) => {
+        item.progress = v;
+        const b = item.el && item.el.querySelector('.bar');
+        if (b) b.style.width = Math.round(v * 100) + '%';
+      })
+        .then((ref) => { item.file = ref; item.done = true; renderPending(); })
+        .catch((e) => { item.err = true; showError('上传失败：' + e.message); pending.splice(pending.indexOf(item), 1); renderPending(); });
     }
     $('text').focus();
   }
   $('attach').onclick = () => $('file').click();
   $('file').onchange = () => { addFiles($('file').files); $('file').value = ''; };
   document.addEventListener('paste', (e) => {
-    if ($('chat').style.display === 'none') return;
+    if ($('app').style.display === 'none') return;
     const files = e.clipboardData && e.clipboardData.files;
     if (files && files.length) { e.preventDefault(); addFiles(files); }
   });

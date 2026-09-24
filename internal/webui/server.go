@@ -44,6 +44,7 @@ func (c *Channel) handler() http.Handler {
 	mux.HandleFunc("/api/login", c.handleLogin)
 	mux.HandleFunc("/api/me", c.withAuth(c.handleMe))
 	mux.HandleFunc("/api/history", c.withAuth(c.handleHistory))
+	mux.HandleFunc("/api/clear", c.withAuth(c.handleClear))
 	mux.HandleFunc("/api/events", c.handleEvents) // SSE 用 ?token=，自己校验
 	mux.HandleFunc("/api/upload", c.withAuth(c.handleUpload))
 	mux.HandleFunc("/api/send", c.withAuth(c.handleSend))
@@ -195,6 +196,21 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name str
 		msgs = append(msgs, ToWire(m))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+}
+
+// handleClear 清空当前账号会话（前端"新会话"），并广播 cleared 让其他标签页同步。
+func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
+		return
+	}
+	if err := c.store.ClearSession(r.Context(), "web:c2c:"+name); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	c.log.Info("web session cleared", "name", name)
+	c.publishRaw(name, map[string]any{"type": "cleared"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (c *Channel) handleEvents(w http.ResponseWriter, r *http.Request) {

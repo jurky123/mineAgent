@@ -114,6 +114,14 @@ func TestLoginAndAuth(t *testing.T) {
 	}
 
 	tok := loginTest(t, ts, "jzk")
+	// 同名二次登录：旧令牌仍然有效（多设备并存）
+	tok2 := loginTest(t, ts, "jzk")
+	if code := doJSON(t, "GET", ts.URL+"/api/me", tok, nil, nil); code != 200 {
+		t.Fatalf("旧令牌被踢: status=%d", code)
+	}
+	if code := doJSON(t, "GET", ts.URL+"/api/me", tok2, nil, nil); code != 200 {
+		t.Fatalf("新令牌不可用: status=%d", code)
+	}
 	var me map[string]any
 	if code := doJSON(t, "GET", ts.URL+"/api/me", tok, nil, &me); code != 200 {
 		t.Fatalf("me status=%d", code)
@@ -207,6 +215,34 @@ func TestUploadSendHistoryDownload(t *testing.T) {
 	_ = dl2.Body.Close()
 	if dl2.StatusCode != 403 {
 		t.Fatalf("cross-user download status=%d", dl2.StatusCode)
+	}
+}
+
+func TestClearSession(t *testing.T) {
+	_, ts, _ := newTestChannel(t)
+	tok := loginTest(t, ts, "jzk")
+	for i := 0; i < 50; i++ {
+		if code := doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{"text": "hello"}, nil); code == 200 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+		if i == 49 {
+			t.Fatal("send always rate limited")
+		}
+	}
+	var hist struct {
+		Messages []WireMessage `json:"messages"`
+	}
+	_ = doJSON(t, "GET", ts.URL+"/api/history", tok, nil, &hist)
+	if len(hist.Messages) == 0 {
+		t.Fatal("send 后应有消息")
+	}
+	if code := doJSON(t, "POST", ts.URL+"/api/clear", tok, nil, nil); code != 200 {
+		t.Fatalf("clear status=%d", code)
+	}
+	_ = doJSON(t, "GET", ts.URL+"/api/history", tok, nil, &hist)
+	if len(hist.Messages) != 0 {
+		t.Fatalf("清空后还有消息: %+v", hist.Messages)
 	}
 }
 

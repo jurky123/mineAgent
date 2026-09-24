@@ -1,6 +1,6 @@
 // 入口：登录、侧栏、启动装配
 
-import { $ } from './ui.js';
+import { $, toast } from './ui.js';
 import { S, saveAuth, clearAuth } from './state.js';
 import { api, logoutRequest, setUnauthorizedHandler } from './api.js';
 import { initTheme, openAppearance } from './theme.js';
@@ -12,10 +12,14 @@ import * as composer from './composer.js';
 // ---------- 登录 / 登出 ----------
 function showLogin() {
   const el = $('login');
+  // 上次的名字/浏览器自动填充会让人误以为"空着也能进"（实际提交的是旧名字），统一清掉
+  const nameInput = $('name');
+  if (nameInput) nameInput.value = '';
   el.style.display = 'flex';
   el.classList.remove('leave');
   el.classList.add('enter');
   setTimeout(() => el.classList.remove('enter'), 300);
+  setTimeout(() => nameInput && nameInput.focus(), 60);
 }
 function hideLogin() {
   const el = $('login');
@@ -52,6 +56,7 @@ async function doLogin(name) {
     startChat();
   } catch (e) {
     $('loginerr').textContent = e.message;
+    toast(e.message, 'err');
   } finally {
     $('enter').disabled = false;
   }

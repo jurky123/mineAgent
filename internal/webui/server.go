@@ -197,6 +197,7 @@ func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(req.Name)
 	if !ValidAccountName(name) {
+		c.log.Warn("web login rejected", "name", req.Name, "reason", "invalid name", "remote", r.RemoteAddr)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "名字不合法：1-24 个字符，字母/数字/中文/_-，字母数字开头，别带空格和符号"})
 		return
 	}
@@ -209,6 +210,7 @@ func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !ok {
+			c.log.Warn("web login rejected", "name", name, "reason", "not in allow list", "remote", r.RemoteAddr)
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个名字不在允许名单里"})
 			return
 		}

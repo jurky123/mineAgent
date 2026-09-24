@@ -69,11 +69,15 @@ func (s *CallbackServer) decrypt(encrypt string) (string, error) {
 
 func (s *CallbackServer) Start() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/wecom", s.handle)
+	// 用 catch-all 接所有请求：路径不对也能在日志里看到（企微保存回调时
+	// URL 填错是最常见的"回调不通过"原因，不记日志就没法排查）。
+	mux.HandleFunc("/", s.handle)
 	s.srv = &http.Server{
 		Addr:              fmt.Sprintf(":%d", s.cfg.Port),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Go 内部错误（如对 HTTP 端口发 HTTPS 握手）也写进我们的日志。
+		ErrorLog: slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
 	}
 	s.log.Info("wecom callback listening", "port", s.cfg.Port, "path", "/wecom")
 	return s.srv.ListenAndServe()
@@ -88,10 +92,24 @@ func (s *CallbackServer) Stop() {
 }
 
 func (s *CallbackServer) handle(w http.ResponseWriter, r *http.Request) {
+	// 只认 /wecom（容忍尾斜杠）；其它路径记日志再 404，方便排查填错的回调 URL。
+	if r.URL.Path != "/wecom" && r.URL.Path != "/wecom/" {
+		s.log.Warn("wecom callback unexpected path",
+			"path", r.URL.Path, "method", r.Method,
+			"remote", r.RemoteAddr, "ua", r.UserAgent())
+		http.NotFound(w, r)
+		return
+	}
 	q := r.URL.Query()
 	signature := q.Get("msg_signature")
 	timestamp := q.Get("timestamp")
 	nonce := q.Get("nonce")
+	if signature == "" {
+		// 可能把 URL 当浏览器打开/探测，记下来但不报错噪音。
+		s.log.Info("wecom callback hit without signature", "method", r.Method, "remote", r.RemoteAddr)
+		http.Error(w, "missing msg_signature", http.StatusBadRequest)
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:

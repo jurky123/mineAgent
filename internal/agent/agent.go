@@ -328,7 +328,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	if ok {
 		return r, key, nil
 	}
-	middlewares, err := a.buildMiddlewares(ctx, a.model)
+	middlewares, err := a.buildMiddlewaresFor(ctx, a.model, true)
 	if err != nil {
 		return nil, "", fmt.Errorf("init middlewares: %w", err)
 	}

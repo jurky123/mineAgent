@@ -63,6 +63,22 @@ func sessionFromContext(ctx context.Context) string {
 	return v
 }
 
+// replyTargetCtxKey 存本次对话的回执目标（agent.Request.ReplyTarget）。
+// respond/resume 在 run 前放进去，工具链（qqToolGate->qq_markdown/qq_image）
+// 从这里取，保证 agent 只能发回当前会话，不能跨会话发。
+type replyTargetCtxKey struct{}
+
+// WithReplyTarget 供 agent.respond/resume 把 Request.ReplyTarget 放进 ctx。
+func WithReplyTarget(ctx context.Context, target string) context.Context {
+	return context.WithValue(ctx, replyTargetCtxKey{}, target)
+}
+
+// ReplyTargetFromContext 取本次对话的回执目标（""=MC 纯文本广播语义）。
+func ReplyTargetFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(replyTargetCtxKey{}).(string)
+	return v
+}
+
 // SessionFromContext 供 agent 摘要中间件从 ctx 里取当前会话，
 // 这样 MC/QQ 共用一套中间件逻辑也能把摘要存到各自会话下。
 func SessionFromContext(ctx context.Context) string {

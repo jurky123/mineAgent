@@ -53,8 +53,11 @@ type LLMReviewer struct {
 	apiKey  string
 	model   string
 	timeout time.Duration
-	client  *http.Client
-	log     *slog.Logger
+	// sessionID 透传给 opencode-go 网关的 x-opencode-session 头。
+	// 没有它网关直接 400 MissingSessionID（线上已复现），所以必填。
+	sessionID string
+	client    *http.Client
+	log       *slog.Logger
 }
 
 func NewLLMReviewer(baseURL, apiKey, model string, timeout time.Duration, log *slog.Logger) *LLMReviewer {
@@ -69,6 +72,12 @@ func NewLLMReviewer(baseURL, apiKey, model string, timeout time.Duration, log *s
 		client:  &http.Client{Timeout: timeout + 5*time.Second},
 		log:     log,
 	}
+}
+
+// WithSessionID 设置 x-opencode-session 头（opencode-go 网关强制要求）。
+func (r *LLMReviewer) WithSessionID(id string) *LLMReviewer {
+	r.sessionID = id
+	return r
 }
 
 const reviewerSystem = `你是服务器沙箱命令的安全审查员。判断一条即将在隔离沙箱（workspace 目录，
@@ -109,6 +118,10 @@ func (r *LLMReviewer) Review(ctx context.Context, req ReviewRequest) (ReviewDeci
 	httpReq.Header.Set("Content-Type", "application/json")
 	if r.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+r.apiKey)
+	}
+	if r.sessionID != "" {
+		httpReq.Header.Set("x-opencode-session", r.sessionID)
+		httpReq.Header.Set("User-Agent", "MineAgent/reviewer")
 	}
 	resp, err := r.client.Do(httpReq)
 	if err != nil {

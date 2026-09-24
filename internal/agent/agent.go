@@ -235,6 +235,8 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		rctx = tools.WithMCRequester(rctx, req.MCRequester)
 	}
 	rctx = tools.WithSession(rctx, sessionKey)
+	// 回执目标进 ctx：qq_markdown/qq_image 工具凭它只能发回当前会话。
+	rctx = tools.WithReplyTarget(rctx, req.ReplyTarget)
 
 	msgs, cutoff, err := a.history(sessionKey, req.TriggerMessageID)
 	if err != nil {
@@ -424,6 +426,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		rctx = tools.WithMCRequester(rctx, run.mcRequester)
 	}
 	rctx = tools.WithSession(rctx, run.sessionKey)
+	rctx = tools.WithReplyTarget(rctx, run.replyTarget)
 	rctx = context.WithValue(rctx, historyCutoffKey{}, run.cutoff)
 
 	a.log.Info("resuming after approval",

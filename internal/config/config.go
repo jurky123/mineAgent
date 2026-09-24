@@ -44,6 +44,15 @@ type QQ struct {
 	MaxPendingPerUser int `json:"maxPendingPerUser"`
 }
 
+// WorkspaceRoot 供 qq 通道发本地图片时定位 workspace（config.QQ 不存 root，
+// channel 拿的是整个 config，这里直接读 Workspace 段）。
+func (c Config) WorkspaceRoot() string {
+	if c.Workspace.Root != "" {
+		return c.Workspace.Root
+	}
+	return "workspace"
+}
+
 // Workspace 是写代码/执行代码工具的沙箱根目录。
 // 所有读写/执行都被限制在这个目录内，v1 不做强隔离，靠目录约束+
 // 命令硬拦截+受审命令约束+LLM语义审查+超时+输出上限+单并发+审计来防止破坏服务器。
@@ -62,14 +71,25 @@ type Workspace struct {
 
 // ExecReview 是 workspace_exec 的 LLM 二审配置。
 // enabled=false 则 review 类命令一律拒绝（fail-closed）。
+// 注意 config.json 里没写 review 段时 Enabled 为零值 false，但线上老行为是
+// "配了主模型就默认开"——EffectiveReviewEnabled 处理这个兼容：只要主模型
+// 配了就开，除非显式写 enabled=false。想彻底关就写 enabled=false。
 type ExecReview struct {
-	Enabled bool `json:"enabled"`
+	Enabled *bool `json:"enabled"`
 	// 复用主模型时留空；想用更便宜/更严的模型就填 OpenAI 兼容的 baseURL/apiKey/name。
 	BaseURL string `json:"baseURL"`
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model"`
 	// 单次审查超时（秒），默认 20。
 	TimeoutSec int `json:"timeoutSec"`
+}
+
+// EffectiveReviewEnabled 主模型配了就默认开审查，除非显式 enabled=false。
+func (c Config) EffectiveReviewEnabled() bool {
+	if c.Workspace.Review.Enabled != nil {
+		return *c.Workspace.Review.Enabled
+	}
+	return c.Model.BaseURL != "" && c.Model.Name != ""
 }
 
 type Model struct {
@@ -106,7 +126,7 @@ func Default() Config {
 			MaxFileBytes:   65536,
 			ExecTimeoutSec: 15,
 			MaxOutputBytes: 8192,
-			Review:         ExecReview{Enabled: true, TimeoutSec: 20},
+			Review:         ExecReview{TimeoutSec: 20},
 		},
 	}
 }

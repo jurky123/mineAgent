@@ -207,11 +207,21 @@ func (a *API) GatewayURL(ctx context.Context) (string, error) {
 }
 
 type sendMessageReq struct {
+	Content   string       `json:"content,omitempty"`
+	MsgType   int          `json:"msg_type"`
+	MsgID     string       `json:"msg_id,omitempty"`
+	MsgSeq    int          `json:"msg_seq,omitempty"`
+	EventID   string       `json:"event_id,omitempty"`
+	Markdown  *mdPayload   `json:"markdown,omitempty"`
+	Media     *mediaInfo   `json:"media,omitempty"`
+}
+
+type mdPayload struct {
 	Content string `json:"content"`
-	MsgType int    `json:"msg_type"`
-	MsgID   string `json:"msg_id,omitempty"`
-	MsgSeq  int    `json:"msg_seq,omitempty"`
-	EventID string `json:"event_id,omitempty"`
+}
+
+type mediaInfo struct {
+	FileInfo string `json:"file_info"`
 }
 
 type sendMessageResp struct {
@@ -235,8 +245,35 @@ func (a *API) SendGroup(ctx context.Context, groupOpenID, text, msgID string, ms
 	})
 }
 
-func (a *API) post(ctx context.Context, path string, req sendMessageReq) error {
-	tok, err := a.tokens.Token(ctx)
+// SendC2CMarkdown 发单聊 markdown（msg_type=2，单聊/群聊都无需申请模板）。
+func (a *API) SendC2CMarkdown(ctx context.Context, userOpenID, markdown, msgID string, msgSeq int) error {
+	return a.post(ctx, "/v2/users/"+userOpenID+"/messages", sendMessageReq{
+		Markdown: &mdPayload{Content: markdown}, MsgType: 2, MsgID: msgID, MsgSeq: msgSeq,
+	})
+}
+
+// SendGroupMarkdown 发群 markdown。
+func (a *API) SendGroupMarkdown(ctx context.Context, groupOpenID, markdown, msgID string, msgSeq int) error {
+	return a.post(ctx, "/v2/groups/"+groupOpenID+"/messages", sendMessageReq{
+		Markdown: &mdPayload{Content: markdown}, MsgType: 2, MsgID: msgID, MsgSeq: msgSeq,
+	})
+}
+
+// SendC2CMedia 发单聊富媒体（msg_type=7，fileInfo 来自 UploadC2C*）。
+func (a *API) SendC2CMedia(ctx context.Context, userOpenID, fileInfo, msgID string, msgSeq int) error {
+	return a.post(ctx, "/v2/users/"+userOpenID+"/messages", sendMessageReq{
+		Media: &mediaInfo{FileInfo: fileInfo}, MsgType: 7, MsgID: msgID, MsgSeq: msgSeq,
+	})
+}
+
+// SendGroupMedia 发群富媒体。
+func (a *API) SendGroupMedia(ctx context.Context, groupOpenID, fileInfo, msgID string, msgSeq int) error {
+	return a.post(ctx, "/v2/groups/"+groupOpenID+"/messages", sendMessageReq{
+		Media: &mediaInfo{FileInfo: fileInfo}, MsgType: 7, MsgID: msgID, MsgSeq: msgSeq,
+	})
+}
+
+func (a *API) post(ctx context.Context, path string, req sendMessageReq) error {	tok, err := a.tokens.Token(ctx)
 	if err != nil {
 		return err
 	}

@@ -33,7 +33,6 @@
     "execTimeoutSec": 15,
     "maxOutputBytes": 8192,
     "review": {
-      "enabled": true,
       "baseURL": "",
       "apiKey": "",
       "model": "",

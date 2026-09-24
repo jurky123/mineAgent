@@ -23,9 +23,20 @@ type Message struct {
 	AuthorID   string `json:"authorId"`
 	AuthorName string `json:"authorName"`
 	Text       string `json:"text"`
-	Target     string `json:"target,omitempty"`
-	CreatedAt  int64  `json:"createdAt"`
+	// Target: MC=玩家名(广播为空)；QQ="c2c:<openid>:<msgID>"。
+	// 图片/markdown 走 Kind 前缀：见 KindText/KindMarkdown/KindImage。
+	Target    string `json:"target,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
 }
+
+// QQ 富媒体/版式消息的 Target 前缀。纯文本无前缀（历史兼容）。
+// 图片 Target="img:<c2c|group>:<id>:<msgID>:<workspace相对路径>"；
+// markdown Target="md:<c2c|group>:<id>:<msgID>"，正文放 Text。
+const (
+	KindText     = ""
+	KindMarkdown = "md:"
+	KindImage    = "img:"
+)
 
 type Summary struct {
 	ID            int64  `json:"id"`

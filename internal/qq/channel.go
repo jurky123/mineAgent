@@ -35,6 +35,9 @@ import (
 type Channel struct {
 	log *slog.Logger
 	cfg config.QQ
+	// workspaceRoot 发本地图片时定位 workspace（channel 拿的是整个 config，
+	// 见 NewChannel）。默认 "workspace"。
+	workspaceRoot string
 
 	hub     *session.Hub
 	store   *storage.Store
@@ -54,8 +57,9 @@ type Channel struct {
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
 	ag *agent.Agent, api *API, qqTools []tool.BaseTool) *Channel {
 	c := &Channel{
-		log:         log,
-		cfg:         cfg.QQ,
+		log:           log,
+		cfg:           cfg.QQ,
+		workspaceRoot: cfg.WorkspaceRoot(),
 		hub:         hub,
 		store:       store,
 		ag:          ag,
@@ -77,12 +81,33 @@ func (c *Channel) Start() { c.gw.Start() }
 func (c *Channel) Stop() { c.gw.Stop() }
 
 // Send 实现 session.Channel：agent 的回复经这里发回 QQ。
-// msg.Target 是 channel.go 回执时填的 "c2c:<openid>:<msgID>" 或
-// "group:<groupid>:<msgID>"。被动回复优先带 msg_id（C2C 60分钟/群 5分钟内
-// 有效），过期了 API 会报错，那就降级成主动消息再试一次。
+// 纯文本 Target="c2c:<openid>:<msgID>" 或 "group:<groupid>:<msgID>"。
+// markdown Target="md:<c2c|group>:<id>:<msgID>"，正文放 Text（msg_type=2）。
+// 图片 Target="img:<c2c|group>:<id>:<msgID>:<workspace相对路径>"，走本地分片上传后发 msg_type=7。
+// 被动回复优先带 msg_id（C2C 60分钟/群 5分钟内有效），过期了 API 会报错，
+// 那就降级成主动消息再试一次。
 func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
-	kind, id, msgID := splitTarget(msg.Target)
-	text := firstLine(msg.Text, 1000)
+	target := msg.Target
+	kind := storage.KindText
+	if strings.HasPrefix(target, storage.KindMarkdown) {
+		kind = storage.KindMarkdown
+		target = strings.TrimPrefix(target, storage.KindMarkdown)
+	} else if strings.HasPrefix(target, storage.KindImage) {
+		kind = storage.KindImage
+		target = strings.TrimPrefix(target, storage.KindImage)
+	}
+	switch kind {
+	case storage.KindMarkdown:
+		return c.sendMarkdown(ctx, target, firstLine(msg.Text, 4000))
+	case storage.KindImage:
+		return c.sendImage(ctx, target, msg.Text)
+	default:
+		return c.sendText(ctx, target, firstLine(msg.Text, 1000))
+	}
+}
+
+func (c *Channel) sendText(ctx context.Context, target, text string) error {
+	kind, id, msgID := splitTarget(target)
 	switch kind {
 	case "c2c":
 		if msgID != "" {
@@ -103,8 +128,94 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 		}
 		return c.api.SendGroup(ctx, id, text, "", 0)
 	default:
-		c.log.Warn("qq send with bad target", "target", msg.Target)
+		c.log.Warn("qq send with bad target", "target", target)
 		return nil
+	}
+}
+
+// sendMarkdown 发 markdown（msg_type=2）。失败不降级纯文本：
+// 版式乱了比多发一条更糟，调用方（agent 工具）收到 error 自会决定重试。
+func (c *Channel) sendMarkdown(ctx context.Context, target, markdown string) error {
+	if strings.TrimSpace(markdown) == "" {
+		return nil
+	}
+	kind, id, msgID := splitTarget(target)
+	switch kind {
+	case "c2c":
+		if msgID != "" {
+			if err := c.api.SendC2CMarkdown(ctx, id, markdown, msgID, 1); err == nil {
+				return nil
+			} else {
+				c.log.Warn("qq c2c markdown passive failed, fallback to active", "err", err)
+			}
+		}
+		return c.api.SendC2CMarkdown(ctx, id, markdown, "", 0)
+	case "group":
+		if msgID != "" {
+			if err := c.api.SendGroupMarkdown(ctx, id, markdown, msgID, 1); err == nil {
+				return nil
+			} else {
+				c.log.Warn("qq group markdown passive failed, fallback to active", "err", err)
+			}
+		}
+		return c.api.SendGroupMarkdown(ctx, id, markdown, "", 0)
+	default:
+		c.log.Warn("qq markdown with bad target", "target", target)
+		return nil
+	}
+}
+
+// sendImage 发 workspace 内图片：target="img:<c2c|group>:<id>:<msgID>:<relPath>"，
+// caption 放 msg.Text（v1 图片不带 caption，只发图；caption 记日志备查）。
+// 失败返回 error（agent 工具转告用户），不静默吞。
+func (c *Channel) sendImage(ctx context.Context, target, caption string) error {
+	parts := strings.SplitN(target, ":", 4)
+	if len(parts) != 4 {
+		c.log.Warn("qq image with bad target", "target", target)
+		return nil
+	}
+	kind, id, msgID, relPath := parts[0], parts[1], parts[2], parts[3]
+	if relPath == "" {
+		c.log.Warn("qq image with empty path", "target", target)
+		return nil
+	}
+	// 上传+发送整体限 90s（分片 PUT 可能慢），ctx 是 agent 的 3min run ctx，够用。
+	upCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	var fileInfo string
+	var err error
+	switch kind {
+	case "c2c":
+		fileInfo, err = c.api.UploadC2CLocalImage(upCtx, id, c.workspaceRoot, relPath)
+	case "group":
+		fileInfo, err = c.api.UploadGroupLocalImage(upCtx, id, c.workspaceRoot, relPath)
+	default:
+		c.log.Warn("qq image with bad kind", "target", target)
+		return nil
+	}
+	if err != nil {
+		c.log.Warn("qq image upload failed", "target", target, "err", err, "caption", firstLine(caption, 100))
+		return err
+	}
+	switch kind {
+	case "c2c":
+		if msgID != "" {
+			if e := c.api.SendC2CMedia(ctx, id, fileInfo, msgID, 1); e == nil {
+				return nil
+			} else {
+				c.log.Warn("qq c2c media passive failed, fallback to active", "err", e)
+			}
+		}
+		return c.api.SendC2CMedia(ctx, id, fileInfo, "", 0)
+	default:
+		if msgID != "" {
+			if e := c.api.SendGroupMedia(ctx, id, fileInfo, msgID, 1); e == nil {
+				return nil
+			} else {
+				c.log.Warn("qq group media passive failed, fallback to active", "err", e)
+			}
+		}
+		return c.api.SendGroupMedia(ctx, id, fileInfo, "", 0)
 	}
 }
 
@@ -277,7 +388,11 @@ const qqInstruction = `你是 Minecraft 服务器「jzk 的服务器」的 QQ �
 
 规则：
 - 用简体中文回答，语气轻松友好。
-- QQ 里回复可以稍长，但单条控制在 500 字内；不要用 Markdown 表格。
+- QQ 里回复可以稍长，但单条控制在 500 字内；不要用 Markdown 表格（纯文本语气）。
+  需要版式（标题/列表/加粗）时调用 qq_markdown 发一条；需要发图时调用 qq_image。
+- 发图流程：先用 workspace_write/exec 把图做到 workspace 里（png/jpg，20MB内，
+  推荐用 python 画图，见下），再调 qq_image 发，path 写相对路径。
+  图片先分片上传再发送，上传失败会如实报错，不要编造"已发送"。
 - 被问到服务器实时情况（在线玩家、TPS/内存、时间、天气）时必须先调用 minecraft_* 只读工具查，不要编造。
 - minecraft_teleport / minecraft_give / minecraft_run_command 是高权限操作：只能应明确请求发起，
   发起后必须等待游戏内管理员批准；请求者没有绑定 MC 身份时要先提醒他用「绑定 <MC名>」绑定。

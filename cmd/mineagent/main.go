@@ -82,7 +82,10 @@ func main() {
 	// workspace_exec 的 LLM 二审：默认复用主模型（省一个配置），
 	// 想用更便宜/更严的模型就填 workspace.review.baseURL/apiKey/model。
 	// enabled=false 或主模型都没配 = 无审查器，review 类命令 fail-closed 全拒。
-	if cfg.Workspace.Review.Enabled && cfg.Model.BaseURL != "" && cfg.Model.Name != "" {
+	// 注意 config.json 里没有 review 段时 Enabled 默认为 false（零值），
+	// 但老版本是"配了主模型就默认开"——为保持线上行为，这里只要主模型配了就开，
+	// 除非显式 disabled（见 config.EffectiveReviewEnabled）。
+	if cfg.EffectiveReviewEnabled() {
 		baseURL := cfg.Workspace.Review.BaseURL
 		apiKey := cfg.Workspace.Review.APIKey
 		model := cfg.Workspace.Review.Model
@@ -96,15 +99,17 @@ func main() {
 			model = cfg.Model.Name
 		}
 		wsTools.SetReviewer(tools.NewLLMReviewer(baseURL, apiKey, model,
-			time.Duration(cfg.Workspace.Review.TimeoutSec)*time.Second, log))
+			time.Duration(cfg.Workspace.Review.TimeoutSec)*time.Second, log).
+			WithSessionID("mineagent-reviewer"))
 		log.Info("workspace reviewer enabled", "model", model)
 	} else {
 		log.Warn("workspace reviewer disabled, review-gated commands will be denied",
 			"hint", "set workspace.review.enabled=true and model.baseURL/model.name")
 	}
 	bindTools := tools.NewQQBind(store, log)
+	sendTools := tools.NewQQSend()
 	qqBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
-		append(wsTools.Tools(), bindTools.Tools()...)...)
+		append(append(wsTools.Tools(), bindTools.Tools()...), sendTools.Tools()...)...)
 
 	ag, err := agent.New(ctx, cfg, store, log, agentTools, approvals)
 	if err != nil {
@@ -120,7 +125,14 @@ func main() {
 	if cfg.QQ.AppID != "" && cfg.QQ.Secret != "" {
 		tokens := qq.NewTokenSource(cfg.QQ.AppID, cfg.QQ.Secret, cfg.QQ.APIBase, log)
 		api := qq.NewAPI(cfg.QQ.APIBase, tokens, log)
-		qqCh = qq.NewChannel(log, cfg, hub, store, ag, api, wrapQQTools(qqBaseTools, wsTools, store))
+		// sessions 按 key 取 Session（hub 成功后必有）；sender 调 Reply 走 fanout。
+		sessionsFn := func(ctx context.Context, sessionKey string) (*session.Session, error) {
+			return hub.Session(ctx, sessionKey)
+		}
+		senderFn := func(ctx context.Context, sess *session.Session, target, text string) error {
+			return sess.Reply(ctx, text, target)
+		}
+		qqCh = qq.NewChannel(log, cfg, hub, store, ag, api, wrapQQTools(qqBaseTools, wsTools, store, sessionsFn, senderFn))
 		qqCh.Start()
 		defer qqCh.Stop()
 		log.Info("qq channel enabled")
@@ -227,14 +239,17 @@ var minecraftMessageTypes = map[string]bool{
 // wrapQQTools 给 QQ 通道包一层身份门禁：每个工具调用前按 ctx 里的 QQ 身份决定
 // workspace 管理员标记和绑定身份。MC 通道走原始工具，不受影响。
 // ctx 里已有（agent.respond 放的）：requester=qq:<openid>、requesterID、
-// session=qq:...、historyCutoff；这里追加：
+// session=qq:...、replyTarget、historyCutoff；这里追加：
 //   - WithQQAdmin：union/user/member 任一命中 adminOpenIDs 即管理员。
 //   - WithQQIdentity：openid 候选列表，供 qq_bind/qq_unbind 用。
 //   - WithMCRequester：绑定的 MC 名，供 Gateway.Call 发给插件（requester 字段）。
-func wrapQQTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store) []tool.BaseTool {
+// qq_markdown/qq_image 的发送经 sender/sessions 回调走 session fanout。
+func wrapQQTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store,
+	sessions func(ctx context.Context, sessionKey string) (*session.Session, error),
+	sender func(ctx context.Context, sess *session.Session, target, text string) error) []tool.BaseTool {
 	out := make([]tool.BaseTool, 0, len(base))
 	for _, tl := range base {
-		out = append(out, &qqToolGate{inner: tl, ws: wsTools, store: store})
+		out = append(out, &qqToolGate{inner: tl, ws: wsTools, store: store, sessions: sessions, sender: sender})
 	}
 	return out
 }

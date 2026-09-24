@@ -21,11 +21,27 @@ func historyCutoffFrom(ctx context.Context) int64 {
 }
 
 func (a *Agent) buildMiddlewares(ctx context.Context, cm model.BaseModel[*schema.Message]) ([]adk.ChatModelAgentMiddleware, error) {
+	// 阈值全部可配（见 config.Agent）：越大记得越多、token 越多。
+	// 默认摘要 12000 token/80 消息触发，截断兜底 24000 token 留最后 4 轮。
+	sumTokens, sumMsgs := a.cfg.SummaryTokens, a.cfg.SummaryMessages
+	if sumTokens <= 0 {
+		sumTokens = 12000
+	}
+	if sumMsgs <= 0 {
+		sumMsgs = 80
+	}
+	redTokens, redKeep := a.cfg.ReductionTokens, a.cfg.ReductionKeep
+	if redTokens <= 0 {
+		redTokens = 24000
+	}
+	if redKeep <= 0 {
+		redKeep = 4
+	}
 	summaryMW, err := summarization.New(ctx, &summarization.Config{
 		Model: cm,
 		Trigger: &summarization.TriggerCondition{
-			ContextTokens:   6000,
-			ContextMessages: 40,
+			ContextTokens:   sumTokens,
+			ContextMessages: sumMsgs,
 		},
 		UserInstruction: "请把上面的 Minecraft 服务器聊天记录压缩成简洁的中文摘要，保留玩家名、事件、约定和重要事实，不要遗漏未完成的事项。",
 		Finalize: func(ctx context.Context, original []*schema.Message, summary *schema.Message) ([]*schema.Message, error) {
@@ -51,8 +67,8 @@ func (a *Agent) buildMiddlewares(ctx context.Context, cm model.BaseModel[*schema
 
 	reductionMW, err := reduction.New(ctx, &reduction.Config{
 		SkipTruncation:            true,
-		MaxTokensForClear:         12000,
-		ClearRetentionSuffixLimit: 2,
+		MaxTokensForClear:         int64(redTokens),
+		ClearRetentionSuffixLimit: redKeep,
 	})
 	if err != nil {
 		return nil, err

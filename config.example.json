@@ -27,6 +27,16 @@
   "tools": {
     "approvalTimeoutSeconds": 180
   },
+  "agent": {
+    "qqMaxIterations": 80,
+    "runTimeoutSec": 300,
+    "historyLimit": 200,
+    "summaryTokens": 12000,
+    "summaryMessages": 80,
+    "reductionTokens": 24000,
+    "reductionKeep": 4,
+    "backgroundAfterSec": 90
+  },
   "workspace": {
     "root": "workspace",
     "maxFileBytes": 65536,

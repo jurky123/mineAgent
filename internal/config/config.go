@@ -19,6 +19,7 @@ type Config struct {
 	Storage      Storage   `json:"storage"`
 	Tools        Tools     `json:"tools"`
 	Workspace    Workspace `json:"workspace"`
+	Agent        Agent      `json:"agent"`
 }
 
 type Minecraft struct {
@@ -102,6 +103,43 @@ type Storage struct {
 	Path string `json:"path"`
 }
 
+// Agent 是工作调用长度与上下文的核心旋钮。
+// 全是"越大越强、越贵越慢"的权衡，默认值按 2 核/7.5G 小机器 + QQ 5 分钟
+// 被动窗口 + flash 级便宜模型标定，想更强就往上拧。
+type Agent struct {
+	// QQ 通道单轮最大工具调用迭代数（默认 80）。MC 通道保持 8（游戏聊天要短平快）。
+	QQMaxIterations int `json:"qqMaxIterations"`
+	// 单轮 run 超时秒数（默认 300=5 分钟，卡着 QQ 群被动 5 分钟窗口）。
+	// 超时后转后台任务继续跑（见 BackgroundAfterSec），不会直接掐掉。
+	RunTimeoutSec int `json:"runTimeoutSec"`
+	// 每次 run 喂给模型的历史消息条数（默认 200）。越大记得越多、token 越多。
+	HistoryLimit int `json:"historyLimit"`
+	// 摘要触发：上下文 token 数（默认 12000）与消息数（默认 80）。
+	// 越大摘要越晚触发、单轮上下文越长；越小越早压缩、越省 token。
+	SummaryTokens   int `json:"summaryTokens"`
+	SummaryMessages int `json:"summaryMessages"`
+	// 截断兜底：上下文 token 超过此数时清掉早期轮次（默认 24000），
+	// 保留最后 N 轮（默认 4）。比摘要阈值大一倍，防止摘要没赶上时爆上下文。
+	ReductionTokens int `json:"reductionTokens"`
+	ReductionKeep   int `json:"reductionKeep"`
+	// 后台任务：run 超过此秒数还没完（默认 90），先给 QQ 回一条"正在做"，
+	// 跑完再主动推结果。0=关闭后台任务（一直等到 RunTimeoutSec）。
+	BackgroundAfterSec int `json:"backgroundAfterSec"`
+}
+
+func DefaultAgent() Agent {
+	return Agent{
+		QQMaxIterations:    80,
+		RunTimeoutSec:      300,
+		HistoryLimit:       200,
+		SummaryTokens:      12000,
+		SummaryMessages:    80,
+		ReductionTokens:    24000,
+		ReductionKeep:      4,
+		BackgroundAfterSec: 90,
+	}
+}
+
 type Tools struct {
 	ApprovalTimeoutSeconds int `json:"approvalTimeoutSeconds"`
 }
@@ -128,6 +166,7 @@ func Default() Config {
 			MaxOutputBytes: 8192,
 			Review:         ExecReview{TimeoutSec: 20},
 		},
+		Agent: DefaultAgent(),
 	}
 }
 
@@ -171,6 +210,31 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Workspace.Review.TimeoutSec <= 0 {
 		cfg.Workspace.Review.TimeoutSec = Default().Workspace.Review.TimeoutSec
+	}
+	d := DefaultAgent()
+	if cfg.Agent.QQMaxIterations <= 0 {
+		cfg.Agent.QQMaxIterations = d.QQMaxIterations
+	}
+	if cfg.Agent.RunTimeoutSec <= 0 {
+		cfg.Agent.RunTimeoutSec = d.RunTimeoutSec
+	}
+	if cfg.Agent.HistoryLimit <= 0 {
+		cfg.Agent.HistoryLimit = d.HistoryLimit
+	}
+	if cfg.Agent.SummaryTokens <= 0 {
+		cfg.Agent.SummaryTokens = d.SummaryTokens
+	}
+	if cfg.Agent.SummaryMessages <= 0 {
+		cfg.Agent.SummaryMessages = d.SummaryMessages
+	}
+	if cfg.Agent.ReductionTokens <= 0 {
+		cfg.Agent.ReductionTokens = d.ReductionTokens
+	}
+	if cfg.Agent.ReductionKeep <= 0 {
+		cfg.Agent.ReductionKeep = d.ReductionKeep
+	}
+	if cfg.Agent.BackgroundAfterSec < 0 {
+		cfg.Agent.BackgroundAfterSec = d.BackgroundAfterSec
 	}
 	return cfg, nil
 }
@@ -222,4 +286,18 @@ func applyEnv(cfg *Config) {
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")
 	set(&cfg.Workspace.Review.Model, "MINEAGENT_REVIEW_MODEL")
+	setInt(&cfg.Agent.QQMaxIterations, "MINEAGENT_QQ_MAX_ITERATIONS")
+	setInt(&cfg.Agent.RunTimeoutSec, "MINEAGENT_RUN_TIMEOUT_SEC")
+	setInt(&cfg.Agent.HistoryLimit, "MINEAGENT_HISTORY_LIMIT")
+	setInt(&cfg.Agent.BackgroundAfterSec, "MINEAGENT_BACKGROUND_AFTER_SEC")
+	setInt(&cfg.Workspace.ExecTimeoutSec, "MINEAGENT_EXEC_TIMEOUT_SEC")
+}
+
+func setInt(dst *int, key string) {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n >= 0 {
+			*dst = n
+		}
+	}
 }

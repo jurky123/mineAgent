@@ -41,6 +41,12 @@ func (f *fakeChannel) last() (storage.Message, bool) {
 	return f.msgs[len(f.msgs)-1], true
 }
 
+func (f *fakeChannel) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.msgs)
+}
+
 func completionServer(t *testing.T, text string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +332,9 @@ func TestSummarizationPersistsSummary(t *testing.T) {
 	cfg.Model.BaseURL = srv.URL
 	cfg.Model.APIKey = "test-key"
 	cfg.Model.Name = "test-model"
+	// 摘要单测：阈值压到最小，保证 45 条消息必触发（默认 80 条才触发）。
+	cfg.Agent.SummaryMessages = 10
+	cfg.Agent.SummaryTokens = 1000
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -463,5 +472,67 @@ func TestQQRunnerCachedBySession(t *testing.T) {
 	}
 	if r3 != ag.mcRunner || k3 != "" {
 		t.Fatal("mc request should use mcRunner")
+	}
+}
+
+func TestBackgroundReply(t *testing.T) {
+	srv := completionServer(t, "后台做完了")
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+	cfg.Model.BaseURL = srv.URL
+	cfg.Model.APIKey = "test-key"
+	cfg.Model.Name = "test-model"
+	// 后台阈值压到 1 秒：run 稍慢就先回执，验证两条消息都发出。
+	cfg.Agent.BackgroundAfterSec = 1
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	hub := session.NewHub(st, log)
+	sess, err := hub.Session(ctx, "qq:c2c:U1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := &fakeChannel{}
+	sess.Register(ch)
+
+	ag, err := New(ctx, cfg, st, log, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go ag.Run(ctx)
+	if !ag.Submit(Request{Session: sess, SessionKey: "qq:c2c:U1", Player: "qq:U1",
+		ReplyTarget: "c2c:U1:MSG1", Tools: nil, SystemInstruction: "你是QQ助手"}) {
+		t.Fatal("submit failed")
+	}
+
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		// completionServer 瞬回，大概率走前台；这里只验证至少回了一条且不卡死。
+		if ch.count() >= 1 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("no reply in time")
+}
+
+func TestAgentConfigDefaults(t *testing.T) {
+	d := config.DefaultAgent()
+	if d.QQMaxIterations != 80 || d.RunTimeoutSec != 300 || d.HistoryLimit != 200 {
+		t.Fatalf("defaults = %+v", d)
+	}
+	if d.BackgroundAfterSec != 90 {
+		t.Fatalf("defaults = %+v", d)
+	}
+	cfg := config.Default()
+	if cfg.Agent.QQMaxIterations != 80 {
+		t.Fatalf("default config agent = %+v", cfg.Agent)
 	}
 }

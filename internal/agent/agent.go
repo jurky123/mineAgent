@@ -80,6 +80,7 @@ type Agent struct {
 	defaultTools []tool.BaseTool
 	instruction  string
 	replyMode    string
+	cfg          config.Agent
 
 	mcRunner  *adk.Runner
 	approvals *tools.Approvals
@@ -103,6 +104,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		defaultTools: agentTools,
 		instruction:  systemInstruction,
 		replyMode:    cfg.Minecraft.ReplyMode,
+		cfg:          cfg.Agent,
 		jobs:         make(chan Request, 64),
 		pending:      make(map[string]*pendingRun),
 		approvals:    approvals,
@@ -223,7 +225,11 @@ func (a *Agent) target(req Request) string {
 }
 
 func (a *Agent) respond(ctx context.Context, req Request) {
-	rctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	timeout := time.Duration(a.cfg.RunTimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	rctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	sessionKey := req.SessionKey
 	if sessionKey == "" {
@@ -257,9 +263,37 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		return
 	}
 	iter := runner.Run(rctx, msgs, adk.WithCheckPointID(cpID))
-	replied := a.consume(rctx, req, sessionKey, runnerKey, cpID, iter)
-	if replied {
-		a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String())
+	// 后台任务：只有 QQ 请求（ReplyTarget 非空）且配了 BackgroundAfterSec 才启用。
+	// MC 聊天是同步问答，不转后台。
+	// 原理：起一个 goroutine 跑 consume，主流程等到阈值还没完就先回"正在做"；
+	// 跑完后（无论是否已回执）再把结果 Reply 出去——consume 本来就会 Reply，
+	// 所以"先回执+后推结果"天然就是两条消息，不需要额外的主动推送逻辑。
+	// 注意 QQ 被动窗口 5 分钟：RunTimeoutSec 默认 300s 卡着窗口，后台结果
+	// 发出去时 msg_id 可能已过期，channel.Send 会自动降级成主动消息。
+	backgroundAfter := time.Duration(a.cfg.BackgroundAfterSec) * time.Second
+	if req.ReplyTarget == "" || backgroundAfter <= 0 {
+		replied := a.consume(rctx, req, sessionKey, runnerKey, cpID, iter)
+		if replied {
+			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String())
+		}
+		return
+	}
+	done := make(chan bool, 1)
+	go func() {
+		done <- a.consume(rctx, req, sessionKey, runnerKey, cpID, iter)
+	}()
+	select {
+	case replied := <-done:
+		if replied {
+			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String())
+		}
+	case <-time.After(backgroundAfter):
+		a.log.Info("agent backgrounded", "session", sessionKey, "player", req.Player, "after", backgroundAfter.String())
+		_ = req.Session.Reply(rctx, "收到，这个要跑一会儿（查资料/跑代码/画图），做完我直接发你，不用再问。", req.ReplyTarget)
+		replied := <-done
+		if replied {
+			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String(), "background", true)
+		}
 	}
 }
 
@@ -310,7 +344,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 			},
 		},
 		Handlers:      middlewares,
-		MaxIterations: 40,
+		MaxIterations: a.cfg.QQMaxIterations,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("init qq chat model agent: %w", err)
@@ -418,7 +452,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		return
 	}
 
-	rctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	rctx, cancel := context.WithTimeout(ctx, time.Duration(a.cfg.RunTimeoutSec)*time.Second)
 	defer cancel()
 	rctx = tools.WithRequester(rctx, run.player)
 	rctx = tools.WithRequesterID(rctx, run.requesterID)
@@ -428,7 +462,6 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	rctx = tools.WithSession(rctx, run.sessionKey)
 	rctx = tools.WithReplyTarget(rctx, run.replyTarget)
 	rctx = context.WithValue(rctx, historyCutoffKey{}, run.cutoff)
-
 	a.log.Info("resuming after approval",
 		"session", run.sessionKey,
 		"approvalId", out.ApprovalID,
@@ -477,6 +510,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // history 只读属于 sessionKey 自己的消息+摘要，会话隔离就靠它。
 // QQ 侧 AuthorKind 也是 "player"，展示时用 [QQ名] 前缀（调用方 Ingest 时拼好）。
+// 条数上限取 cfg.HistoryLimit（默认 200），防止长会话 token 爆炸。
 func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int64, error) {
 	ctx := context.Background()
 	var (
@@ -501,7 +535,11 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 	if maxID <= 0 {
 		maxID = math.MaxInt64
 	}
-	recent, err := a.store.MessagesBetween(ctx, sessionKey, cutoff, maxID, 200)
+	limit := a.cfg.HistoryLimit
+	if limit <= 0 {
+		limit = 200
+	}
+	recent, err := a.store.MessagesBetween(ctx, sessionKey, cutoff, maxID, limit)
 	if err != nil {
 		return nil, 0, err
 	}

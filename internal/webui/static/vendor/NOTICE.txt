@@ -5,4 +5,7 @@
 - highlight.js 11.11.1 — BSD-3-Clause License — https://highlightjs.org/  (highlight/*)
   用于代码块语法高亮（主题 github / github-dark，已按本站 data-theme 作用域化）
 
+- html2canvas 1.4.1 — MIT License — https://html2canvas.hertzen.com/  (html2canvas/*)
+  用于把表格/公式导出成图片（客户端栅格化）
+
 只在使用到时才由前端懒加载；不需要构建步骤。

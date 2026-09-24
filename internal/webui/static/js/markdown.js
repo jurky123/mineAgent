@@ -4,6 +4,9 @@
 
 import { esc } from './ui.js';
 
+const ICON_COPY = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const ICON_IMG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
+
 const blocks = []; // 占位块（代码块 / 公式），先抽出避免被 markdown 处理
 
 function stash(html) {
@@ -58,6 +61,47 @@ function ensureKatex() {
   return katexPromise;
 }
 
+let h2cPromise = null;
+function ensureHtml2Canvas() {
+  if (h2cPromise) return h2cPromise;
+  h2cPromise = loadScript(vendorURL('html2canvas/html2canvas.min.js'))
+    .then(() => window.html2canvas)
+    .catch((err) => { console.warn('[mineagent] html2canvas 加载失败，无法导出图片：', err); return null; });
+  return h2cPromise;
+}
+
+// exportNodeImage 把某个元素（表格/公式）导出成 PNG 下载。
+async function exportNodeImage(node, name) {
+  const h2c = await ensureHtml2Canvas();
+  if (!h2c) return;
+  try { await document.fonts.ready; } catch (e) { /* 忽略 */ }
+  const bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
+  const stage = document.createElement('div');
+  stage.className = 'export-stage content';   // 带上 .content 才能命中表格/内容样式
+  stage.style.background = bg;
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll('.blocktools').forEach((n) => n.remove());
+  stage.appendChild(clone);
+  document.body.appendChild(stage);
+  try {
+    const canvas = await h2c(stage, { backgroundColor: bg, scale: 2, logging: false });
+    await new Promise((resolve) => canvas.toBlob((blob) => {
+      if (!blob) { resolve(); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name + '.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 5000);
+      resolve();
+    }, 'image/png'));
+  } catch (err) {
+    console.warn('[mineagent] 导出图片失败：', err);
+  } finally {
+    stage.remove();
+  }
+}
+
 // ---------- 渲染 ----------
 export function renderContent(el, text) {
   blocks.length = 0;
@@ -70,17 +114,19 @@ export function renderContent(el, text) {
     return stash(
       '<div class="codeblock">' +
       '<div class="codehead"><span class="codelang">' + esc(label) + '</span>' +
-      '<button class="codecopy" type="button">复制</button></div>' +
+      '<button class="codecopy" type="button">' + ICON_COPY + '复制代码</button></div>' +
       '<pre><code class="language-' + esc(label) + '">' + esc(code.replace(/\n$/, '')) + '</code></pre>' +
       '</div>'
     );
   });
 
   // 2) 块级公式：$$...$$（可跨行）与 \[...\]
-  withPh = withPh.replace(/\$\$([\s\S]+?)\$\$/g, (m, tex) =>
-    stash('<span class="math-display" data-tex="' + esc(tex.trim()) + '"></span>'));
-  withPh = withPh.replace(/\\\[([\s\S]+?)\\\]/g, (m, tex) =>
-    stash('<span class="math-display" data-tex="' + esc(tex.trim()) + '"></span>'));
+  const mathBlock = (tex) =>
+    stash('<div class="blockwrap" data-kind="math">' +
+      '<div class="blocktools"><button class="blockimg" type="button">' + ICON_IMG + '导出图片</button></div>' +
+      '<span class="math-display" data-tex="' + esc(tex.trim()) + '"></span></div>');
+  withPh = withPh.replace(/\$\$([\s\S]+?)\$\$/g, (m, tex) => mathBlock(tex));
+  withPh = withPh.replace(/\\\[([\s\S]+?)\\\]/g, (m, tex) => mathBlock(tex));
 
   const lines = withPh.split('\n');
   const out = [];
@@ -124,8 +170,10 @@ export function renderContent(el, text) {
       const head = cells(t); i += 2;
       const rows = [];
       while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') { rows.push(cells(lines[i])); i++; }
-      out.push('<table><thead><tr>' + head.map((c) => '<th>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>' +
-        rows.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table>');
+      out.push('<div class="blockwrap" data-kind="table">' +
+        '<div class="blocktools"><button class="blockimg" type="button">' + ICON_IMG + '导出图片</button></div>' +
+        '<div class="tablewrap"><table><thead><tr>' + head.map((c) => '<th>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>' +
+        rows.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div></div>');
       continue;
     }
     if (/^[-*]\s+/.test(t)) {
@@ -166,6 +214,18 @@ export async function enhanceContent(el) {
       } catch (e) { n.textContent = tex; }
     });
   }
+  // 表格 / 块级公式：导出图片
+  el.querySelectorAll('.blockwrap').forEach((wrap) => {
+    const btn = wrap.querySelector('.blockimg');
+    if (!btn || btn._bound) return;
+    btn._bound = true;
+    btn.onclick = () => {
+      const kind = wrap.dataset.kind === 'table' ? 'table' : 'formula';
+      const target = wrap.querySelector('.tablewrap') || wrap.querySelector('.math-display') || wrap;
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      exportNodeImage(target, kind + '-' + stamp);
+    };
+  });
   el.querySelectorAll('.codeblock').forEach((box) => {
     const btn = box.querySelector('.codecopy');
     if (!btn || btn._bound) return;

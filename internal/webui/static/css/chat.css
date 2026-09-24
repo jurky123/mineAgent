@@ -29,7 +29,7 @@
 .content li { margin: 3px 0; }
 .content blockquote { margin: 10px 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--border-2); color: var(--text-2); }
 .content hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
-.content table { border-collapse: collapse; margin: 12px 0; font-size: 14px; display: block; overflow-x: auto; max-width: 100%; }
+.content table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
 .content th, .content td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
 .content th { background: var(--sidebar); font-weight: 600; }
 /* 代码框（语言标签 + 复制按钮 + 高亮） */
@@ -50,6 +50,26 @@
   padding: 12px 14px; overflow-x: auto; font-size: 13.5px; margin: 0;
 }
 .content .codeblock pre code { background: none; padding: 0; }
+
+/* 块级元素工具条（导出图片） */
+.blockwrap { position: relative; }
+.blocktools {
+  position: absolute; top: 4px; right: 4px; z-index: 2; opacity: 0; transition: opacity .12s;
+}
+.blockwrap:hover .blocktools { opacity: 1; }
+.blockimg {
+  display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text-2); font-size: 11px; padding: 3px 8px; white-space: nowrap;
+}
+.blockimg:hover { background: var(--control-hover); color: var(--text); }
+.tablewrap { display: block; overflow-x: auto; max-width: 100%; }
+
+/* 导出用的离屏舞台 */
+.export-stage {
+  position: fixed; left: -20000px; top: 0; padding: 18px; color: var(--text);
+  font: 15.5px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+}
 
 /* 公式 */
 .math-display { display: block; overflow-x: auto; overflow-y: hidden; padding: 4px 0; }

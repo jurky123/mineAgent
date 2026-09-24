@@ -167,18 +167,14 @@ func (c *Channel) onMessage(m InboundMessage) {
 		return
 	}
 
-	// 身份绑定留痕：只记昵称，不覆盖绑定。
-	// qq_bind 工具把 display_name 写成 MC 名；这里如果每次都用昵称覆盖，
-	// 会把已有绑定冲掉（这就是刚才"绑定查出来是 QQ用户"的原因）。
-	// 所以：查到 display_name 非空就保留，只在空时写昵称。
+	// 昵称留痕（platform=qq）：只用于日志展示，与绑定隔离。
+	// 绑定关系存 platform=qq_bind（见 tools.BindPlatform），两者不互相覆盖。
 	now := time.Now().UnixMilli()
 	for _, id := range []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID} {
 		if id == "" {
 			continue
 		}
-		if name, err := c.store.LinkedMC(ctx, "qq", id); err != nil || name == "" {
-			_ = c.store.UpsertIdentity(ctx, "qq", id, display, now)
-		}
+		_ = c.store.UpsertIdentity(ctx, "qq", id, display, now)
 	}
 
 	stored, err := sess.Ingest(ctx, storage.Message{
@@ -195,13 +191,14 @@ func (c *Channel) onMessage(m InboundMessage) {
 	}
 
 	// 查绑定的 MC 名：union -> user/member，有就带上，没有就空。
+	// 读 platform=qq_bind（绑定专用），不读昵称留痕的 qq。
 	// Gateway.Call 里 toolRequester 取它发给插件；approvalTool 审计仍用 qq: 身份。
 	var mcName string
 	for _, id := range []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID} {
 		if id == "" {
 			continue
 		}
-		if name, err := c.store.LinkedMC(ctx, "qq", id); err == nil && name != "" {
+		if name, err := c.store.LinkedMC(ctx, tools.BindPlatform, id); err == nil && name != "" {
 			mcName = name
 			break
 		}

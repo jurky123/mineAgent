@@ -72,7 +72,8 @@ func lookupBoundMC(ctx context.Context, store *storage.Store, openIDs []string) 
 		if id == "" {
 			continue
 		}
-		if name, err := store.LinkedMC(ctx, "qq", id); err == nil && name != "" {
+		// 注意用 qq_bind 而不是 qq：后者是昵称留痕，会把"QQ用户"误认成绑定。
+		if name, err := store.LinkedMC(ctx, tools.BindPlatform, id); err == nil && name != "" {
 			return name
 		}
 	}

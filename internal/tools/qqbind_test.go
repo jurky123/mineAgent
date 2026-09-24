@@ -130,7 +130,7 @@ func TestQQBindUnbind(t *testing.T) {
 	}
 	// 两个 openid 都能查到绑定。
 	for _, id := range []string{"UN1", "U1"} {
-		name, err := store.LinkedMC(ctx, "qq", id)
+		name, err := store.LinkedMC(ctx, BindPlatform, id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +146,7 @@ func TestQQBindUnbind(t *testing.T) {
 	if _, err := unbind.InvokableRun(ctx, `{}`); err != nil {
 		t.Fatal(err)
 	}
-	if name, _ := store.LinkedMC(ctx, "qq", "UN1"); name != "" {
+	if name, _ := store.LinkedMC(ctx, BindPlatform, "UN1"); name != "" {
 		t.Fatalf("after unbind = %q", name)
 	}
 }

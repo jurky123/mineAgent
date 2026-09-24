@@ -17,9 +17,9 @@ import (
 // QQBind 工具：QQ 用户绑定/解绑 MC 玩家名。
 // 绑定后 QQ 发起的 teleport/give/run_command 在 tool.call 里带上绑定的 MC 名，
 // 插件按"外部请求"执行（resolveRequester 失败→走控制台身份+审批前置）。
-// 数据存 identity_links(platform=qq, platform_id=<openid>, display_name=<MC名>)，
-// channel.go 的 UpsertIdentity 留痕行与它是同一张表：绑定命令用 display_name 存 MC 名
-// 覆盖昵称留痕——LinkedMC 只读 display_name，所以绑定后查到的就是 MC 名。
+// 数据存 identity_links(platform=qq_bind, platform_id=<openid>, display_name=<MC名>)，
+// 注意必须用 qq_bind 而不是 qq：channel.go 用 platform=qq 写昵称留痕，
+// 两者复用 display_name 列会互相覆盖（昵称"QQ用户"会被误认成绑定）。
 // 解绑把 display_name 清空（行保留，避免与留痕逻辑冲突）。
 type QQBind struct {
 	store *storage.Store
@@ -70,6 +70,9 @@ func qqIdentityFromContext(ctx context.Context) []string {
 	return v
 }
 
+// BindPlatform 是绑定关系专用的 platform，与昵称留痕的 "qq" 隔离。
+const BindPlatform = "qq_bind"
+
 func (t *qqBindTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	ids := qqIdentityFromContext(ctx)
 	if len(ids) == 0 {
@@ -81,7 +84,7 @@ func (t *qqBindTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 			if id == "" {
 				continue
 			}
-			_ = t.b.store.UpsertIdentity(ctx, "qq", id, "", now)
+			_ = t.b.store.UpsertIdentity(ctx, BindPlatform, id, "", now)
 		}
 		t.b.log.Info("qq unbind", "ids", len(ids))
 		out, _ := json.Marshal(map[string]string{"ok": "true", "message": "已解绑"})
@@ -103,7 +106,7 @@ func (t *qqBindTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		if id == "" {
 			continue
 		}
-		if err := t.b.store.UpsertIdentity(ctx, "qq", id, name, now); err != nil {
+		if err := t.b.store.UpsertIdentity(ctx, BindPlatform, id, name, now); err != nil {
 			return errorJSON("绑定失败：" + err.Error()), nil
 		}
 	}

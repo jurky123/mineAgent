@@ -157,13 +157,9 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 	}
 	conv := convOfSession(msg.SessionID, name)
 	c.clearRunning(msg.SessionID)
-	c.publish(name, conv, WireMessage{
-		ID:   msg.ID,
-		Role: "agent",
-		Name: "MineAgent",
-		Text: msg.Text,
-		At:   msg.CreatedAt,
-	})
+	// 用 ToWire 而不是手拼：文件/图片消息（Target 前缀 file:）必须带上 files，
+	// 否则网页端只有刷新走 history 才能看到附件（线上踩过）。
+	c.publish(name, conv, ToWire(msg))
 	return nil
 }
 

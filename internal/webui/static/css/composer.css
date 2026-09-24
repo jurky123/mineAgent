@@ -201,3 +201,32 @@ html[data-theme="dark"] .reason-dot.on { background: rgba(255,255,255,.5); }
 .toast.err { border-color: #fda29b; color: var(--danger); }
 .toast.ok { border-color: #a6f4c5; color: var(--ok); }
 .toast.out { animation: fadein .2s ease reverse forwards; }
+
+/* ---------- 模型列表：筛选行 / 免费开关 / 标签 ---------- */
+.po-toolrow { display: flex; gap: 6px; align-items: center; padding: 0 8px 6px; }
+.po-toolrow .po-filter { flex: 1 1 auto; width: auto; margin: 0; }
+.po-chip {
+  border: 1px solid transparent; background: var(--control-bg); border-radius: 999px;
+  padding: 5px 12px; font-size: 12px; color: var(--text-3); white-space: nowrap; flex: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.po-chip::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  border: 1.5px solid var(--border-2); background: transparent;
+  transition: background .12s, border-color .12s;
+}
+.po-chip:hover { background: var(--control-hover); color: var(--text); }
+.po-chip.on { background: var(--interactive-soft); border-color: var(--interactive-border); color: var(--interactive); font-weight: 600; }
+.po-chip.on::before { background: var(--interactive); border-color: var(--interactive); }
+.po-badge {
+  display: inline-block; font-size: 10.5px; padding: 0 6px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--text-3); margin-left: 6px; line-height: 1.7;
+}
+.po-badge.free { color: var(--ok); border-color: rgba(6,118,71,.35); background: rgba(6,118,71,.08); }
+.po-badge.dim { color: var(--text-3); }
+.po-title.po-provider {
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+  padding-top: 8px; font-weight: 600;
+}
+.po-modelname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -8,3 +8,4 @@ paper-plugin/.gradle/
 paper-plugin/build/
 .idea/
 *.iml
+/workspace/

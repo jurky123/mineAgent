@@ -3,15 +3,17 @@ package aibot
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 )
 
 // newReqID 生成请求唯一标识（回复命令要透传回调的 req_id，主动命令自己生成）。
@@ -27,9 +29,12 @@ func newReqID() string {
 // 连接 -> aibot_subscribe 订阅 -> 30s ping 保活 -> 收 msg/event 回调 -> 按 req_id 回包。
 // 断线自动重连（指数退避），收到 disconnected_event（被新连接踢掉）也重连。
 //
-// 回复关联约定：被动回复必须带触发回调的 req_id（InboundMessage.ReqID），
-// 因此 channel 把它编进 target 字符串；req_id 在长连接内有效（回复窗口 24h），
-// 失效或需要主动推送时降级用 aibot_send_msg（chatid + chat_type）。
+// 实现注记（踩坑记录）：
+//   - 企微网关 Wwebsvr 对 Sec-WebSocket-Key 大小写敏感（必须精确 "Sec-WebSocket-Key"），
+//     Go 标准库 http.Header.Set 会规范成 "Sec-Websocket-Key" 导致握手 404。
+//     所以这里用 gorilla/websocket（它直接写 map，保留精确大小写），
+//     不要换回 coder/websocket 的 Dial。
+//   - gorilla 的 Conn 不支持并发写，所有写操作统一过 writeMu。
 type Client struct {
 	botID  string
 	secret string
@@ -40,7 +45,7 @@ type Client struct {
 	mu      sync.Mutex
 	conn    *websocket.Conn
 	waiters map[string]chan envelope
-	seq     atomic.Uint64
+	writeMu sync.Mutex
 
 	stopCh  chan struct{}
 	stopped chan struct{}
@@ -86,6 +91,15 @@ func (c *Client) Connected() bool {
 	return c.conn != nil
 }
 
+// dialer 保持 ALPN 只报 http/1.1（企微网关对 h2 的升级请求也不友好）。
+var dialer = websocket.Dialer{
+	HandshakeTimeout: 10 * time.Second,
+	TLSClientConfig:  &tls.Config{NextProtos: []string{"http/1.1"}},
+	NetDial:          (&net.Dialer{Timeout: 10 * time.Second}).Dial,
+	ReadBufferSize:   1 << 16,
+	WriteBufferSize:  1 << 16,
+}
+
 func (c *Client) loop() {
 	defer close(c.stopped)
 	backoff := time.Second
@@ -119,11 +133,11 @@ func (c *Client) runOnce() error {
 		cancel()
 	}()
 
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "done")
+	defer conn.Close()
 	conn.SetReadLimit(4 << 20)
 
 	c.mu.Lock()
@@ -137,7 +151,7 @@ func (c *Client) runOnce() error {
 		c.mu.Unlock()
 	}()
 
-	// 1. 订阅。失败就退出重来（订阅有频率保护，不要在这里反复重试）。
+	// 1. 订阅（失败退出重来；订阅有频率保护，不在这里反复重试）。
 	resp, err := c.call(ctx, conn, map[string]any{
 		"cmd":     cmdSubscribe,
 		"headers": headers{ReqID: newReqID()},
@@ -154,7 +168,7 @@ func (c *Client) runOnce() error {
 	}
 	c.log.Info("aibot subscribed", "botId", c.botID)
 
-	// 2. 心跳协程：30s 一次 ping（协议建议值）。
+	// 2. 心跳：30s 一次 ping（协议建议值）。
 	hbCtx, stopHB := context.WithCancel(ctx)
 	defer stopHB()
 	go func() {
@@ -165,13 +179,12 @@ func (c *Client) runOnce() error {
 			case <-hbCtx.Done():
 				return
 			case <-t.C:
-				_, err := c.call(hbCtx, conn, map[string]any{
+				if _, err := c.call(hbCtx, conn, map[string]any{
 					"cmd":     cmdPing,
 					"headers": headers{ReqID: newReqID()},
-				})
-				if err != nil {
+				}); err != nil {
 					c.log.Warn("aibot ping failed", "err", err)
-					conn.Close(websocket.StatusPolicyViolation, "ping timeout")
+					_ = conn.Close()
 					return
 				}
 			}
@@ -180,7 +193,7 @@ func (c *Client) runOnce() error {
 
 	// 3. 收包循环。
 	for {
-		raw, err := readRaw(ctx, conn)
+		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			return fmt.Errorf("read: %w", err)
 		}
@@ -233,10 +246,9 @@ func (c *Client) handleFrame(raw []byte) {
 			conn := c.conn
 			c.mu.Unlock()
 			if conn != nil {
-				conn.Close(websocket.StatusGoingAway, "kicked")
+				_ = conn.Close()
 			}
 		case eventEnterChat:
-			// 进入会话事件：v1 不回欢迎语（保持安静），只记日志。
 			c.log.Info("aibot enter_chat", "userid", userIDOf(body.From))
 		default:
 			c.log.Debug("aibot event ignored", "type", body.Event.EventType)
@@ -270,7 +282,7 @@ func userIDOf(from *struct {
 	return from.UserID
 }
 
-// call 发一条命令并等应答（10 秒超时）。
+// call 发一条命令并等应答（10 秒超时）。所有写操作都从这里走（gorilla 不支持并发写）。
 func (c *Client) call(ctx context.Context, conn *websocket.Conn, msg map[string]any) (envelope, error) {
 	env, _ := msg["headers"].(headers)
 	reqID := env.ReqID
@@ -292,15 +304,19 @@ func (c *Client) call(ctx context.Context, conn *websocket.Conn, msg map[string]
 	if err != nil {
 		return envelope{}, err
 	}
-	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := conn.Write(wctx, websocket.MessageText, raw); err != nil {
+	c.writeMu.Lock()
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	err = conn.WriteMessage(websocket.TextMessage, raw)
+	c.writeMu.Unlock()
+	if err != nil {
 		return envelope{}, err
 	}
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
 	select {
 	case resp := <-ch:
 		return resp, nil
-	case <-wctx.Done():
+	case <-timer.C:
 		return envelope{}, fmt.Errorf("response timeout for %s", reqID)
 	case <-ctx.Done():
 		return envelope{}, ctx.Err()
@@ -309,11 +325,9 @@ func (c *Client) call(ctx context.Context, conn *websocket.Conn, msg map[string]
 
 // Respond 被动回复：透传触发回调的 req_id（24 小时窗口内有效）。
 func (c *Client) Respond(ctx context.Context, reqID, content string) error {
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
+	conn := c.current()
 	if conn == nil {
-		return fmt.Errorf("aibot not connected")
+		return errors.New("aibot not connected")
 	}
 	resp, err := c.call(ctx, conn, respondEnvelope(reqID, content))
 	if err != nil {
@@ -328,11 +342,9 @@ func (c *Client) Respond(ctx context.Context, reqID, content string) error {
 // SendActive 主动推送（被动窗口失效或定时提醒用）。
 // 前置条件：该会话里用户先给机器人发过消息，否则企微会拒。
 func (c *Client) SendActive(ctx context.Context, chatID string, chatType uint32, content string) error {
-	c.mu.Lock()
-	conn := c.conn
-	c.mu.Unlock()
+	conn := c.current()
 	if conn == nil {
-		return fmt.Errorf("aibot not connected")
+		return errors.New("aibot not connected")
 	}
 	resp, err := c.call(ctx, conn, sendEnvelope(chatID, chatType, content))
 	if err != nil {
@@ -344,11 +356,10 @@ func (c *Client) SendActive(ctx context.Context, chatID string, chatType uint32,
 	return nil
 }
 
-func readRaw(ctx context.Context, conn *websocket.Conn) ([]byte, error) {
-	rctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-	_, raw, err := conn.Read(rctx)
-	return raw, err
+func (c *Client) current() *websocket.Conn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn
 }
 
 func (c *Client) emit(m InboundMessage) {

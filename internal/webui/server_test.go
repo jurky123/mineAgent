@@ -365,6 +365,86 @@ func TestAuthCookiePlantedOnAPIUse(t *testing.T) {
 	}
 }
 
+func TestOptionsAndPrefs(t *testing.T) {
+	_, ts, _ := newTestChannel(t)
+	tok := loginTest(t, ts, "jzk")
+
+	var opts struct {
+		Skills  []map[string]any `json:"skills"`
+		Models  []string         `json:"models"`
+		Efforts []string         `json:"efforts"`
+		Admin   bool             `json:"admin"`
+	}
+	if code := doJSON(t, "GET", ts.URL+"/api/options", tok, nil, &opts); code != 200 {
+		t.Fatalf("options status=%d", code)
+	}
+	if len(opts.Skills) == 0 || len(opts.Efforts) != 3 || opts.Admin {
+		t.Fatalf("options = %+v", opts)
+	}
+
+	// 有效偏好
+	if code := doJSON(t, "POST", ts.URL+"/api/prefs", tok,
+		map[string]any{"model": "some-model", "effort": "low"}, nil); code != 200 {
+		t.Fatalf("prefs status=%d", code)
+	}
+	var opts2 struct {
+		Model  string `json:"model"`
+		Effort string `json:"effort"`
+	}
+	_ = doJSON(t, "GET", ts.URL+"/api/options", tok, nil, &opts2)
+	if opts2.Model != "some-model" || opts2.Effort != "low" {
+		t.Fatalf("options after prefs = %+v", opts2)
+	}
+	// 非法强度
+	if code := doJSON(t, "POST", ts.URL+"/api/prefs", tok, map[string]any{"effort": "extreme"}, nil); code != 400 {
+		t.Fatalf("bad effort status=%d", code)
+	}
+}
+
+func TestWorkspaceBrowserAdminOnly(t *testing.T) {
+	_, ts, ws := newTestChannel(t)
+	_ = os.WriteFile(filepath.Join(ws, "hello.txt"), []byte("hi"), 0o644)
+	_ = os.MkdirAll(filepath.Join(ws, "sub"), 0o755)
+
+	tokUser := loginTest(t, ts, "jzk")
+	if code := doJSON(t, "GET", ts.URL+"/api/workspace", tokUser, nil, nil); code != 403 {
+		t.Fatalf("非管理员应 403, got %d", code)
+	}
+
+	tokBoss := loginTest(t, ts, "boss")
+	var list struct {
+		Path    string `json:"path"`
+		Entries []struct {
+			Name string `json:"name"`
+			Dir  bool   `json:"dir"`
+			Size int64  `json:"size"`
+		} `json:"entries"`
+	}
+	if code := doJSON(t, "GET", ts.URL+"/api/workspace", tokBoss, nil, &list); code != 200 {
+		t.Fatalf("admin list status=%d", code)
+	}
+	if len(list.Entries) != 2 || !list.Entries[0].Dir || list.Entries[0].Name != "sub" {
+		t.Fatalf("entries = %+v", list.Entries)
+	}
+
+	// 下载文件
+	req, _ := http.NewRequest("GET", ts.URL+"/api/workspace/file?path=hello.txt", nil)
+	req.Header.Set("Authorization", "Bearer "+tokBoss)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	if res.StatusCode != 200 || string(raw) != "hi" {
+		t.Fatalf("file status=%d body=%q", res.StatusCode, raw)
+	}
+	// 路径逃逸
+	if code := doJSON(t, "GET", ts.URL+"/api/workspace/file?path=../go.mod", tokBoss, nil, nil); code != 400 {
+		t.Fatalf("逃逸应 400, got %d", code)
+	}
+}
+
 func TestFakeMarkerEscaped(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")

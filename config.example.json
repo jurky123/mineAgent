@@ -49,12 +49,35 @@
     ],
     "maxUploadMB": 20,
     "minIntervalMs": 1000,
-    "dataDir": "data/webui"
+    "dataDir": "data/webui",
+    "skills": [
+      {
+        "name": "查服务器",
+        "desc": "在线玩家 / 负载 / 时间天气",
+        "prompt": "看看服务器现在的情况：在线玩家、TPS 和内存、游戏时间与天气"
+      },
+      {
+        "name": "画张图",
+        "desc": "用 PIL 画好直接发给我",
+        "prompt": "用 PIL 画一张图并发给我，内容："
+      },
+      {
+        "name": "写代码跑一下",
+        "desc": "workspace 里写脚本并执行（管理员）",
+        "prompt": "在 workspace 里写一个 Python 脚本并跑一下，需求："
+      },
+      {
+        "name": "查资料",
+        "desc": "联网查了再回答（管理员）",
+        "prompt": "帮我查一下，先查资料再回答（可以用 curl 抓公开页面），问题："
+      }
+    ]
   },
   "model": {
     "baseURL": "",
     "apiKey": "",
-    "name": ""
+    "name": "",
+    "options": []
   },
   "storage": {
     "path": "data/mineagent.db"

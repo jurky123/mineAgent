@@ -145,6 +145,25 @@ type Web struct {
 	MinIntervalMS int `json:"minIntervalMs"`
 	// 登录令牌/运行时数据目录，默认 data/webui。
 	DataDir string `json:"dataDir"`
+	// 快捷指令（+ 菜单的"技能"）：点一下把 prompt 填进输入框。
+	// 留空用内置默认（见 DefaultSkills）。
+	Skills []Skill `json:"skills"`
+}
+
+// Skill 是网页 + 菜单里的快捷指令。
+type Skill struct {
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
+	Desc   string `json:"desc,omitempty"`
+}
+
+func DefaultSkills() []Skill {
+	return []Skill{
+		{Name: "查服务器", Desc: "在线玩家 / 负载 / 时间天气", Prompt: "看看服务器现在的情况：在线玩家、TPS 和内存、游戏时间与天气"},
+		{Name: "画张图", Desc: "用 PIL 画好直接发给我", Prompt: "用 PIL 画一张图并发给我，内容："},
+		{Name: "写代码跑一下", Desc: "workspace 里写脚本并执行（管理员）", Prompt: "在 workspace 里写一个 Python 脚本并跑一下，需求："},
+		{Name: "查资料", Desc: "联网查了再回答（管理员）", Prompt: "帮我查一下，先查资料再回答（可以用 curl 抓公开页面），问题："},
+	}
 }
 
 func DefaultWeb() Web {
@@ -154,6 +173,7 @@ func DefaultWeb() Web {
 		MinIntervalMS:  1000,
 		AllowedOrigins: []string{"*"},
 		DataDir:        "data/webui",
+		Skills:         DefaultSkills(),
 	}
 }
 
@@ -200,6 +220,9 @@ type Model struct {
 	BaseURL string `json:"baseURL"`
 	APIKey  string `json:"apiKey"`
 	Name    string `json:"name"`
+	// Options 模型切换列表（网页 + 菜单）；留空 = 从网关 GET /models 自动拉。
+	// 想限制可选范围就手填几个模型名。
+	Options []string `json:"options"`
 }
 
 type Storage struct {
@@ -336,6 +359,9 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Web.DataDir == "" {
 		cfg.Web.DataDir = dweb.DataDir
+	}
+	if len(cfg.Web.Skills) == 0 {
+		cfg.Web.Skills = dweb.Skills
 	}
 	if cfg.Workspace.Root == "" {
 		cfg.Workspace.Root = Default().Workspace.Root

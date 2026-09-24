@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ func (c *Channel) handler() http.Handler {
 	mux.HandleFunc("/api/upload", c.withAuth(c.handleUpload))
 	mux.HandleFunc("/api/send", c.withAuth(c.handleSend))
 	mux.HandleFunc("/api/msgfile", c.handleMsgFile) // <img> 拿不到 header，支持 ?token=
+	mux.HandleFunc("/api/options", c.withAuth(c.handleOptions))
+	mux.HandleFunc("/api/prefs", c.withAuth(c.handlePrefs))
+	mux.HandleFunc("/api/workspace", c.withAuth(c.handleWorkspaceList))
+	mux.HandleFunc("/api/workspace/file", c.withAuth(c.handleWorkspaceFile))
 	return c.cors(mux)
 }
 
@@ -246,6 +251,146 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name str
 		msgs = append(msgs, ToWire(m))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+}
+
+// handleOptions 给 + 菜单：技能、可选模型、思考强度、当前偏好。
+func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, name string) {
+	models := c.availableModels(r.Context())
+	prefs := c.prefsOf(name)
+	// 偏好里的模型如果已不在列表（网关变了），回退默认。
+	if prefs.Model != "" && len(models) > 0 && !containsStr(models, prefs.Model) {
+		prefs.Model = ""
+		c.setPrefs(name, prefs)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"skills":       c.cfg.Skills,
+		"models":       models,
+		"efforts":      effortLevels,
+		"model":        prefs.Model,
+		"effort":       prefs.Effort,
+		"defaultModel": c.model,
+		"admin":        IsAdminName(name, c.cfg.AdminUsers),
+	})
+}
+
+// handlePrefs 保存 + 菜单选择（模型/思考强度）。
+func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Model  *string `json:"model"`
+		Effort *string `json:"effort"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
+		return
+	}
+	prefs := c.prefsOf(name)
+	if req.Model != nil {
+		m := strings.TrimSpace(*req.Model)
+		if m != "" {
+			if models := c.availableModels(r.Context()); len(models) > 0 && !containsStr(models, m) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "模型不在可选列表里"})
+				return
+			}
+		}
+		prefs.Model = m
+	}
+	if req.Effort != nil {
+		e := strings.TrimSpace(*req.Effort)
+		if !validEffort(e) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "思考强度只能是 low/medium/high 或空"})
+			return
+		}
+		prefs.Effort = e
+	}
+	c.setPrefs(name, prefs)
+	c.log.Info("web prefs", "name", name, "model", prefs.Model, "effort", prefs.Effort)
+	writeJSON(w, http.StatusOK, map[string]any{"model": prefs.Model, "effort": prefs.Effort})
+}
+
+// handleWorkspaceList 列目录（仅管理员，和 workspace_* 工具同一口径）。
+func (c *Channel) handleWorkspaceList(w http.ResponseWriter, r *http.Request, name string) {
+	if !IsAdminName(name, c.cfg.AdminUsers) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "只有管理员能浏览 workspace（web.adminUsers）"})
+		return
+	}
+	rel := strings.Trim(strings.TrimSpace(r.URL.Query().Get("path")), "/")
+	if rel != "" && !SafeWorkspaceRel(rel) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "路径非法"})
+		return
+	}
+	dir := filepath.Join(c.workspaceRoot, filepath.FromSlash(rel))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "目录不存在"})
+		return
+	}
+	type wsEntry struct {
+		Name  string `json:"name"`
+		Dir   bool   `json:"dir"`
+		Size  int64  `json:"size,omitempty"`
+		Mtime int64  `json:"mtime,omitempty"`
+	}
+	out := make([]wsEntry, 0, len(entries))
+	for _, e := range entries {
+		if len(out) >= 500 {
+			break
+		}
+		item := wsEntry{Name: e.Name(), Dir: e.IsDir()}
+		if !e.IsDir() {
+			if fi, err := e.Info(); err == nil {
+				item.Size = fi.Size()
+				item.Mtime = fi.ModTime().UnixMilli()
+			}
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Dir != out[j].Dir {
+			return out[i].Dir
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"path": rel, "entries": out})
+}
+
+// handleWorkspaceFile 下载/预览 workspace 内文件（仅管理员）。
+func (c *Channel) handleWorkspaceFile(w http.ResponseWriter, r *http.Request, name string) {
+	if !IsAdminName(name, c.cfg.AdminUsers) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "只有管理员能访问 workspace（web.adminUsers）"})
+		return
+	}
+	rel := strings.Trim(strings.TrimSpace(r.URL.Query().Get("path")), "/")
+	if rel == "" || !SafeWorkspaceRel(rel) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "路径非法"})
+		return
+	}
+	full := filepath.Join(c.workspaceRoot, filepath.FromSlash(rel))
+	fi, err := os.Stat(full)
+	if err != nil || fi.IsDir() {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "文件不存在"})
+		return
+	}
+	w.Header().Set("Content-Type", MimeForServing(rel))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	disp := "attachment"
+	if IsImagePath(rel) {
+		disp = "inline"
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename*=UTF-8''%s", disp, urlEscape(filepath.Base(rel))))
+	http.ServeFile(w, r, full)
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // handleClear 清空当前账号会话（前端"新会话"），并广播 cleared 让其他标签页同步。

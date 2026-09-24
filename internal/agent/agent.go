@@ -55,6 +55,10 @@ type Request struct {
 	// 用 systemInstruction 区分两个通道的人设与约束。
 	Tools             []tool.BaseTool
 	SystemInstruction string
+	// Model / ReasoningEffort 为空用默认（config.Model.Name / 不传 reasoning_effort）。
+	// 网页通道按账号偏好填（+ 菜单里切模型/思考强度）。
+	Model           string
+	ReasoningEffort string
 }
 
 type pendingRun struct {
@@ -80,6 +84,8 @@ type Agent struct {
 	// Request 里自带的 tools+instruction（见 respond/resume）。
 	sessionKey   string
 	model        model.BaseModel[*schema.Message]
+	modelCfg     config.Model
+	httpClient   *http.Client
 	defaultTools []tool.BaseTool
 	instruction  string
 	replyMode    string
@@ -96,6 +102,8 @@ type Agent struct {
 
 	mu      sync.Mutex
 	pending map[string]*pendingRun
+	// models 按 "模型名|思考强度" 缓存 chat model（切模型不用重建 client）。
+	models map[string]model.BaseModel[*schema.Message]
 	// QQ runner 按 (sessionKey, instruction, 工具集指纹) 缓存。
 	// 同一会话的工具集是固定的（main.go 装配时确定），指纹只防配错。
 	runners map[string]*adk.Runner
@@ -111,8 +119,10 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		instruction:   systemInstruction,
 		replyMode:     cfg.Minecraft.ReplyMode,
 		cfg:           cfg.Agent,
+		modelCfg:      cfg.Model,
 		workspaceRoot: cfg.WorkspaceRoot(),
 		pool:          newSessionPool(cfg.Agent.MaxConcurrentRuns, 10*time.Minute, log),
+		models:        make(map[string]model.BaseModel[*schema.Message]),
 		jobs:          make(chan Request, 64),
 		pending:       make(map[string]*pendingRun),
 		approvals:     approvals,
@@ -129,19 +139,15 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		return a, nil
 	}
 
-	cm, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		BaseURL: cfg.Model.BaseURL,
-		APIKey:  cfg.Model.APIKey,
-		Model:   cfg.Model.Name,
-		HTTPClient: &http.Client{
-			Timeout: 90 * time.Second,
-			Transport: &headerTransport{
-				base:      http.DefaultTransport,
-				userAgent: "MineAgent/" + version.Version,
-				sessionID: "mineagent-" + a.sessionKey,
-			},
+	a.httpClient = &http.Client{
+		Timeout: 90 * time.Second,
+		Transport: &headerTransport{
+			base:      http.DefaultTransport,
+			userAgent: "MineAgent/" + version.Version,
+			sessionID: "mineagent-" + a.sessionKey,
 		},
-	})
+	}
+	cm, err := a.chatModel(ctx, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("init chat model: %w", err)
 	}
@@ -158,7 +164,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		Model:       cm,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools:               agentTools,
+				Tools:               withParamSchemas(agentTools),
 				ExecuteSequentially: true,
 			},
 		},
@@ -177,6 +183,39 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	a.enabled = true
 	log.Info("agent enabled", "model", cfg.Model.Name, "baseURL", cfg.Model.BaseURL)
 	return a, nil
+}
+
+// chatModel 按 (模型名, 思考强度) 取/建 chat model。
+// 留空用配置默认；effort 非空时透传 reasoning_effort（低/中/高）。
+func (a *Agent) chatModel(ctx context.Context, name, effort string) (model.BaseModel[*schema.Message], error) {
+	if name == "" {
+		name = a.modelCfg.Name
+	}
+	key := name + "|" + effort
+	a.mu.Lock()
+	m := a.models[key]
+	a.mu.Unlock()
+	if m != nil {
+		return m, nil
+	}
+	cfg := &openai.ChatModelConfig{
+		BaseURL:    a.modelCfg.BaseURL,
+		APIKey:     a.modelCfg.APIKey,
+		Model:      name,
+		HTTPClient: a.httpClient,
+	}
+	if effort != "" {
+		cfg.ExtraFields = map[string]any{"reasoning_effort": effort}
+	}
+	m, err := openai.NewChatModel(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("init chat model %s: %w", name, err)
+	}
+	a.mu.Lock()
+	a.models[key] = m
+	a.mu.Unlock()
+	a.log.Info("chat model ready", "model", name, "effort", effort)
+	return m, nil
 }
 
 func (a *Agent) Enabled() bool { return a.enabled }
@@ -350,7 +389,16 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 		}
 		names = append(names, info.Name)
 	}
-	key := req.SessionKey + "\x00" + instruction + "\x00" + strings.Join(names, ",")
+	cm := a.model
+	if req.Model != "" || req.ReasoningEffort != "" {
+		m, err := a.chatModel(ctx, req.Model, req.ReasoningEffort)
+		if err != nil {
+			return nil, "", err
+		}
+		cm = m
+	}
+	key := req.SessionKey + "\x00" + instruction + "\x00" + strings.Join(names, ",") +
+		"\x00" + req.Model + "|" + req.ReasoningEffort
 	a.mu.Lock()
 	r, ok := a.runners[key]
 	a.mu.Unlock()
@@ -365,10 +413,10 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 		Name:        "mineagent-qq",
 		Description: "QQ 聊天助手",
 		Instruction: instruction,
-		Model:       a.model,
+		Model:       cm,
 		ToolsConfig: adk.ToolsConfig{
 			ToolsNodeConfig: compose.ToolsNodeConfig{
-				Tools:               agentTools,
+				Tools:               withParamSchemas(agentTools),
 				ExecuteSequentially: true,
 			},
 		},
@@ -520,6 +568,39 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		return
 	}
 	a.consume(rctx, resumeReq, run.sessionKey, run.runnerKey, run.cpID, iter)
+}
+
+// paramFixTool 给"没有参数的"工具有效化 parameters（补空 object）。
+// 部分模型/网关（如 GLM）要求 tools[].function.parameters 必须是 object，
+// nil 会直接 400（deepseek 容忍 null，所以之前没暴露）。
+type paramFixTool struct{ inner tool.BaseTool }
+
+func (t *paramFixTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	info, err := t.inner.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info != nil && info.ParamsOneOf == nil {
+		info.ParamsOneOf = schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{})
+	}
+	return info, nil
+}
+
+func (t *paramFixTool) InvokableRun(ctx context.Context, args string, opts ...tool.Option) (string, error) {
+	it, ok := t.inner.(tool.InvokableTool)
+	if !ok {
+		return "", fmt.Errorf("tool %T 不支持调用", t.inner)
+	}
+	return it.InvokableRun(ctx, args, opts...)
+}
+
+// withParamSchemas 包装工具列表，保证 parameter schema 合法（见 paramFixTool）。
+func withParamSchemas(tools []tool.BaseTool) []tool.BaseTool {
+	out := make([]tool.BaseTool, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, &paramFixTool{inner: t})
+	}
+	return out
 }
 
 type headerTransport struct {

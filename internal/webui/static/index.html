@@ -217,6 +217,61 @@
   .iconbtn.send.ready { background: #ececec; color: #111; }
   .iconbtn.send.ready:hover { background: #fff; }
   .hint { text-align: center; color: var(--dim2); font-size: 12px; margin-top: 8px; }
+  /* ---------- + 菜单 / Workspace 弹层 ---------- */
+  .composer .inner { position: relative; }
+  #plusmenu {
+    position: absolute; left: 0; bottom: calc(100% + 8px); width: 330px; max-width: calc(100vw - 24px);
+    max-height: min(62vh, 520px); overflow-y: auto; background: #262626; border: 1px solid var(--line);
+    border-radius: 16px; padding: 8px; box-shadow: 0 12px 36px rgba(0,0,0,.45); display: none; z-index: 12;
+  }
+  #plusmenu.on { display: block; }
+  .pm-sec { padding: 6px 4px; }
+  .pm-sec + .pm-sec { border-top: 1px solid var(--line); }
+  .pm-title { font-size: 12px; color: var(--dim2); padding: 4px 8px 6px; display: flex; justify-content: space-between; }
+  .pm-item {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+    background: none; border: 0; text-align: left; padding: 8px 10px; border-radius: 10px; font-size: 14px;
+  }
+  .pm-item:hover { background: var(--hover); }
+  .pm-desc { font-size: 12px; color: var(--dim2); }
+  .pm-filter {
+    width: calc(100% - 16px); margin: 0 8px 6px; padding: 6px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; outline: none; font-size: 13px;
+  }
+  .pm-list { max-height: 190px; overflow-y: auto; }
+  .pm-item.model { flex-direction: row; align-items: center; justify-content: space-between; }
+  .pm-check { color: var(--ok); font-size: 13px; visibility: hidden; }
+  .pm-item.model.on .pm-check { visibility: visible; }
+  .pm-chips { display: flex; gap: 6px; padding: 0 8px; flex-wrap: wrap; }
+  .pm-chip {
+    border: 1px solid var(--line); background: none; border-radius: 999px; padding: 5px 14px; font-size: 13px; color: var(--dim);
+  }
+  .pm-chip:hover { background: var(--hover); color: var(--text); }
+  .pm-chip.on { background: #ececec; border-color: #ececec; color: #111; font-weight: 600; }
+
+  #wsmodal {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center;
+    justify-content: center; z-index: 35; padding: 20px;
+  }
+  #wsmodal.on { display: flex; }
+  .ws-card {
+    width: 100%; max-width: 640px; max-height: 78vh; display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden;
+  }
+  .ws-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .ws-path { flex: 1; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-path a { color: var(--dim); text-decoration: none; }
+  .ws-path a:hover { color: var(--text); text-decoration: underline; }
+  .ws-list { overflow-y: auto; padding: 6px; }
+  .ws-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px;
+    color: inherit; text-decoration: none; font-size: 14px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left;
+  }
+  .ws-row:hover { background: var(--hover); }
+  .ws-row .ws-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-row .ws-size { color: var(--dim2); font-size: 12px; }
+  .ws-empty { color: var(--dim2); font-size: 13px; text-align: center; padding: 24px; }
+
   #drop {
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
     background: rgba(0,0,0,.6); color: #fff; font-size: 18px; z-index: 30; pointer-events: none;
@@ -317,6 +372,27 @@
     <div class="composer">
       <div class="inner">
         <div id="pending"></div>
+        <div id="plusmenu">
+          <div class="pm-sec">
+            <button class="pm-item" id="pm-upload"><span>上传图片 / 文件</span><span class="pm-desc">也可以拖拽或直接粘贴</span></button>
+          </div>
+          <div class="pm-sec" id="pm-skills">
+            <div class="pm-title">技能</div>
+          </div>
+          <div class="pm-sec" id="pm-tools">
+            <div class="pm-title">工具</div>
+            <button class="pm-item" id="pm-ws"><span>查看 Workspace</span><span class="pm-desc">浏览 / 下载 agent 的文件（管理员）</span></button>
+          </div>
+          <div class="pm-sec">
+            <div class="pm-title"><span>模型</span><span id="pm-model-cur"></span></div>
+            <input class="pm-filter" id="pm-modelfilter" placeholder="筛选模型…">
+            <div class="pm-list" id="pm-models"></div>
+          </div>
+          <div class="pm-sec">
+            <div class="pm-title">思考强度</div>
+            <div class="pm-chips" id="pm-efforts"></div>
+          </div>
+        </div>
         <div class="box">
           <button class="iconbtn" id="attach" title="添加文件">＋</button>
           <input type="file" id="file" multiple hidden>
@@ -327,6 +403,16 @@
       </div>
     </div>
   </main>
+</div>
+<div id="wsmodal">
+  <div class="ws-card">
+    <div class="ws-head">
+      <div class="ws-path" id="ws-path"></div>
+      <button class="vbtn" id="ws-refresh" title="刷新">↻</button>
+      <button class="vbtn" id="ws-close" title="关闭">✕</button>
+    </div>
+    <div class="ws-list" id="ws-list"></div>
+  </div>
 </div>
 <div id="drop">松开上传文件</div>
 <div id="viewer">
@@ -709,6 +795,7 @@
     clearMessages();
     await loadHistory();
     connectSSE();
+    loadOptions(true).catch(() => {});
     closeSidebar();
     $('text').focus();
   }
@@ -911,7 +998,8 @@
     }
     $('text').focus();
   }
-  $('attach').onclick = () => $('file').click();
+  $('attach').onclick = (e) => { e.stopPropagation(); togglePlus(); };
+  $('pm-upload').onclick = () => { closePlus(); $('file').click(); };
   $('file').onchange = () => { addFiles($('file').files); $('file').value = ''; };
   document.addEventListener('paste', (e) => {
     if ($('app').style.display === 'none') return;
@@ -926,6 +1014,164 @@
     e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on');
     if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
   });
+
+  // ---------- + 菜单（技能 / 模型 / 思考强度 / Workspace） ----------
+  let options = null;
+  function togglePlus() {
+    const m = $('plusmenu');
+    if (m.classList.contains('on')) { closePlus(); return; }
+    m.classList.add('on');
+    loadOptions(true).catch((e) => showError(e.message));
+  }
+  function closePlus() { $('plusmenu').classList.remove('on'); }
+  document.addEventListener('click', (e) => {
+    if (!$('plusmenu').classList.contains('on')) return;
+    if (e.target.closest('#plusmenu') || e.target.closest('#attach')) return;
+    closePlus();
+  });
+  async function loadOptions(force) {
+    if (options && !force) { renderPlusMenu(); return options; }
+    options = await api('/api/options');
+    renderPlusMenu();
+    return options;
+  }
+  function renderPlusMenu() {
+    if (!options) return;
+    // 技能
+    const sec = $('pm-skills');
+    sec.querySelectorAll('.pm-item').forEach((n) => n.remove());
+    (options.skills || []).forEach((sk) => {
+      const b = document.createElement('button');
+      b.className = 'pm-item';
+      b.innerHTML = '<span>' + esc(sk.name) + '</span>' + (sk.desc ? '<span class="pm-desc">' + esc(sk.desc) + '</span>' : '');
+      b.onclick = () => {
+        $('text').value = sk.prompt || sk.name;
+        autoGrow(); closePlus(); $('text').focus();
+        $('text').setSelectionRange($('text').value.length, $('text').value.length);
+      };
+      sec.appendChild(b);
+    });
+    // 工具（workspace 仅管理员）
+    $('pm-tools').style.display = options.admin ? '' : 'none';
+    // 模型
+    renderModels($('pm-modelfilter').value || '');
+    $('pm-model-cur').textContent = options.model || ('默认 · ' + (options.defaultModel || ''));
+    // 思考强度
+    const ef = $('pm-efforts');
+    ef.innerHTML = '';
+    const effLabels = { low: '低', medium: '中', high: '高' };
+    [''].concat(options.efforts || []).forEach((v) => {
+      const b = document.createElement('button');
+      b.className = 'pm-chip' + ((options.effort || '') === v ? ' on' : '');
+      b.textContent = v === '' ? '自动' : (effLabels[v] || v);
+      b.onclick = () => setPrefs({ effort: v });
+      ef.appendChild(b);
+    });
+  }
+  function renderModels(filter) {
+    const box = $('pm-models');
+    box.innerHTML = '';
+    const cur = options.model || '';
+    const mk = (value, label, hint) => {
+      const b = document.createElement('button');
+      b.className = 'pm-item model' + (cur === value ? ' on' : '');
+      b.innerHTML = '<span>' + esc(label) + (hint ? ' <span class="pm-desc">' + esc(hint) + '</span>' : '') + '</span><span class="pm-check">✓</span>';
+      b.onclick = () => setPrefs({ model: value });
+      box.appendChild(b);
+    };
+    mk('', '默认' + (options.defaultModel ? ' · ' + options.defaultModel : ''), '');
+    const f = (filter || '').trim().toLowerCase();
+    (options.models || []).forEach((m) => {
+      if (f && m.toLowerCase().indexOf(f) < 0) return;
+      mk(m, m, m === options.defaultModel ? '默认' : '');
+    });
+  }
+  $('pm-modelfilter').addEventListener('input', () => { if (options) renderModels($('pm-modelfilter').value); });
+  async function setPrefs(patch) {
+    try {
+      const r = await api('/api/prefs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch)
+      });
+      options.model = r.model; options.effort = r.effort;
+      renderPlusMenu();
+      showError('已切换：' + [
+        r.model ? '模型 ' + r.model : '模型 默认',
+        '思考强度 ' + (r.effort ? ({ low: '低', medium: '中', high: '高' }[r.effort] || r.effort) : '自动')
+      ].join(' · '));
+    } catch (e) { showError(e.message); }
+  }
+
+  // ---------- Workspace 浏览器 ----------
+  let wsPath = '';
+  async function openWorkspace() {
+    closePlus();
+    $('wsmodal').classList.add('on');
+    await loadWorkspace();
+  }
+  async function loadWorkspace() {
+    const box = $('ws-list');
+    box.innerHTML = '<div class="ws-empty">加载中…</div>';
+    try {
+      const res = await api('/api/workspace?path=' + encodeURIComponent(wsPath));
+      renderWsPath(res.path || '');
+      box.innerHTML = '';
+      const entries = res.entries || [];
+      if (wsPath) {
+        const up = document.createElement('button');
+        up.className = 'ws-row';
+        up.innerHTML = '<span>📁</span><span class="ws-name">..</span>';
+        up.onclick = () => { wsPath = wsPath.split('/').slice(0, -1).join('/'); loadWorkspace(); };
+        box.appendChild(up);
+      }
+      if (!entries.length) {
+        box.innerHTML += '<div class="ws-empty">这里是空的</div>';
+      }
+      entries.forEach((en) => {
+        const full = (res.path ? res.path + '/' : '') + en.name;
+        const row = document.createElement('a');
+        row.className = 'ws-row';
+        if (en.dir) {
+          row.innerHTML = '<span>📁</span><span class="ws-name">' + esc(en.name) + '</span><span class="ws-size">›</span>';
+          row.onclick = (e) => { e.preventDefault(); wsPath = full; loadWorkspace(); };
+        } else {
+          const [label, cls] = extInfo(en.name);
+          const url = withTok('/api/workspace/file?path=' + encodeURIComponent(full));
+          row.href = url;
+          row.setAttribute('download', en.name);
+          row.innerHTML = '<span class="ext ' + cls + '" style="width:28px;height:28px;font-size:9px">' + label + '</span>' +
+            '<span class="ws-name">' + esc(en.name) + '</span>' +
+            '<span class="ws-size">' + fmtSize(en.size || 0) + '</span>';
+          if (/\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(en.name)) {
+            row.onclick = (e) => {
+              e.preventDefault();
+              openViewer([{ url: url, name: en.name }], 0);
+            };
+          }
+        }
+        box.appendChild(row);
+      });
+    } catch (e) {
+      box.innerHTML = '<div class="ws-empty">' + esc(e.message) + '</div>';
+    }
+  }
+  function renderWsPath(rel) {
+    const parts = rel ? rel.split('/') : [];
+    let html = '<a href="#" data-p="">workspace</a>';
+    let acc = '';
+    parts.forEach((seg) => {
+      acc = acc ? acc + '/' + seg : seg;
+      html += ' / <a href="#" data-p="' + esc(acc) + '">' + esc(seg) + '</a>';
+    });
+    const el = $('ws-path');
+    el.innerHTML = html;
+    el.querySelectorAll('a').forEach((a) => {
+      a.onclick = (e) => { e.preventDefault(); wsPath = a.dataset.p || ''; loadWorkspace(); };
+    });
+  }
+  $('pm-ws').onclick = openWorkspace;
+  $('ws-close').onclick = () => $('wsmodal').classList.remove('on');
+  $('ws-refresh').onclick = () => loadWorkspace();
+  $('wsmodal').addEventListener('click', (e) => { if (e.target === $('wsmodal')) $('wsmodal').classList.remove('on'); });
 
   // ---------- 启动 ----------
   if (token && me) {

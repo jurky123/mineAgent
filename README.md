@@ -136,7 +136,16 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 浏览器直接聊，支持收发**文件/图片**：拖拽、粘贴或点 ＋ 上传文件（图片先在浏览器端
 压缩到 1600px/JPEG，带上传进度），agent 用 `web_file` 把 workspace 里的文件/图片
 发回来。图片点击进查看器（缩放/拖动/多图切换/下载），文件按类型显示角标卡片、
-点击或悬停下载，下载文件名保留原始名。会话按名字隔离
+点击或悬停下载，下载文件名保留原始名。
+
+输入框的 **＋ 菜单**还能：
+- **技能**：`web.skills` 配的快捷指令，点一下把 prompt 填进输入框
+- **查看 Workspace**：浏览/下载沙箱目录里的文件（仅 `web.adminUsers`）
+- **切换模型**：可选模型默认从网关 `GET /models` 拉（10 分钟缓存），
+  也可用 `model.options` 手动限定；每个账号各选各的，存 `data/webui/prefs.json`
+- **思考强度**：`reasoning_effort` 低/中/高（模型不支持就不选）
+
+会话按名字隔离
 （`web:c2c:<名字>`），同一账号多个标签页共享消息（SSE 实时推送），
 界面为 ChatGPT 风格（侧栏 + 新会话 + 消息复制 + 代码块复制 + 断线补拉）。
 
@@ -154,6 +163,10 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 | `GET /api/history?after=<id>` | 历史消息（含附件引用） |
 | `POST /api/clear` | 清空当前会话（前端"新会话"），并广播其它标签页 |
 | `POST /api/logout` | 注销当前登录令牌（前端"退出登录"） |
+| `GET /api/options` | ＋ 菜单数据：技能 / 可选模型 / 思考强度 / 当前偏好 |
+| `POST /api/prefs` `{model, effort}` | 保存本账号的模型与思考强度 |
+| `GET /api/workspace?path=` | 列 workspace 目录（仅管理员） |
+| `GET /api/workspace/file?path=` | 下载/预览 workspace 文件（仅管理员） |
 | `GET /api/events?token=` | SSE 实时推送 |
 | `POST /api/upload?name=<文件名>` | 上传单个文件，返回引用 |
 | `POST /api/send` `{text, files}` | 发消息给 agent |

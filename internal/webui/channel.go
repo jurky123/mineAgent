@@ -47,6 +47,10 @@ type Channel struct {
 	ag       *agent.Agent
 	webTools []tool.BaseTool
 
+	// 模型切换：可选项（config.model.options 优先，否则拉网关）与加载器。
+	modelOptions []string
+	models       *modelLister
+
 	srv *http.Server
 
 	mu       sync.Mutex
@@ -58,6 +62,9 @@ type Channel struct {
 	// 持久化到 tokensPath，重启不掉线）。
 	tokens     map[string][]string
 	tokensPath string
+	// prefs: 账号名 -> 模型/思考强度偏好（+ 菜单里改），持久化。
+	prefs     map[string]accountPrefs
+	prefsPath string
 }
 
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
@@ -71,6 +78,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		cfg:           cfg.Web,
 		workspaceRoot: cfg.WorkspaceRoot(),
 		model:         cfg.Model.Name,
+		modelOptions:  cfg.Model.Options,
 		hub:           hub,
 		store:         store,
 		ag:            ag,
@@ -80,8 +88,12 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		subs:          make(map[string]map[chan []byte]struct{}),
 		tokens:        make(map[string][]string),
 		tokensPath:    filepath.Join(dataDir, "tokens.json"),
+		prefs:         make(map[string]accountPrefs),
+		prefsPath:     filepath.Join(dataDir, "prefs.json"),
 	}
+	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
 	c.loadTokens()
+	c.loadPrefs()
 	return c
 }
 
@@ -290,6 +302,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, text string, file
 	c.log.Info("web trigger", "session", sessionKey, "author", name,
 		"files", len(files), "boundMC", mcName, "query", text, "messageId", stored.ID)
 
+	prefs := c.prefsOf(name)
 	if !c.ag.Submit(agent.Request{
 		Session:           sess,
 		SessionKey:        sessionKey,
@@ -301,6 +314,8 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, text string, file
 		ReplyTarget:       target,
 		Tools:             c.webTools,
 		SystemInstruction: webInstruction,
+		Model:             prefs.Model,
+		ReasoningEffort:   prefs.Effort,
 	}) {
 		_ = sess.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", target)
 	}

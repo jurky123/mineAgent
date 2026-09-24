@@ -108,3 +108,42 @@ func TestUnregister(t *testing.T) {
 		t.Fatal("unregistered channel received message")
 	}
 }
+
+func TestReplyReturnsErrorWhenAllChannelsFail(t *testing.T) {
+	_, sess := newTestHub(t)
+	bad := &failChannel{name: "qq"}
+	sess.Register(bad)
+	// 单通道失败必须返回 error（图片场景靠它让 agent 知道没发出去）。
+	if err := sess.Reply(context.Background(), "img", "img:c2c:U:MSG:p.png"); err == nil {
+		t.Fatal("want error when the only channel fails")
+	}
+}
+
+func TestReplySucceedsWhenOneChannelOk(t *testing.T) {
+	_, sess := newTestHub(t)
+	bad := &failChannel{name: "bad"}
+	ok := &fakeChannel{name: "good"}
+	sess.Register(bad)
+	sess.Register(ok)
+	// MC 广播语义：部分通道失败不算错（玩家离线等）。
+	if err := sess.Reply(context.Background(), "hi", ""); err != nil {
+		t.Fatalf("want nil when one channel ok, got %v", err)
+	}
+	if ok.count() != 1 {
+		t.Fatal("good channel should receive")
+	}
+}
+
+type failChannel struct {
+	name string
+}
+
+func (f *failChannel) Name() string { return f.name }
+
+func (f *failChannel) Send(_ context.Context, _ storage.Message) error {
+	return errTestFail
+}
+
+var errTestFail = errTest()
+
+func errTest() error { return context.DeadlineExceeded }

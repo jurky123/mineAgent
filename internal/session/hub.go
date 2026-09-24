@@ -94,7 +94,9 @@ func (s *Session) Reply(ctx context.Context, text, target string) error {
 		return err
 	}
 	msg.ID = id
-	s.fanout(ctx, msg, "")
+	if err := s.sendToAll(ctx, msg); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -112,4 +114,33 @@ func (s *Session) fanout(ctx context.Context, msg storage.Message, exclude strin
 			s.hub.log.Warn("channel send failed", "channel", ch.Name(), "err", err)
 		}
 	}
+}
+
+// sendToAll 发给全部通道并汇总错误：图片/媒体发送失败必须返回 error，
+// 否则 gate 以为"已发送"，agent 会撒谎说发出去了（线上已复现两次）。
+// 纯文本走原来的 warn 语义？不——统一返回，由调用方决定：
+// consume 的纯文本回复失败本来也该让用户知道，但为兼容 MC 广播（部分玩家离线不算错），
+// 这里只在"所有通道都失败"时返回 error；图片/单通道场景失败即返回。
+func (s *Session) sendToAll(ctx context.Context, msg storage.Message) error {
+	s.mu.RLock()
+	chans := make([]Channel, 0, len(s.channels))
+	for _, ch := range s.channels {
+		chans = append(chans, ch)
+	}
+	s.mu.RUnlock()
+	var firstErr error
+	failed := 0
+	for _, ch := range chans {
+		if err := ch.Send(ctx, msg); err != nil {
+			failed++
+			if firstErr == nil {
+				firstErr = err
+			}
+			s.hub.log.Warn("channel send failed", "channel", ch.Name(), "err", err)
+		}
+	}
+	if firstErr != nil && failed == len(chans) && len(chans) > 0 {
+		return firstErr
+	}
+	return nil
 }

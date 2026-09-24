@@ -48,7 +48,7 @@ func (a *Agent) buildMiddlewaresFor(ctx context.Context, cm model.BaseModel[*sch
 	}
 	userInstruction := "请把上面的 Minecraft 服务器聊天记录压缩成简洁的中文摘要，保留玩家名、事件、约定和重要事实，不要遗漏未完成的事项。"
 	if isQQ {
-		userInstruction = "请把上面的 QQ 对话记录压缩成简洁的中文摘要，保留发言人、请求事项、已做决定和未完成的任务，不要遗漏未完成的事项。只输出摘要正文，不要输出工具调用原文或任何标记语言。"
+		userInstruction = "请把上面的 QQ 对话记录压缩成简洁的中文摘要，保留发言人、请求事项、已做决定和未完成的任务，不要遗漏未完成的事项。只输出摘要正文，不要输出工具调用原文或任何标记语言。注意：'Minecraft'只是一个游戏名，如果对话里提到它只是普通话题，不要说'不存在聊天记录'这类话，直接摘要对话本身。"
 	}
 	summaryMW, err := summarization.New(ctx, &summarization.Config{
 		Model: cm,

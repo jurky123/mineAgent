@@ -181,6 +181,49 @@ func ToWire(m storage.Message) WireMessage {
 	return w
 }
 
+// MessageFileName 取附件展示名（下载时的文件名）：
+// agent 发的文件用消息 Text（caption），空则用磁盘名；用户上传用标记里的原名。
+func MessageFileName(m storage.Message, index int) string {
+	if strings.HasPrefix(m.Target, storage.KindFile) {
+		if name := strings.TrimSpace(m.Text); name != "" {
+			return name
+		}
+		if rel := MessageRelPath(m, 0); rel != "" {
+			return path.Base(rel)
+		}
+		return "file"
+	}
+	_, files := ParseFileMarkers(m.Text)
+	if index >= 0 && index < len(files) && files[index].Name != "" {
+		return files[index].Name
+	}
+	if rel := MessageRelPath(m, index); rel != "" {
+		return path.Base(rel)
+	}
+	return "file"
+}
+
+// MimeForServing 下载响应的 Content-Type：webp/avif 这类在部分系统 mime 表里
+// 没有，会被当成 octet-stream 直接下载（而不是内联显示），这里显式补齐。
+func MimeForServing(rel string) string {
+	ext := strings.ToLower(filepath.Ext(rel))
+	switch ext {
+	case ".webp":
+		return "image/webp"
+	case ".avif":
+		return "image/avif"
+	case ".svg":
+		return "image/svg+xml"
+	}
+	if ct := mime.TypeByExtension(ext); ct != "" {
+		return ct
+	}
+	if IsImagePath(rel) {
+		return "image/" + strings.TrimPrefix(ext, ".")
+	}
+	return "application/octet-stream"
+}
+
 // MessageRelPath 取消息关联的文件相对路径：agent 文件消息取 Target，
 // 用户上传消息从文本标记里取第 i 个。校验不过返回 ""。
 func MessageRelPath(m storage.Message, index int) string {

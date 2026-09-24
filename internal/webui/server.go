@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,6 +41,7 @@ func (c *Channel) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.handleIndex)
 	mux.HandleFunc("/api/login", c.handleLogin)
+	mux.HandleFunc("/api/logout", c.handleLogout)
 	mux.HandleFunc("/api/me", c.withAuth(c.handleMe))
 	mux.HandleFunc("/api/history", c.withAuth(c.handleHistory))
 	mux.HandleFunc("/api/clear", c.withAuth(c.handleClear))
@@ -106,12 +106,20 @@ func (c *Channel) handleIndex(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-// tokenOf 从 Authorization: Bearer 或 ?token= 取令牌。
+// tokenOf 从 Authorization: Bearer / ?token= / 登录 cookie 取令牌。
+// cookie 是给 <img src>、<a download> 这类带不了 header 的请求用的
+// （登录时种，附件 URL 就不用把 token 拼在地址里）。
 func tokenOf(r *http.Request) string {
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
 	}
-	return strings.TrimSpace(r.URL.Query().Get("token"))
+	if q := strings.TrimSpace(r.URL.Query().Get("token")); q != "" {
+		return q
+	}
+	if ck, err := r.Cookie("mineagent_token"); err == nil {
+		return strings.TrimSpace(ck.Value)
+	}
+	return ""
 }
 
 // withAuth 用令牌换账号名放 context，失败 401。
@@ -161,12 +169,28 @@ func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成登录令牌失败"})
 		return
 	}
+	// cookie 供 <img>/<a download> 等无法带 Authorization 的请求鉴权。
+	http.SetCookie(w, &http.Cookie{
+		Name: "mineagent_token", Value: tok, Path: "/", MaxAge: 30 * 24 * 3600,
+		SameSite: http.SameSiteLaxMode, HttpOnly: true,
+	})
 	c.log.Info("web login", "name", name, "admin", IsAdminName(name, c.cfg.AdminUsers))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":  name,
 		"token": tok,
 		"admin": IsAdminName(name, c.cfg.AdminUsers),
 	})
+}
+
+// handleLogout 注销当前令牌并清 cookie。
+func (c *Channel) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
+		return
+	}
+	c.logout(tokenOf(r))
+	http.SetCookie(w, &http.Cookie{Name: "mineagent_token", Value: "", Path: "/", MaxAge: -1})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (c *Channel) handleMe(w http.ResponseWriter, _ *http.Request, name string) {
@@ -398,18 +422,10 @@ func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "文件已不在"})
 		return
 	}
-	contentType := MimeByPath(rel)
-	if ct := mime.TypeByExtension(filepath.Ext(rel)); ct != "" {
-		contentType = ct
-	}
-	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Type", MimeForServing(rel))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// 中文文件名用 RFC 5987 编码，浏览器下载名才不会乱。
-	fileName := filepath.Base(rel)
-	if strings.HasPrefix(msg.Target, storage.KindFile) {
-		if display := strings.TrimSpace(msg.Text); display != "" {
-			fileName = display
-		}
-	}
+	fileName := MessageFileName(*msg, index)
 	disp := "attachment"
 	if IsImagePath(rel) {
 		disp = "inline"

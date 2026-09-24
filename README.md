@@ -135,7 +135,8 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 浏览器直接聊，支持收发**文件/图片**：拖拽、粘贴或点 ＋ 上传文件（图片先在浏览器端
 压缩到 1600px/JPEG，带上传进度），agent 用 `web_file` 把 workspace 里的文件/图片
-发回来（图片内联显示可点开大图，其它给下载链接）。会话按名字隔离
+发回来。图片点击进查看器（缩放/拖动/多图切换/下载），文件按类型显示角标卡片、
+点击或悬停下载，下载文件名保留原始名。会话按名字隔离
 （`web:c2c:<名字>`），同一账号多个标签页共享消息（SSE 实时推送），
 界面为 ChatGPT 风格（侧栏 + 新会话 + 消息复制 + 代码块复制 + 断线补拉）。
 
@@ -152,6 +153,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 | `POST /api/login` `{"name":"..."}` | 换登录令牌（`users` 白名单非空时校验） |
 | `GET /api/history?after=<id>` | 历史消息（含附件引用） |
 | `POST /api/clear` | 清空当前会话（前端"新会话"），并广播其它标签页 |
+| `POST /api/logout` | 注销当前登录令牌（前端"退出登录"） |
 | `GET /api/events?token=` | SSE 实时推送 |
 | `POST /api/upload?name=<文件名>` | 上传单个文件，返回引用 |
 | `POST /api/send` `{text, files}` | 发消息给 agent |
@@ -160,7 +162,9 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 嵌入说明：页面允许 iframe（`frame-ancestors *`），API 支持跨域带
 `Authorization: Bearer <token>`（无 Cookie），`web.allowedOrigins` 可收紧来源。
 上传文件存在 `workspace/web-files/<名字>/` 下，单文件默认 20MB（`web.maxUploadMB`），
-登录令牌存 `data/webui/tokens.json`（重启不掉线）。
+登录令牌存 `data/webui/tokens.json`（重启不掉线）。登录时同时种 HttpOnly cookie，
+附件 URL（`<img>`/下载链接）靠它鉴权，不用把 token 拼在地址里；`/api/logout` 会注销
+当前令牌。
 注意：账号只有名字没有密码，等于"知道名字就能进"，别把管理员名字设成别人能猜到的。
 
 ## 微信的其它路线（备查）

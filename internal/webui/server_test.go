@@ -9,7 +9,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -243,6 +245,87 @@ func TestClearSession(t *testing.T) {
 	_ = doJSON(t, "GET", ts.URL+"/api/history", tok, nil, &hist)
 	if len(hist.Messages) != 0 {
 		t.Fatalf("清空后还有消息: %+v", hist.Messages)
+	}
+}
+
+// 附件 URL（<img>/<a download>）带不了 Authorization，靠登录 cookie 鉴权；
+// 下载文件名要用原始名（不是磁盘上的时间戳名）。
+func TestMsgFileCookieAuthAndName(t *testing.T) {
+	_, ts, _ := newTestChannel(t)
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	res, err := client.Post(ts.URL+"/api/login", "application/json", strings.NewReader(`{"name":"jzk"}`))
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("login: %v %d", err, res.StatusCode)
+	}
+	_ = res.Body.Close()
+
+	// 只靠 cookie（不带 Authorization）上传
+	up, err := client.Post(ts.URL+"/api/upload?name="+url.QueryEscape("报告 v2.pdf"),
+		"application/octet-stream", strings.NewReader("pdf-bytes"))
+	if err != nil || up.StatusCode != 200 {
+		t.Fatalf("upload: %v %d", err, up.StatusCode)
+	}
+	var file UploadedFile
+	_ = json.NewDecoder(up.Body).Decode(&file)
+	_ = up.Body.Close()
+
+	body, _ := json.Marshal(map[string]any{"text": "看附件", "files": []UploadedFile{file}})
+	send, err := client.Post(ts.URL+"/api/send", "application/json", bytes.NewReader(body))
+	if err != nil || send.StatusCode != 200 {
+		t.Fatalf("send: %v %d", err, send.StatusCode)
+	}
+	_ = send.Body.Close()
+
+	// 历史里取附件 URL（不带 token 参数）
+	hreq, _ := http.NewRequest("GET", ts.URL+"/api/history", nil)
+	hres, err := client.Do(hreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hist struct {
+		Messages []WireMessage `json:"messages"`
+	}
+	_ = json.NewDecoder(hres.Body).Decode(&hist)
+	_ = hres.Body.Close()
+	if len(hist.Messages) == 0 || len(hist.Messages[0].Files) == 0 {
+		t.Fatalf("没有附件消息: %+v", hist.Messages)
+	}
+	fileURL := hist.Messages[0].Files[0].URL
+	if strings.Contains(fileURL, "token=") {
+		t.Fatalf("附件 URL 不该拼 token: %s", fileURL)
+	}
+
+	dl, err := client.Get(ts.URL + fileURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(dl.Body)
+	_ = dl.Body.Close()
+	if dl.StatusCode != 200 || string(raw) != "pdf-bytes" {
+		t.Fatalf("cookie 下载失败: %d %q", dl.StatusCode, raw)
+	}
+	if cd := dl.Header.Get("Content-Disposition"); !strings.Contains(cd, "%E6%8A%A5%E5%91%8A%20v2.pdf") {
+		t.Fatalf("下载文件名不是原名: %q", cd)
+	}
+	if ct := dl.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/pdf") {
+		t.Fatalf("content-type = %q", ct)
+	}
+
+	// 退出后 cookie 失效
+	lres, err := client.Post(ts.URL+"/api/logout", "application/json", nil)
+	if err != nil || lres.StatusCode != 200 {
+		t.Fatalf("logout: %v %d", err, lres.StatusCode)
+	}
+	_ = lres.Body.Close()
+	after, err := client.Get(ts.URL + fileURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = after.Body.Close()
+	if after.StatusCode != 401 {
+		t.Fatalf("退出后还能下载: %d", after.StatusCode)
 	}
 }
 

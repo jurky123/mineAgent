@@ -381,6 +381,29 @@ func (c *Channel) login(name string) (string, error) {
 	return tok, nil
 }
 
+// logout 注销单个令牌（前端"退出登录"），并持久化。
+func (c *Channel) logout(tok string) {
+	if tok == "" {
+		return
+	}
+	c.mu.Lock()
+	for name, list := range c.tokens {
+		out := list[:0]
+		for _, t := range list {
+			if t != tok {
+				out = append(out, t)
+			}
+		}
+		if len(out) == 0 {
+			delete(c.tokens, name)
+		} else {
+			c.tokens[name] = out
+		}
+	}
+	c.mu.Unlock()
+	c.saveTokens()
+}
+
 // nameByToken 反查令牌归属；不带令牌/令牌过期返回 ""。
 func (c *Channel) nameByToken(tok string) string {
 	if tok == "" {

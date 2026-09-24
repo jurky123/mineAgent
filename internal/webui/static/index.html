@@ -132,18 +132,37 @@
   .content > div:empty { height: 8px; }
 
   .files { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-  .imgwrap { max-width: 320px; }
-  .imgwrap img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; cursor: zoom-in; }
+  .imgbox { position: relative; max-width: 340px; border-radius: 12px; overflow: hidden; }
+  .imgbox img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; cursor: zoom-in; }
+  .imgtools {
+    position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; opacity: 0; transition: opacity .15s;
+  }
+  .imgbox:hover .imgtools { opacity: 1; }
+  .itool {
+    width: 30px; height: 30px; border-radius: 8px; border: 0; display: flex; align-items: center;
+    justify-content: center; background: rgba(0,0,0,.65); color: #fff; backdrop-filter: blur(4px);
+    text-decoration: none; padding: 0;
+  }
+  .itool:hover { background: rgba(0,0,0,.85); }
   .filecard {
-    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
+    display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 14px;
     background: var(--bg); border: 1px solid var(--line); color: inherit; text-decoration: none;
-    font-size: 14px; max-width: 340px;
+    font-size: 14px; max-width: 360px;
   }
   .filecard:hover { background: var(--hover); }
-  .filecard .ficon { width: 34px; height: 34px; border-radius: 8px; background: #4a4a4a; display: flex; align-items: center; justify-content: center; flex: none; }
-  .filecard .fmeta { min-width: 0; }
-  .filecard .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ext {
+    width: 38px; height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+    flex: none; font-size: 10px; font-weight: 700; letter-spacing: .3px; color: #fff; background: #555;
+  }
+  .ext.pdf { background: #c0392b; } .ext.doc { background: #2b6cb0; } .ext.xls { background: #2f855a; }
+  .ext.ppt { background: #c05621; } .ext.zip { background: #975a16; } .ext.img { background: #6b46c1; }
+  .ext.audio { background: #b83280; } .ext.video { background: #4c51bf; } .ext.code { background: #2c7a7b; }
+  .ext.txt { background: #4a5568; }
+  .filecard .fmeta { min-width: 0; flex: 1; }
+  .filecard .fname { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .filecard .fsize { color: var(--dim2); font-size: 12px; }
+  .filecard .fdl { color: var(--dim2); flex: none; display: flex; }
+  .filecard:hover .fdl { color: var(--text); }
 
   .typing .dots span {
     display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%;
@@ -203,9 +222,33 @@
     background: rgba(0,0,0,.6); color: #fff; font-size: 18px; z-index: 30; pointer-events: none;
   }
   #drop.on { display: flex; }
-  #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.9); display: none; z-index: 40; cursor: zoom-out; }
-  #lightbox.on { display: flex; align-items: center; justify-content: center; }
-  #lightbox img { max-width: 94vw; max-height: 94vh; border-radius: 8px; }
+  /* ---------- 图片查看器（ChatGPT 风格） ---------- */
+  #viewer { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: none; z-index: 40; flex-direction: column; }
+  #viewer.on { display: flex; }
+  .vbar {
+    display: flex; align-items: center; gap: 6px; padding: 10px 14px; color: #eee;
+    background: linear-gradient(rgba(0,0,0,.5), transparent);
+  }
+  .vname { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; color: #ddd; }
+  .vcount { color: #999; font-size: 12px; flex: 1; }
+  .vbtn {
+    height: 32px; min-width: 32px; padding: 0 10px; border-radius: 8px; border: 0;
+    background: rgba(255,255,255,.12); color: #eee; display: flex; align-items: center;
+    justify-content: center; font-size: 13px; text-decoration: none; gap: 5px;
+  }
+  .vbtn:hover { background: rgba(255,255,255,.24); }
+  .vzoom { min-width: 46px; text-align: center; font-size: 12px; color: #bbb; }
+  .vstage { flex: 1; position: relative; overflow: hidden; touch-action: none; display: flex; align-items: center; justify-content: center; }
+  .vimg { max-width: 100%; max-height: 100%; border-radius: 4px; user-select: none; -webkit-user-drag: none; transform-origin: center center; cursor: grab; }
+  .vimg.grabbing { cursor: grabbing; }
+  .vnav {
+    position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 60px; border: 0;
+    border-radius: 10px; background: rgba(255,255,255,.1); color: #fff; font-size: 26px; line-height: 1;
+  }
+  .vnav:hover { background: rgba(255,255,255,.24); }
+  .vnav.prev { left: 14px; } .vnav.next { right: 14px; }
+  .vmeta { padding: 8px 14px 14px; color: #999; font-size: 12px; text-align: center; }
+  @media (max-width: 640px) { .vname { max-width: 34vw; } .vnav { width: 34px; height: 48px; font-size: 20px; } }
 
   @media (min-width: 900px) {
     #sidebar { transform: none; }
@@ -286,7 +329,24 @@
   </main>
 </div>
 <div id="drop">松开上传文件</div>
-<div id="lightbox"><img alt=""></div>
+<div id="viewer">
+  <div class="vbar">
+    <span class="vname"></span>
+    <span class="vcount"></span>
+    <button class="vbtn" data-act="zoomout" title="缩小">−</button>
+    <span class="vzoom">100%</span>
+    <button class="vbtn" data-act="zoomin" title="放大">＋</button>
+    <button class="vbtn" data-act="reset" title="原始大小">1:1</button>
+    <a class="vbtn vdl" download title="下载">下载</a>
+    <button class="vbtn" data-act="close" title="关闭（Esc）">✕</button>
+  </div>
+  <div class="vstage">
+    <button class="vnav prev" title="上一张（←）">‹</button>
+    <img class="vimg" alt="">
+    <button class="vnav next" title="下一张（→）">›</button>
+  </div>
+  <div class="vmeta">滚轮/双指缩放 · 拖动平移 · Esc 关闭</div>
+</div>
 
 <script>
 (function () {
@@ -366,14 +426,42 @@
   $('tobottom').onclick = toBottom;
 
   // ---------- 消息渲染 ----------
+  const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></svg>';
+  const ICON_EXPAND = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H3v6"/><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M15 21h6v-6"/></svg>';
+  // 按扩展名给文件卡片配色 + 角标（ChatGPT 风格的文件类型图标）
+  function extInfo(name) {
+    const ext = (String(name || '').split('.').pop() || '').toLowerCase();
+    const map = {
+      pdf: ['PDF', 'pdf'], doc: ['DOC', 'doc'], docx: ['DOC', 'doc'], rtf: ['RTF', 'doc'],
+      xls: ['XLS', 'xls'], xlsx: ['XLS', 'xls'], csv: ['CSV', 'xls'],
+      ppt: ['PPT', 'ppt'], pptx: ['PPT', 'ppt'],
+      txt: ['TXT', 'txt'], md: ['MD', 'txt'], log: ['LOG', 'txt'],
+      json: ['JSON', 'code'], js: ['JS', 'code'], ts: ['TS', 'code'], py: ['PY', 'code'],
+      java: ['JAVA', 'code'], go: ['GO', 'code'], sh: ['SH', 'code'], html: ['HTML', 'code'],
+      css: ['CSS', 'code'], xml: ['XML', 'code'], yml: ['YML', 'code'], yaml: ['YML', 'code'],
+      zip: ['ZIP', 'zip'], rar: ['RAR', 'zip'], '7z': ['7Z', 'zip'], tar: ['TAR', 'zip'], gz: ['GZ', 'zip'],
+      mp3: ['MP3', 'audio'], wav: ['WAV', 'audio'], m4a: ['M4A', 'audio'], flac: ['FLAC', 'audio'],
+      mp4: ['MP4', 'video'], mov: ['MOV', 'video'], mkv: ['MKV', 'video'], webm: ['WEBM', 'video']
+    };
+    if (map[ext]) return map[ext];
+    return [ext ? ext.slice(0, 4).toUpperCase() : 'FILE', 'txt'];
+  }
   function fileBubble(f) {
+    const name = f.name || '文件';
     if (f.image) {
-      return '<div class="imgwrap"><img src="' + esc(f.url) + '" alt="' + esc(f.name || '图片') +
-        '" loading="lazy" data-zoom="' + esc(f.url) + '"></div>';
+      return '<div class="imgbox"><img src="' + esc(f.url) + '" alt="' + esc(name) +
+        '" loading="lazy" data-zoom="' + esc(f.url) + '" data-name="' + esc(name) + '">' +
+        '<div class="imgtools">' +
+        '<button class="itool" data-preview title="查看">' + ICON_EXPAND + '</button>' +
+        '<a class="itool" href="' + esc(f.url) + '" download="' + esc(name) + '" title="下载">' + ICON_DOWNLOAD + '</a>' +
+        '</div></div>';
     }
-    return '<a class="filecard" href="' + esc(f.url) + '" download>' +
-      '<span class="ficon">📄</span><span class="fmeta"><span class="fname">' + esc(f.name || '文件') + '</span>' +
-      (f.size ? '<div class="fsize">' + fmtSize(f.size) + '</div>' : '') + '</span></a>';
+    const [label, cls] = extInfo(name);
+    return '<a class="filecard" href="' + esc(f.url) + '" download="' + esc(name) + '" title="' + esc(name) + '">' +
+      '<span class="ext ' + cls + '">' + label + '</span>' +
+      '<span class="fmeta"><span class="fname">' + esc(name) + '</span>' +
+      (f.size ? '<span class="fsize">' + fmtSize(f.size) + '</span>' : '') + '</span>' +
+      '<span class="fdl">' + ICON_DOWNLOAD + '</span></a>';
   }
   function addCodeCopy(row) {
     row.querySelectorAll('pre').forEach((pre) => {
@@ -444,12 +532,125 @@
     if (scrollNearBottom()) toBottom();
   }
 
-  // 图片点击放大
+  // ---------- 图片查看器 ----------
+  const viewer = { list: [], index: 0, scale: 1, x: 0, y: 0, drag: false, sx: 0, sy: 0, ox: 0, oy: 0 };
+  const V = () => $('viewer');
+  function openViewer(list, index) {
+    if (!list || !list.length) return;
+    viewer.list = list;
+    viewer.index = Math.max(0, Math.min(index || 0, list.length - 1));
+    V().classList.add('on');
+    document.body.style.overflow = 'hidden';
+    showViewerImage();
+  }
+  function closeViewer() { V().classList.remove('on'); viewer.list = []; document.body.style.overflow = ''; }
+  function showViewerImage() {
+    const it = viewer.list[viewer.index] || {};
+    const img = V().querySelector('.vimg');
+    img.src = it.url; img.alt = it.name || '';
+    V().querySelector('.vname').textContent = it.name || '';
+    V().querySelector('.vcount').textContent = viewer.list.length > 1 ? (viewer.index + 1) + ' / ' + viewer.list.length : '';
+    const many = viewer.list.length > 1;
+    V().querySelector('.vnav.prev').style.visibility = many ? 'visible' : 'hidden';
+    V().querySelector('.vnav.next').style.visibility = many ? 'visible' : 'hidden';
+    const dl = V().querySelector('.vdl');
+    dl.href = it.url || '';
+    if (it.name) dl.setAttribute('download', it.name); else dl.removeAttribute('download');
+    resetZoom();
+  }
+  function applyZoom() {
+    V().querySelector('.vimg').style.transform =
+      'translate(' + viewer.x + 'px,' + viewer.y + 'px) scale(' + viewer.scale + ')';
+    V().querySelector('.vzoom').textContent = Math.round(viewer.scale * 100) + '%';
+  }
+  function resetZoom() { viewer.scale = 1; viewer.x = 0; viewer.y = 0; applyZoom(); }
+  function zoomBy(f, cx, cy) {
+    const ns = Math.min(8, Math.max(0.1, viewer.scale * f));
+    const stage = V().querySelector('.vstage');
+    const r = stage.getBoundingClientRect();
+    const px = (cx === undefined ? r.width / 2 : cx - r.left) - r.width / 2;
+    const py = (cy === undefined ? r.height / 2 : cy - r.top) - r.height / 2;
+    const k = ns / viewer.scale;
+    viewer.x = px - (px - viewer.x) * k;
+    viewer.y = py - (py - viewer.y) * k;
+    viewer.scale = ns;
+    applyZoom();
+  }
+  function stepViewer(d) {
+    if (viewer.list.length < 2) return;
+    viewer.index = (viewer.index + d + viewer.list.length) % viewer.list.length;
+    showViewerImage();
+  }
+  (function bindViewer() {
+    const stage = V().querySelector('.vstage');
+    stage.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, { passive: false });
+    stage.addEventListener('dblclick', (e) => { e.preventDefault(); viewer.scale > 1.01 ? resetZoom() : zoomBy(2, e.clientX, e.clientY); });
+    stage.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.vnav')) return;
+      viewer.drag = true; viewer.sx = e.clientX; viewer.sy = e.clientY;
+      viewer.ox = viewer.x; viewer.oy = viewer.y;
+      V().querySelector('.vimg').classList.add('grabbing');
+      try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!viewer.drag) return;
+      viewer.x = viewer.ox + (e.clientX - viewer.sx);
+      viewer.y = viewer.oy + (e.clientY - viewer.sy);
+      applyZoom();
+    });
+    const endDrag = (e) => { viewer.drag = false; V().querySelector('.vimg').classList.remove('grabbing'); try { stage.releasePointerCapture(e.pointerId); } catch (err) {} };
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+    // 触屏双指缩放
+    let pinch = 0;
+    const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    stage.addEventListener('touchstart', (e) => { if (e.touches.length === 2) pinch = dist(e.touches); }, { passive: true });
+    stage.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && pinch) {
+        e.preventDefault();
+        const d = dist(e.touches);
+        zoomBy(d / pinch, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+        pinch = d;
+      }
+    }, { passive: false });
+    stage.addEventListener('touchend', () => { pinch = 0; });
+    V().querySelector('.vbar').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-act]');
+      if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === 'zoomin') zoomBy(1.25);
+      else if (act === 'zoomout') zoomBy(1 / 1.25);
+      else if (act === 'reset') resetZoom();
+      else if (act === 'close') closeViewer();
+    });
+    V().querySelector('.vnav.prev').onclick = () => stepViewer(-1);
+    V().querySelector('.vnav.next').onclick = () => stepViewer(1);
+    V().addEventListener('click', (e) => {
+      // 点图片以外的空白（遮罩/舞台）关闭；点图不关。
+      if (e.target === V() || e.target === stage) closeViewer();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (!V().classList.contains('on')) return;
+      if (e.key === 'Escape') closeViewer();
+      else if (e.key === 'ArrowLeft') stepViewer(-1);
+      else if (e.key === 'ArrowRight') stepViewer(1);
+      else if (e.key === '+' || e.key === '=') zoomBy(1.25);
+      else if (e.key === '-') zoomBy(1 / 1.25);
+      else if (e.key === '0') resetZoom();
+    });
+  })();
+  // 点击消息里的图片（或"查看"按钮）打开查看器，同一条消息的多张图可左右切换
   $('list').addEventListener('click', (e) => {
-    const img = e.target.closest('img[data-zoom]');
-    if (img) { $('lightbox').querySelector('img').src = img.dataset.zoom; $('lightbox').classList.add('on'); }
+    const hit = e.target.closest('img[data-zoom],[data-preview]');
+    if (!hit) return;
+    const row = e.target.closest('.msg');
+    if (!row) return;
+    const imgs = Array.from(row.querySelectorAll('img[data-zoom]'));
+    if (!imgs.length) return;
+    const target = hit.tagName === 'IMG' ? hit : hit.closest('.imgbox').querySelector('img[data-zoom]');
+    const idx = Math.max(0, imgs.indexOf(target));
+    openViewer(imgs.map((n) => ({ url: n.dataset.zoom, name: n.dataset.name || '' })), idx);
   });
-  $('lightbox').onclick = () => $('lightbox').classList.remove('on');
 
   // ---------- 登录 ----------
   async function doLogin(name) {
@@ -486,7 +687,10 @@
   }
   $('enter').onclick = () => doLogin($('name').value.trim());
   $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click(); });
-  $('logout').onclick = () => logout(false);
+  $('logout').onclick = () => {
+    fetch('/api/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } }).catch(() => {});
+    logout(false);
+  };
 
   // ---------- 会话 ----------
   async function startChat() {
@@ -599,6 +803,10 @@
       chip.className = 'chip' + (p.done ? ' done' : '');
       if (p.isImage) {
         chip.innerHTML = '<img src="' + p.url + '" alt="">';
+        chip.querySelector('img').onclick = () => {
+          const imgs = pending.filter((q) => q.isImage && q.url);
+          openViewer(imgs.map((q) => ({ url: q.url, name: q.name })), imgs.indexOf(p));
+        };
       } else {
         chip.innerHTML = '<div class="doc"><span style="font-size:20px">📄</span><span class="n">' + esc(p.name) + '</span></div>';
       }

@@ -41,8 +41,9 @@ function ensureHljs() {
     loadCss(vendorURL('highlight/github.min.css'));
     loadCss(vendorURL('highlight/github-dark.min.css'));
     await loadScript(vendorURL('highlight/highlight.min.js'));
+    console.debug('[mineagent] highlight.js ready', window.hljs && window.hljs.versionString);
     return window.hljs;
-  })().catch(() => null);
+  })().catch((err) => { console.warn('[mineagent] highlight.js 加载失败，代码不高亮：', err); return null; });
   return hljsPromise;
 }
 let katexPromise = null;
@@ -51,8 +52,9 @@ function ensureKatex() {
   katexPromise = (async () => {
     loadCss(vendorURL('katex/katex.min.css'));
     await loadScript(vendorURL('katex/katex.min.js'));
+    console.debug('[mineagent] KaTeX ready', window.katex && window.katex.version);
     return window.katex;
-  })().catch(() => null);
+  })().catch((err) => { console.warn('[mineagent] KaTeX 加载失败，公式按原文显示：', err); return null; });
   return katexPromise;
 }
 
@@ -74,15 +76,19 @@ export function renderContent(el, text) {
     );
   });
 
-  // 2) 块级公式 $$...$$（可跨行）
+  // 2) 块级公式：$$...$$（可跨行）与 \[...\]
   withPh = withPh.replace(/\$\$([\s\S]+?)\$\$/g, (m, tex) =>
+    stash('<span class="math-display" data-tex="' + esc(tex.trim()) + '"></span>'));
+  withPh = withPh.replace(/\\\[([\s\S]+?)\\\]/g, (m, tex) =>
     stash('<span class="math-display" data-tex="' + esc(tex.trim()) + '"></span>'));
 
   const lines = withPh.split('\n');
   const out = [];
   const inline = (s) => esc(s)
-    // 行内公式 $...$（先抽走，避免 _ * 等被 markdown 处理）
+    // 行内公式：$...$ 与 \(...\)（先抽走，避免 _ * 等被 markdown 处理）
     .replace(/\$([^$\n]{1,200}?)\$/g, (m, tex) =>
+      stash('<span class="math-inline" data-tex="' + esc(tex) + '"></span>'))
+    .replace(/\\\(([^\n]{1,200}?)\\\)/g, (m, tex) =>
       stash('<span class="math-inline" data-tex="' + esc(tex) + '"></span>'))
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, '<img class="mdimg" src="$2" alt="$1" loading="lazy">')

@@ -459,8 +459,16 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 			break
 		}
 		if ev.Err != nil {
-			a.log.Error("agent run failed", "err", ev.Err)
-			_ = req.Session.Reply(ctx, "抱歉，我暂时无法回答（模型调用失败）。", a.target(req))
+			modelName := req.Model
+			if modelName == "" {
+				modelName = a.modelCfg.Name
+			}
+			a.log.Error("agent run failed", "model", modelName, "err", ev.Err)
+			hint := "稍后再试"
+			if strings.Contains(ev.Err.Error(), "503") || strings.Contains(ev.Err.Error(), "unavailable") {
+				hint = "这个模型网关当前不可用，在输入框的模型选择里换一个再发"
+			}
+			_ = req.Session.Reply(ctx, "抱歉，模型调用失败（"+modelName+"）："+hint+"。", a.target(req))
 			return true
 		}
 		if ev.Action != nil && ev.Action.Interrupted != nil {

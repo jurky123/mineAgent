@@ -253,16 +253,21 @@ function renderPlusMenu() {
 export function openModelPopover(back) {
   const box = $('popover');
   const cur = S.options ? S.options.model || '' : '';
+  const bad = new Set((S.options && S.options.unavailable) || []);
   box.innerHTML = (back ? '<button class="po-item po-back" id="po-back"><svg class="i"><use href="#i-chevron"/></svg>返回</button>' : '') +
     '<div class="po-title">模型</div>' +
-    '<input class="po-filter" id="po-filter" placeholder="筛选模型…"><div class="po-scroll" id="po-list"></div>';
+    ((cur && bad.has(cur)) ? '<div class="po-warn">⚠ 当前模型网关不可用，换一个吧</div>' : '') +
+    '<input class="po-filter" id="po-filter" placeholder="筛选模型…"><div class="po-scroll" id="po-list"></div>' +
+    (bad.size ? '<div class="po-desc" style="padding:6px 12px 2px">灰掉的模型网关当前不可用（503）</div>' : '');
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
   const list = $('po-list');
   const mk = (value, label, hint) => {
+    const off = value !== '' && bad.has(value);
     const b = document.createElement('button');
-    b.className = 'po-item' + (cur === value ? ' on' : '');
-    b.innerHTML = '<span>' + esc(label) + (hint ? ' <span class="po-desc">' + esc(hint) + '</span>' : '') + '</span><span class="check">' + ICON.check + '</span>';
-    b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: value }); };
+    b.className = 'po-item' + (cur === value ? ' on' : '') + (off ? ' off' : '');
+    b.innerHTML = '<span>' + esc(label) + (hint ? ' <span class="po-desc">' + esc(hint) + '</span>' : '') +
+      (off ? ' <span class="po-desc">不可用</span>' : '') + '</span><span class="check">' + ICON.check + '</span>';
+    if (off) { b.disabled = true; } else { b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: value }); }; }
     list.appendChild(b);
   };
   const build = (f) => {
@@ -285,6 +290,7 @@ export function openIntelPopover() {
   const box = $('popover');
   const idx = intelIndex(S.options && S.options.effort);
   const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';
+  const modelBad = !!(S.options && S.options.model && (S.options.unavailable || []).indexOf(S.options.model) >= 0);
   box.innerHTML = '<div class="intel-head">' + INTEL[idx].name + '<svg class="i"><use href="#i-chevron"/></svg></div>' +
     '<div class="reason init" id="reason">' +
     '<div class="reason-track" id="reason-track">' +
@@ -297,7 +303,8 @@ export function openIntelPopover() {
       '<span class="' + (i === idx ? 'on' : '') + '" data-i="' + i + '">' + x.name + '</span>').join('') + '</div>' +
     '</div>' +
     '<div class="intel-sep"></div>' +
-    '<button class="intel-model" id="po-model"><span>Model</span><span class="val">' + esc(modelName) + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
+    '<button class="intel-model" id="po-model"><span>Model</span><span class="val"' + (modelBad ? ' style="color:var(--danger)"' : '') + '>' +
+    esc(modelName) + (modelBad ? '（不可用）' : '') + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
   const track = $('reason-track');
   closePopovers('popover');
   box.classList.add('on');   // 先可见，量宽度才算得准

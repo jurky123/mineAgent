@@ -95,7 +95,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		prefs:         make(map[string]accountPrefs),
 		prefsPath:     filepath.Join(dataDir, "prefs.json"),
 	}
-	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
+	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, dataDir, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
 	c.loadTokens()
 	c.loadPrefs()
 	return c

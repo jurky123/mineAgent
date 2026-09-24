@@ -306,6 +306,7 @@ func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, name str
 	writeJSON(w, http.StatusOK, map[string]any{
 		"skills":       c.cfg.Skills,
 		"models":       models,
+		"unavailable":  c.models.Unavailable(),
 		"efforts":      effortLevels,
 		"model":        prefs.Model,
 		"effort":       prefs.Effort,
@@ -335,6 +336,12 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, name strin
 			if models := c.availableModels(r.Context()); len(models) > 0 && !containsStr(models, m) {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "模型不在可选列表里"})
 				return
+			}
+			for _, bad := range c.models.Unavailable() {
+				if bad == m {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型网关当前不可用（503），换一个试试"})
+					return
+				}
 			}
 		}
 		prefs.Model = m

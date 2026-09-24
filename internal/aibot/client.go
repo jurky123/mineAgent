@@ -151,7 +151,21 @@ func (c *Client) runOnce() error {
 		c.mu.Unlock()
 	}()
 
-	// 1. 订阅（失败退出重来；订阅有频率保护，不在这里反复重试）。
+	// 1. 收包循环必须最先起：订阅应答、心跳应答、消息回调都靠它分发，
+	//    如果等订阅成功后再起读循环，会互相等待到超时（踩过）。
+	readErr := make(chan error, 1)
+	go func() {
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				readErr <- err
+				return
+			}
+			c.handleFrame(raw)
+		}
+	}()
+
+	// 2. 订阅（失败退出重来；订阅有频率保护，不在这里反复重试）。
 	resp, err := c.call(ctx, conn, map[string]any{
 		"cmd":     cmdSubscribe,
 		"headers": headers{ReqID: newReqID()},
@@ -168,7 +182,7 @@ func (c *Client) runOnce() error {
 	}
 	c.log.Info("aibot subscribed", "botId", c.botID)
 
-	// 2. 心跳：30s 一次 ping（协议建议值）。
+	// 3. 心跳：30s 一次 ping（协议建议值）。
 	hbCtx, stopHB := context.WithCancel(ctx)
 	defer stopHB()
 	go func() {
@@ -191,13 +205,12 @@ func (c *Client) runOnce() error {
 		}
 	}()
 
-	// 3. 收包循环。
-	for {
-		_, raw, err := conn.ReadMessage()
-		if err != nil {
-			return fmt.Errorf("read: %w", err)
-		}
-		c.handleFrame(raw)
+	// 4. 等读循环结束（连接断开/被踢/超时）或进程退出。
+	select {
+	case err := <-readErr:
+		return fmt.Errorf("read: %w", err)
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -269,8 +282,11 @@ func (c *Client) handleFrame(raw []byte) {
 			case ch <- env:
 			default:
 			}
+			return
 		}
 	}
+	// 未匹配任何等待者、也不是已知回调：打印原文方便排查（协议演进/req_id 不符时很有用）。
+	c.log.Warn("aibot unrecognized frame", "raw", truncateStr(string(raw), 400))
 }
 
 func userIDOf(from *struct {
@@ -374,4 +390,11 @@ func (c *Client) emit(m InboundMessage) {
 		}()
 		c.onMessage(m)
 	}()
+}
+
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }

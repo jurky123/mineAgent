@@ -2,7 +2,9 @@
   "listen": "127.0.0.1:8765",
   "token": "",
   "logLevel": "info",
-  "allowedRoles": ["minecraft"],
+  "allowedRoles": [
+    "minecraft"
+  ],
   "minecraft": {
     "trigger": "@agent",
     "sessionId": "minecraft-main",
@@ -26,6 +28,12 @@
     "adminUserIds": [],
     "minIntervalMs": 1500,
     "maxPendingPerUser": 2
+  },
+  "aibot": {
+    "botId": "",
+    "secret": "",
+    "adminUserIds": [],
+    "minIntervalMs": 1500
   },
   "model": {
     "baseURL": "",

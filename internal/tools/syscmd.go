@@ -154,6 +154,18 @@ func sysHelp(s SysCtx) string {
 		} else {
 			b.WriteString("写代码跑代码仅管理员可用")
 		}
+	case "aibot":
+		b.WriteString("MineAgent 命令（企微智能机器人）：\n")
+		b.WriteString("/help —— 显示这份帮助\n")
+		b.WriteString("/status —— 服状态、长连接状态、会话消息数\n")
+		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
+		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
+		b.WriteString("单聊直接说话；群里 @我 再说\n")
+		if s.IsAdmin {
+			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
+		} else {
+			b.WriteString("写代码跑代码仅管理员可用")
+		}
 	default:
 		b.WriteString("MineAgent 命令（服内，@agent 提问外再加）：\n")
 		b.WriteString("@agent /help —— 显示这份帮助\n")
@@ -179,10 +191,13 @@ func sysStatus(s SysCtx) string {
 			b.WriteString("MC 服：" + truncate(out, 200) + "\n")
 		}
 	}
-	if (s.Channel == "qq" || s.Channel == "wecom") && s.QQStatus != nil {
+	if (s.Channel == "qq" || s.Channel == "wecom" || s.Channel == "aibot") && s.QQStatus != nil {
 		label := "QQ 网关"
-		if s.Channel == "wecom" {
+		switch s.Channel {
+		case "wecom":
 			label = "企微回调"
+		case "aibot":
+			label = "企微长连接"
 		}
 		fmt.Fprintf(&b, "%s：%s\n", label, s.QQStatus())
 		if s.IsAdmin {
@@ -229,7 +244,7 @@ func sysMemory(s SysCtx, action string) string {
 }
 
 func sysBind(s SysCtx, player string) string {
-	if s.Channel != "qq" && s.Channel != "wecom" {
+	if s.Channel != "qq" && s.Channel != "wecom" && s.Channel != "aibot" {
 		return "服内说话的本来就是玩家本人，不用绑定，去 QQ/企业微信里绑"
 	}
 	if len(s.QQIDs) == 0 {
@@ -263,7 +278,7 @@ func sysBind(s SysCtx, player string) string {
 func sysMyID(s SysCtx) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "你是 %s", s.Requester)
-	if s.Channel == "qq" || s.Channel == "wecom" {
+	if s.Channel == "qq" || s.Channel == "wecom" || s.Channel == "aibot" {
 		var bound string
 		for _, id := range s.QQIDs {
 			if id == "" {

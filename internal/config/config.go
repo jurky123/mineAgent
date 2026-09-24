@@ -16,6 +16,7 @@ type Config struct {
 	Minecraft    Minecraft `json:"minecraft"`
 	QQ           QQ        `json:"qq"`
 	WeCom        WeCom     `json:"wecom"`
+	AIBot        AIBot     `json:"aibot"`
 	Model        Model     `json:"model"`
 	Storage      Storage   `json:"storage"`
 	Tools        Tools     `json:"tools"`
@@ -85,6 +86,24 @@ type WeCom struct {
 
 func DefaultWeCom() WeCom {
 	return WeCom{Port: 80, MinIntervalMS: 1500, MaxPendingPerUser: 2}
+}
+
+// AIBot 是企业微信「智能机器人（长连接）」通道：
+// 管理后台 → 安全与管理 → 管理工具 → 智能机器人 → 创建，
+// API 模式选「长连接」，拿 BotID + Secret（长连接专用，与自建应用的 Token/AESKey 不同）。
+// 优势：无需公网回调/加解密，机器人主动连 wss://openws.work.weixin.qq.com；
+// 可扫码加为联系人、可进内部群被 @。留空 botId/secret 即禁用。
+type AIBot struct {
+	BotID  string `json:"botId"`
+	Secret string `json:"secret"`
+	// 能用 workspace 的企微 userid（机器人创建者是超管时是明文 userid）。
+	AdminUserIDs []string `json:"adminUserIds"`
+	// 同一会话回复最小间隔毫秒（默认 1500，也避开企微 30 条/分钟限频）。
+	MinIntervalMS int `json:"minIntervalMs"`
+}
+
+func DefaultAIBot() AIBot {
+	return AIBot{MinIntervalMS: 1500}
 }
 
 // Workspace 是写代码/执行代码工具的沙箱根目录。
@@ -191,6 +210,7 @@ func Default() Config {
 		Minecraft:    Minecraft{Trigger: "@agent", SessionID: "minecraft-main", ReplyMode: "broadcast"},
 		QQ:           QQ{APIBase: "https://api.bot.qq.com", MinIntervalMS: 1500, MaxPendingPerUser: 2},
 		WeCom:        DefaultWeCom(),
+		AIBot:        DefaultAIBot(),
 		Storage:      Storage{Path: "data/mineagent.db"},
 		Tools:        DefaultTools(),
 		Workspace: Workspace{
@@ -239,6 +259,10 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.WeCom.MaxPendingPerUser <= 0 {
 		cfg.WeCom.MaxPendingPerUser = dwc.MaxPendingPerUser
+	}
+	dab := DefaultAIBot()
+	if cfg.AIBot.MinIntervalMS <= 0 {
+		cfg.AIBot.MinIntervalMS = dab.MinIntervalMS
 	}
 	if cfg.Workspace.Root == "" {
 		cfg.Workspace.Root = Default().Workspace.Root
@@ -315,6 +339,9 @@ func (c Config) Redacted() Config {
 	if c.WeCom.EncodingAES != "" {
 		c.WeCom.EncodingAES = "<set>"
 	}
+	if c.AIBot.Secret != "" {
+		c.AIBot.Secret = "<set>"
+	}
 	return c
 }
 
@@ -336,6 +363,8 @@ func applyEnv(cfg *Config) {
 	set(&cfg.WeCom.Secret, "MINEAGENT_WECOM_SECRET")
 	set(&cfg.WeCom.Token, "MINEAGENT_WECOM_TOKEN")
 	set(&cfg.WeCom.EncodingAES, "MINEAGENT_WECOM_AESKEY")
+	set(&cfg.AIBot.BotID, "MINEAGENT_AIBOT_BOTID")
+	set(&cfg.AIBot.Secret, "MINEAGENT_AIBOT_SECRET")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")

@@ -17,6 +17,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 
 	"mineagent/internal/agent"
+	"mineagent/internal/aibot"
 	"mineagent/internal/channels/minecraft"
 	"mineagent/internal/config"
 	"mineagent/internal/protocol"
@@ -87,7 +88,10 @@ func main() {
 	// 注意 workspace_exec 的管理员门禁不在工具里写死，而是在 Submit 前按消息身份
 	// 动态放进 ctx（WithQQAdmin），这样同一套工具对管理员/普通群友表现不同。
 	// qq_bind/qq_unbind 的身份同样走 ctx（WithQQIdentity）。
-	wsTools := tools.NewWorkspace(cfg.Workspace, cfg.QQ.AdminOpenIDs, store, log)
+	// workspace 的管理员名单：三个 IM 通道的 admin 列表取并集
+	//（同一个人在不同通道有不同 ID：QQ openid / 企微 userid）。
+	adminIDs := append(append(append([]string{}, cfg.QQ.AdminOpenIDs...), cfg.WeCom.AdminUserIDs...), cfg.AIBot.AdminUserIDs...)
+	wsTools := tools.NewWorkspace(cfg.Workspace, adminIDs, store, log)
 	// workspace_exec 的 LLM 二审：默认复用主模型（省一个配置），
 	// 想用更便宜/更严的模型就填 workspace.review.baseURL/apiKey/model。
 	// enabled=false 或主模型都没配 = 无审查器，review 类命令 fail-closed 全拒。
@@ -172,6 +176,24 @@ func main() {
 		log.Info("wecom channel enabled", "port", cfg.WeCom.Port, "corpIdKnown", cfg.WeCom.CorpID != "")
 	} else {
 		log.Info("wecom channel disabled (wecom.secret/token/encodingAesKey incomplete)")
+	}
+
+	// 企微智能机器人（长连接）：botId+secret 配齐就启动。
+	// 无需公网回调、无需加解密；扫码可加为联系人、可进内部群被 @。
+	var aibotCh *aibot.Channel
+	if cfg.AIBot.BotID != "" && cfg.AIBot.Secret != "" {
+		// aibot v1 不带 wecom_* 发送工具（回复统一走 consume 的被动回复），
+		// 复用 wecom 的门禁包装（识别 wecom: 前缀做 admin/绑定/审批）。
+		aibotTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
+			append(wsTools.Tools(), bindTools.Tools()...)...)
+		aibotCh = aibot.NewChannel(log, cfg, hub, store, ag,
+			wrapWeComTools(aibotTools, wsTools, store, sessionsFn, senderFn)).
+			WithMCStatus(mcStatusFn)
+		aibotCh.Start()
+		defer aibotCh.Stop()
+		log.Info("aibot channel enabled", "botId", cfg.AIBot.BotID)
+	} else {
+		log.Info("aibot channel disabled (aibot.botId/secret empty)")
 	}
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {

@@ -32,24 +32,36 @@
 .content table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
 .content th, .content td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
 .content th { background: var(--sidebar); font-weight: 600; }
-/* 代码框（语言标签 + 复制按钮 + 高亮） */
-.codeblock { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
-.codehead {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 5px 10px; background: var(--sidebar); border-bottom: 1px solid var(--border);
-  font-size: 11.5px; color: var(--text-3);
+/* 代码框：复制按钮/语言标签浮在块内右上角（ChatGPT 那种） */
+.codeblock {
+  position: relative; margin: 12px 0; border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden; background: var(--code-bg);
 }
-.codelang { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .02em; }
-.codecopy {
-  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
-  color: var(--text-2); font-size: 11px; padding: 2px 8px;
-}
-.codecopy:hover { background: var(--control-hover); color: var(--text); }
 .content pre {
   position: relative; background: var(--code-bg); border: 0;
   padding: 12px 14px; overflow-x: auto; font-size: 13.5px; margin: 0;
 }
 .content .codeblock pre code { background: none; padding: 0; }
+.codetools {
+  position: absolute; top: 6px; right: 8px; display: flex; align-items: center; gap: 8px;
+  opacity: 0; transition: opacity .14s;
+  /* 消息区有 overflow-wrap:anywhere（继承），会干扰收缩宽度计算，这里重置并显式按内容撑开 */
+  white-space: nowrap; overflow-wrap: normal; word-break: normal; width: max-content;
+}
+.codetools > * { flex: none; }
+.codeblock:hover .codetools, .codeblock:focus-within .codetools { opacity: 1; }
+@media (pointer: coarse) { .codetools { opacity: 1; } }
+.codelang {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+  color: var(--text-3); letter-spacing: .02em; user-select: none;
+}
+.codecopy {
+  display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+  color: var(--text-2); font-size: 11px; padding: 3px 8px;
+}
+.codecopy:hover { background: var(--control-hover); color: var(--text); }
+.codecopy .i, .codecopy svg { width: 12px; height: 12px; }
 
 /* 块级元素工具条（导出图片） */
 .blockwrap { position: relative; }
@@ -91,11 +103,6 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .content pre code { background: none; padding: 0; }
-.codecopy {
-  position: absolute; top: 6px; right: 6px; padding: 3px 8px; border: 1px solid var(--border);
-  border-radius: 6px; background: var(--surface); color: var(--text-2); font-size: 11px;
-}
-.codecopy:hover { background: var(--surface-hover); color: var(--text); }
 .content a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; word-break: break-all; }
 
 .files { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }

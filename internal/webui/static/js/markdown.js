@@ -111,11 +111,12 @@ export function renderContent(el, text) {
   let withPh = src.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
     const language = (lang || '').trim().toLowerCase();
     const label = language || 'text';
+    // 复制按钮/语言标签浮动在代码块内部右上角（hover 出现，触屏常显）
     return stash(
       '<div class="codeblock">' +
-      '<div class="codehead"><span class="codelang">' + esc(label) + '</span>' +
-      '<button class="codecopy" type="button">' + ICON_COPY + '复制代码</button></div>' +
       '<pre><code class="language-' + esc(label) + '">' + esc(code.replace(/\n$/, '')) + '</code></pre>' +
+      '<div class="codetools"><span class="codelang">' + esc(label) + '</span>' +
+      '<button class="codecopy" type="button">' + ICON_COPY + '复制</button></div>' +
       '</div>'
     );
   });

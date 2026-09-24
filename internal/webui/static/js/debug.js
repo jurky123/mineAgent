@@ -12,7 +12,7 @@
 import { $, askConfirm, askInput } from './ui.js';
 import { S } from './state.js';
 import { renderMsg, setTyping, layout, toBottom } from './chat.js';
-import { renderToolbar, openIntelPopover } from './composer.js';
+import { renderToolbar, openIntelPopover, openModelPopover } from './composer.js';
 import { renderList } from './conversations.js';
 import { openAppearance, applyTheme } from './theme.js';
 
@@ -91,6 +91,7 @@ export function startDebug() {
 
   const panel = q.get('panel');
   if (panel === 'intel') openIntelPopover();
+  else if (panel === 'models') openModelPopover(true);
   else if (panel === 'appearance') openAppearance();
   else if (panel === 'confirm') {
     askConfirm({ title: '删除这个聊天？', text: '聊天记录和记忆都会被清除，不能恢复。', okLabel: '删除' });

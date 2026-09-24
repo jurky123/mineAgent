@@ -248,7 +248,7 @@ function renderPlusMenu() {
   });
 }
 
-function openModelPopover(back) {
+export function openModelPopover(back) {
   const box = $('popover');
   const cur = S.options ? S.options.model || '' : '';
   box.innerHTML = (back ? '<button class="po-item po-back" id="po-back"><svg class="i"><use href="#i-chevron"/></svg>返回</button>' : '') +
@@ -283,16 +283,18 @@ export function openIntelPopover() {
   const box = $('popover');
   const idx = intelIndex(S.options && S.options.effort);
   const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';
-  box.innerHTML = '<div class="po-title">Intelligence</div>' +
+  box.innerHTML = '<div class="intel-title">Intelligence</div>' +
     '<div class="reason" id="reason">' +
     '<div class="reason-track" id="reason-track"><div class="reason-rail"><div class="reason-fill" id="reason-fill"></div></div>' +
     '<div class="reason-thumb" id="reason-thumb"></div></div>' +
     '<div class="reason-labels" id="reason-labels">' + INTEL.map((x, i) =>
       '<span class="' + (i === idx ? 'on' : '') + '" data-i="' + i + '">' + x.name + '</span>').join('') + '</div>' +
     '</div>' +
-    '<div class="po-sep"></div>' +
-    '<button class="po-item" id="po-model"><span>Model</span><span class="po-desc" style="margin-left:auto">' + esc(modelName) + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
+    '<div class="intel-sep"></div>' +
+    '<button class="intel-model" id="po-model"><span>Model</span><span class="val">' + esc(modelName) + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
   const track = $('reason-track');
+  closePopovers('popover');
+  box.classList.add('on');   // 先可见，量宽度才算得准
   const posOf = (i) => {
     const r = track.getBoundingClientRect();
     const pad = 11;
@@ -335,8 +337,6 @@ export function openIntelPopover() {
     };
   });
   $('po-model').onclick = () => openModelPopover(true);
-  closePopovers('popover');
-  box.classList.add('on');
 }
 
 async function setPrefs(patch) {

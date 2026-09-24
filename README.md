@@ -15,6 +15,8 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 - **世界信息**：现在是白天还是黑夜、什么天气；还有哪些世界、装了哪些插件
 - **搬运操作**：把玩家传送到另一个玩家身边、给玩家物品、执行服务器命令
 - **记得住上下文**：最近聊过什么它都知道，可以追问；聊得多了会自动压缩记忆，不会忘事
+- **联网搜索**：`web_search` 搜索、`web_fetch` 抓正文（只允许公网、限速限量，返回内容当不可信资料）
+- **定时提醒**：`remind` 到点通过原渠道发消息（例：`10 分钟后提醒我喝水`）；`/usage` 查模型额度
 - **多人共用一个助手**：MC 全服玩家共享同一份聊天记忆，回答公开发布；
   QQ 侧按私聊每人、群聊每群隔离记忆，互不串话
 - **看图**：网页端上传的图片会作为视觉输入直接给模型（模型本身能看图），
@@ -153,8 +155,8 @@ workspace 里的文件/图片发回来。图片点击进查看器（缩放/拖�
   的 `''/low/medium/high`），下方 `Model` 进入模型列表（默认从网关 `GET /models`
   拉，10 分钟缓存，也可用 `model.options` 限定）；每个账号各选各的，存
   `data/webui/prefs.json`
-- **Workspace / 外观 / 退出登录**：收进侧栏底部的账户菜单（Workspace 仅
-  `web.adminUsers` 可见）
+- **Workspace / 外观 / 用量 / 退出登录**：收进侧栏底部的账户菜单
+  （Workspace 仅 `web.adminUsers` 可见；用量弹窗有滚动/周/月三条进度条）
 
 交互细节：输入框打 `/` 弹出命令面板（↑↓ 选择、Tab/Enter 补全）；消息列表往上滚
 可「载入更早消息」；模型/思考切换、上传失败等用 toast 提示；SSE 断线时顶部重连提示；
@@ -186,6 +188,7 @@ workspace 里的文件/图片发回来。图片点击进查看器（缩放/拖�
 | `GET /api/conversations` | 会话列表（纯读；旧单会话会合成返回） |
 | `POST /api/conversations/delete`、`/rename` | 删除 / 重命名会话 |
 | `POST /api/prefs` `{model, effort}` | 保存本账号的模型与思考强度 |
+| `GET /api/usage` | 模型 key 额度（滚动/周/月，网关 `/usage`，60s 缓存） |
 | `GET /api/workspace?path=` | 列 workspace 目录（仅管理员） |
 | `GET /api/workspace/file?path=` | 下载/预览 workspace 文件（仅管理员） |
 | `GET /api/events?token=` | SSE 实时推送 |

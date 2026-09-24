@@ -319,7 +319,11 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name str
 	for _, m := range raw {
 		msgs = append(msgs, ToWire(m))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs, "hasMore": hasMore})
+	resp := map[string]any{"messages": msgs, "hasMore": hasMore}
+	if st, ok := c.RunningState(sessionKey); ok {
+		resp["running"] = st
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleOptions 给 + 菜单：技能、可选模型、思考强度、当前偏好。

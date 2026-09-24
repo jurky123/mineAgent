@@ -68,6 +68,8 @@ type Channel struct {
 	// prefs: 账号名 -> 模型/思考强度偏好（+ 菜单里改），持久化。
 	prefs     map[string]accountPrefs
 	prefsPath string
+	// running: 会话 key -> 当前运行的进度状态（内存态，重启即清）。
+	running map[string]runState
 }
 
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
@@ -94,6 +96,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		tokensPath:    filepath.Join(dataDir, "tokens.json"),
 		prefs:         make(map[string]accountPrefs),
 		prefsPath:     filepath.Join(dataDir, "prefs.json"),
+		running:       make(map[string]runState),
 	}
 	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, dataDir, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
 	c.loadTokens()
@@ -147,6 +150,7 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 		return nil
 	}
 	conv := convOfSession(msg.SessionID, name)
+	c.clearRunning(msg.SessionID)
 	c.publish(name, conv, WireMessage{
 		ID:   msg.ID,
 		Role: "agent",
@@ -223,6 +227,12 @@ func (c *Channel) publishRaw(name string, v any) {
 	}
 }
 
+// runState 是某会话正在运行的进度状态（切走再回来/刷新页面时恢复状态行用）。
+type runState struct {
+	Text      string `json:"text"`
+	StartedAt int64  `json:"startedAt"`
+}
+
 // ErrConvNotFound 会话不存在（发送时给 404 而不是限流 429）。
 var ErrConvNotFound = errors.New("会话不存在")
 
@@ -270,6 +280,39 @@ func ValidConv(conv string) bool {
 }
 
 // session 取/建账号会话并注册本通道（模式同其他通道）。
+// setRunning 记录/更新某会话的运行状态（同一 run 保留首次的开始时间）。
+func (c *Channel) setRunning(sessionKey, text string) {
+	c.mu.Lock()
+	st := c.running[sessionKey]
+	if st.StartedAt == 0 {
+		st.StartedAt = time.Now().UnixMilli()
+	}
+	st.Text = text
+	c.running[sessionKey] = st
+	c.mu.Unlock()
+}
+
+func (c *Channel) clearRunning(sessionKey string) {
+	c.mu.Lock()
+	delete(c.running, sessionKey)
+	c.mu.Unlock()
+}
+
+// RunningState 取运行状态；超过 15 分钟视为过期（防止进程内残留）。
+func (c *Channel) RunningState(sessionKey string) (runState, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	st, ok := c.running[sessionKey]
+	if !ok {
+		return runState{}, false
+	}
+	if time.Since(time.UnixMilli(st.StartedAt)) > 15*time.Minute {
+		delete(c.running, sessionKey)
+		return runState{}, false
+	}
+	return st, true
+}
+
 // Deliver 把一条消息发回指定会话（提醒等主动消息用；顺带注册本通道，
 // 服务重启后会话未注册时也能送达）。
 func (c *Channel) Deliver(ctx context.Context, sessionKey, target, text string) error {
@@ -430,6 +473,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *stri
 		Model:             prefs.Model,
 		ReasoningEffort:   prefs.Effort,
 		Progress: func(text string) {
+			c.setRunning(sessionKey, text)
 			c.publishRaw(name, map[string]any{"type": "progress", "conv": convID, "text": text})
 		},
 	}) {

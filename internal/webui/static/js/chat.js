@@ -91,8 +91,9 @@ export function clearMessages() {
 
 let typingTimer = null, typingStart = 0, typingLabel = '正在思考…';
 
-// setTyping(true, '正在搜索资料…')：动态状态行，带已用秒数
-export function setTyping(on, text) {
+// setTyping(true, '正在搜索资料…', startedAt)：动态状态行，带已用秒数；
+// startedAt 由服务端给出（恢复状态时保持真实已用时间）。
+export function setTyping(on, text, startedAt) {
   S.waiting = on;
   const box = $('listInner');
   let row = box.querySelector('.typing');
@@ -107,7 +108,7 @@ export function setTyping(on, text) {
     row.className = 'typing';
     row.innerHTML = '<span class="dots"><span></span><span></span><span></span></span><span class="typing-text"></span>';
     box.appendChild(row);
-    typingStart = Date.now();
+    typingStart = startedAt || Date.now();
   }
   const paint = () => {
     const el = row.querySelector('.typing-text');
@@ -170,6 +171,8 @@ export async function loadHistory() {
     updateLoadOlder();
     layout(true);
     if ((body.messages || []).length) toBottom();
+    // 切走再回来/刷新页面：恢复"正在处理"状态行（服务端持久化了当前进度）
+    if (body.running && body.running.text) setTyping(true, body.running.text, body.running.startedAt);
   } catch (e) { showError(e.message); }
 }
 

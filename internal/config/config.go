@@ -254,6 +254,9 @@ type Agent struct {
 	// 同时跑的任务数上限（默认 4）：同一会话严格串行，不同会话并行，
 	// 超出的会话排队。模型调用是网络 IO，4 并发对 2 核小机器足够。
 	MaxConcurrentRuns int `json:"maxConcurrentRuns"`
+	// 进度总结（默认开）：长任务里用一次额外的模型请求，把"正在搜索资料…"
+	// 汇总成更具体的进度（如"正在查 PaperMC 最新版本并画图"）。失败自动忽略。
+	ProgressSummary bool `json:"progressSummary"`
 }
 
 func DefaultAgent() Agent {
@@ -267,6 +270,7 @@ func DefaultAgent() Agent {
 		ReductionKeep:      4,
 		BackgroundAfterSec: 90,
 		MaxConcurrentRuns:  4,
+		ProgressSummary:    true,
 	}
 }
 

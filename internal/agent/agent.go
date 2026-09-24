@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -94,16 +95,21 @@ type pendingRun struct {
 	instruction string
 }
 
-// runProgress 收集一次 run 里用过的工具类别，供动态状态与后台文案使用。
+// runProgress 收集一次 run 里用过的工具类别/调用，供动态状态、后台文案与"进度总结"使用。
 type runProgress struct {
-	mu     sync.Mutex
-	kinds  []string
-	last   string
-	lastAt time.Time
+	mu         sync.Mutex
+	kinds      []string
+	calls      []string
+	last       string
+	lastAt     time.Time
+	summarized bool
 }
 
-func (p *runProgress) note(kind, text string, cb func(string)) {
+func (p *runProgress) note(kind, call, text string, cb func(string)) {
 	p.mu.Lock()
+	if call != "" && len(p.calls) < 12 {
+		p.calls = append(p.calls, call)
+	}
 	if kind != "" {
 		dup := false
 		for _, k := range p.kinds {
@@ -127,6 +133,25 @@ func (p *runProgress) note(kind, text string, cb func(string)) {
 	}
 }
 
+// needsSummary 是否值得发一次"进度总结"（还没总结过、已有至少 2 次工具调用）。
+func (p *runProgress) needsSummary() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return !p.summarized && len(p.calls) >= 2
+}
+
+func (p *runProgress) markSummarized() {
+	p.mu.Lock()
+	p.summarized = true
+	p.mu.Unlock()
+}
+
+func (p *runProgress) callLog() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return strings.Join(p.calls, "；")
+}
+
 // summary 用中文概括正在做什么（"查资料/跑代码"），用于后台提示文案。
 func (p *runProgress) summary() string {
 	p.mu.Lock()
@@ -147,30 +172,99 @@ func (p *runProgress) summary() string {
 	return strings.Join(parts, "、")
 }
 
-// toolProgress 工具名 -> (类别, 给用户看的动态状态文案)。
-func toolProgress(name string) (kind, text string) {
+// toolProgress 工具名+参数 -> (类别, 调用摘要, 给用户看的动态状态文案)。
+// 有参数时文案尽量具体（搜什么/跑什么/发哪个文件），没有就退回通用文案。
+func toolProgress(name, argsJSON string) (kind, call, text string) {
+	arg := func(key string, max int) string {
+		var m map[string]any
+		if json.Unmarshal([]byte(argsJSON), &m) != nil {
+			return ""
+		}
+		s, _ := m[key].(string)
+		s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+		if s == "" {
+			return ""
+		}
+		r := []rune(s)
+		if len(r) > max {
+			s = string(r[:max]) + "…"
+		}
+		return s
+	}
+	brief := ""
+	label := ""
 	switch {
 	case name == "web_search":
-		return "search", "正在搜索资料…"
+		kind, label = "search", "正在搜索资料…"
+		if q := arg("query", 24); q != "" {
+			text = "正在搜索：" + q
+		}
 	case name == "web_fetch":
-		return "search", "正在阅读网页…"
+		kind, label = "search", "正在阅读网页…"
+		u := arg("url", 60)
+		if u != "" {
+			host := u
+			if i := strings.Index(u, "//"); i >= 0 {
+				host = u[i+2:]
+			}
+			if i := strings.IndexAny(host, "/?#"); i >= 0 {
+				host = host[:i]
+			}
+			text = "正在阅读：" + host
+		}
 	case name == "workspace_exec":
-		return "code", "正在运行代码…"
+		kind, label = "code", "正在运行代码…"
+		if c := arg("command", 32); c != "" {
+			text = "正在运行：" + c
+		}
 	case name == "workspace_write":
-		return "file", "正在写文件…"
+		kind, label = "file", "正在写文件…"
+		if p := arg("path", 40); p != "" {
+			text = "正在写：" + baseName(p)
+		}
 	case name == "workspace_read" || name == "workspace_ls":
-		return "file", "正在读文件…"
+		kind, label = "file", "正在读文件…"
+		if p := arg("path", 40); p != "" {
+			text = "正在读：" + baseName(p)
+		}
 	case name == "qq_image" || name == "wecom_image" || name == "web_file":
-		return "send", "正在发送文件…"
+		kind, label = "send", "正在发送文件…"
+		if p := arg("path", 40); p != "" {
+			text = "正在发送：" + baseName(p)
+		}
 	case name == "qq_markdown" || name == "wecom_markdown":
-		return "send", "正在排版发送…"
+		kind, label = "send", "正在排版发送…"
+	case strings.HasPrefix(name, "minecraft_player_info"):
+		kind, label = "mc", "正在查服务器…"
+		if p := arg("player", 16); p != "" {
+			text = "正在查玩家：" + p
+		}
 	case strings.HasPrefix(name, "minecraft_"):
-		return "mc", "正在查服务器…"
+		kind, label = "mc", "正在查服务器…"
 	case name == "remind":
-		return "remind", "正在设置提醒…"
+		kind, label = "remind", "正在设置提醒…"
+		if t := arg("text", 16); t != "" {
+			text = "正在设置提醒：" + t
+		}
 	default:
-		return "", ""
+		return "", "", ""
 	}
+	brief = name
+	if len(argsJSON) > 2 {
+		brief = name + " " + truncate(argsJSON, 80)
+	}
+	if text == "" {
+		text = label
+	}
+	return kind, brief, text
+}
+
+func baseName(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		p = p[i+1:]
+	}
+	return truncate(p, 28)
 }
 
 type Agent struct {
@@ -544,6 +638,32 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	return r, key, nil
 }
 
+// summarizeProgress 用一次轻量模型请求把粗粒度状态汇总成更具体的进度文案；
+// 8 秒超时、只发一次、失败静默（前端会继续显示参数级文案）。
+func (a *Agent) summarizeProgress(ctx context.Context, req Request, progress *runProgress) {
+	calls := progress.callLog()
+	if calls == "" {
+		return
+	}
+	sctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	msgs := []*schema.Message{
+		schema.SystemMessage("你在为用户显示一条“正在处理”的状态。根据用户请求和已执行的工具调用，" +
+			"用不超过 18 个汉字写一句具体进度（只输出这句话本身，不要引号、不要标点结尾、不要解释）。"),
+		schema.UserMessage("用户请求：" + truncate(req.Query, 200) + "\n已执行的工具调用：" + calls),
+	}
+	out, err := a.model.Generate(sctx, msgs, model.WithMaxTokens(40), model.WithTemperature(0.3))
+	if err != nil || out == nil {
+		return
+	}
+	text := strings.TrimSpace(out.Content)
+	text = strings.Trim(text, "\u201c\u201d\"'\n。. ")
+	if text == "" || len([]rune(text)) > 40 {
+		return
+	}
+	req.Progress(text + "…")
+}
+
 func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey, cpID string, iter *adk.AsyncIterator[*adk.AgentEvent], progress *runProgress) bool {
 	var reply string
 	for {
@@ -577,8 +697,12 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 			continue
 		}
 		for _, tc := range msg.ToolCalls {
-			kind, text := toolProgress(tc.Function.Name)
-			progress.note(kind, text, req.Progress)
+			kind, call, text := toolProgress(tc.Function.Name, tc.Function.Arguments)
+			progress.note(kind, call, text, req.Progress)
+		}
+		if a.cfg.ProgressSummary && req.Progress != nil && progress.needsSummary() {
+			progress.markSummarized()
+			go a.summarizeProgress(ctx, req, progress)
 		}
 		if msg.Role == schema.Assistant && strings.TrimSpace(msg.Content) != "" {
 			reply = strings.TrimSpace(msg.Content)
@@ -720,6 +844,14 @@ func withParamSchemas(tools []tool.BaseTool) []tool.BaseTool {
 		out = append(out, &paramFixTool{inner: t})
 	}
 	return out
+}
+
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 func containsStr(list []string, s string) bool {

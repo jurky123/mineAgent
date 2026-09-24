@@ -332,17 +332,22 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name str
 
 // handleOptions 给 + 菜单：技能、可选模型、思考强度、当前偏好。
 func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, name string) {
-	models := c.availableModels(r.Context())
+	catalog := c.modelCatalog(r.Context())
+	byID := make(map[string]ModelOption, len(catalog))
+	for _, m := range catalog {
+		byID[m.ID] = m
+	}
 	prefs := c.prefsOf(name)
-	// 偏好里的模型如果已不在列表（网关变了），回退默认。
-	if prefs.Model != "" && len(models) > 0 && !containsStr(models, prefs.Model) {
-		prefs.Model = ""
-		c.setPrefs(name, prefs)
+	// 偏好里的模型已不在目录（网关/配置变了）→ 回退默认。
+	if prefs.Model != "" {
+		if _, ok := byID[prefs.Model]; !ok {
+			prefs.Model = ""
+			c.setPrefs(name, prefs)
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"skills":       c.cfg.Skills,
-		"models":       models,
-		"unavailable":  c.models.Unavailable(),
+		"models":       catalog,
 		"efforts":      effortLevels,
 		"model":        prefs.Model,
 		"effort":       prefs.Effort,
@@ -369,15 +374,25 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, name strin
 	if req.Model != nil {
 		m := strings.TrimSpace(*req.Model)
 		if m != "" {
-			if models := c.availableModels(r.Context()); len(models) > 0 && !containsStr(models, m) {
+			var found *ModelOption
+			for _, opt := range c.modelCatalog(r.Context()) {
+				if opt.ID == m {
+					o := opt
+					found = &o
+					break
+				}
+			}
+			if found == nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "模型不在可选列表里"})
 				return
 			}
-			for _, bad := range c.models.Unavailable() {
-				if bad == m {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型网关当前不可用（503），换一个试试"})
-					return
-				}
+			if found.Unavailable {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型网关当前不可用（503），换一个试试"})
+				return
+			}
+			if found.NeedsKey {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型提供商还没配 apiKey（config.json 的 model.providers）"})
+				return
 			}
 		}
 		prefs.Model = m

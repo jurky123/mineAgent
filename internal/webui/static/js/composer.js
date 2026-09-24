@@ -187,6 +187,7 @@ function syncPalette() {
     box.appendChild(b);
   });
   closePopovers('cmdpalette');
+  placePopover(box);
   box.classList.add('on');
 }
 
@@ -198,6 +199,12 @@ function applyCmd(x) {
 }
 
 // ---------- 弹层 ----------
+// placePopover 空会话（composer 居中）时向下展开，其余情况向上（默认）。
+export function placePopover(box) {
+  const centered = $('composer').parentElement === $('emptySlot');
+  box.classList.toggle('below', centered);
+}
+
 export function closePopovers(except) {
   ['plusmenu', 'popover', 'cmdpalette'].forEach((id) => { if (id !== except) $(id).classList.remove('on'); });
 }
@@ -225,6 +232,14 @@ export function renderToolbar() {
   $('intellabel').textContent = INTEL[intelIndex(S.options.effort)].name;
 }
 
+// modelLabel 给 Intelligence 面板里的 Model 行显示（默认提供商显示原名，额外提供商显示 label）
+function modelLabel() {
+  const id = (S.options && S.options.model) || '';
+  if (!id) return (S.options && S.options.defaultModel) || '';
+  const hit = ((S.options && S.options.models) || []).find((m) => m.id === id);
+  return hit ? hit.label : id;
+}
+
 function renderPlusMenu() {
   const box = $('plusmenu');
   const skills = (S.options && S.options.skills) || [];
@@ -250,38 +265,80 @@ function renderPlusMenu() {
   });
 }
 
+let modelFreeOnly = localStorage.getItem('mineagent.freeonly') === '1';
+
 export function openModelPopover(back) {
   const box = $('popover');
   const cur = S.options ? S.options.model || '' : '';
-  const bad = new Set((S.options && S.options.unavailable) || []);
+  const defaultModel = (S.options && S.options.defaultModel) || '';
+  const all = (S.options && S.options.models) || [];
   box.innerHTML = (back ? '<button class="po-item po-back" id="po-back"><svg class="i"><use href="#i-chevron"/></svg>返回</button>' : '') +
     '<div class="po-title">模型</div>' +
-    ((cur && bad.has(cur)) ? '<div class="po-warn">⚠ 当前模型网关不可用，换一个吧</div>' : '') +
-    '<input class="po-filter" id="po-filter" placeholder="筛选模型…"><div class="po-scroll" id="po-list"></div>' +
-    (bad.size ? '<div class="po-desc" style="padding:6px 12px 2px">灰掉的模型网关当前不可用（503）</div>' : '');
+    '<div class="po-toolrow">' +
+    '<input class="po-filter" id="po-filter" placeholder="筛选模型…">' +
+    '<button class="po-chip' + (modelFreeOnly ? ' on' : '') + '" id="po-freeonly">只看免费</button>' +
+    '</div>' +
+    '<div class="po-scroll" id="po-list"></div>';
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
   const list = $('po-list');
-  const mk = (value, label, hint) => {
-    const off = value !== '' && bad.has(value);
+
+  // 免费标记要一直显示；再叠加"未配置 key / 不可用"提醒
+  const badge = (m) => {
+    let out = m.free ? '<span class="po-badge free">免费</span>' : '';
+    if (m.needsKey) out += '<span class="po-badge dim">未配置 key</span>';
+    else if (m.unavailable) out += '<span class="po-badge dim">不可用</span>';
+    return out;
+  };
+  const mk = (m, isDefault) => {
+    const off = m.needsKey || m.unavailable;
     const b = document.createElement('button');
-    b.className = 'po-item' + (cur === value ? ' on' : '') + (off ? ' off' : '');
-    b.innerHTML = '<span>' + esc(label) + (hint ? ' <span class="po-desc">' + esc(hint) + '</span>' : '') +
-      (off ? ' <span class="po-desc">不可用</span>' : '') + '</span><span class="check">' + ICON.check + '</span>';
-    if (off) { b.disabled = true; } else { b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: value }); }; }
+    b.className = 'po-item model' + (cur === m.id ? ' on' : '') + (off ? ' off' : '');
+    b.innerHTML = '<span class="po-modelname">' + esc(m.label) + (isDefault ? ' <span class="po-desc">默认</span>' : '') +
+      ' ' + badge(m) + '</span><span class="check">' + ICON.check + '</span>';
+    if (off) {
+      b.onclick = (e) => {
+        e.stopPropagation();
+        toast(m.needsKey ? '先在 config.json 的 model.providers 里填它家的 apiKey' : '这个模型网关当前不可用（503）', 'err');
+      };
+    } else {
+      b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: m.id }); };
+    }
     list.appendChild(b);
   };
   const build = (f) => {
     list.innerHTML = '';
     const q = (f || '').trim().toLowerCase();
-    if (!q) mk('', '默认 · ' + ((S.options && S.options.defaultModel) || ''), '');
-    ((S.options && S.options.models) || []).forEach((m) => {
-      if (q && m.toLowerCase().indexOf(q) < 0) return;
-      mk(m, m, m === (S.options && S.options.defaultModel) ? '默认' : '');
+    const match = (m) => (!q || m.label.toLowerCase().indexOf(q) >= 0 || m.id.toLowerCase().indexOf(q) >= 0) &&
+      (!modelFreeOnly || m.free);
+    if (!q && !modelFreeOnly) {
+      const b = document.createElement('button');
+      b.className = 'po-item model' + (cur === '' ? ' on' : '');
+      b.innerHTML = '<span class="po-modelname">默认 · ' + esc(defaultModel) + '</span><span class="check">' + ICON.check + '</span>';
+      b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: '' }); };
+      list.appendChild(b);
+    }
+    let lastProvider = null;
+    all.filter(match).forEach((m) => {
+      if (m.provider !== lastProvider) {
+        lastProvider = m.provider;
+        const t = document.createElement('div');
+        t.className = 'po-title po-provider';
+        t.textContent = m.providerLabel || m.provider;
+        list.appendChild(t);
+      }
+      mk(m, m.provider === 'default' && m.id === defaultModel);
     });
     if (!list.children.length) list.innerHTML = '<div class="po-desc" style="padding:8px 10px">没有匹配的模型</div>';
   };
   build('');
   $('po-filter').oninput = () => build($('po-filter').value);
+  $('po-freeonly').onclick = (e) => {
+    e.stopPropagation();
+    modelFreeOnly = !modelFreeOnly;
+    localStorage.setItem('mineagent.freeonly', modelFreeOnly ? '1' : '0');
+    $('po-freeonly').classList.toggle('on', modelFreeOnly);
+    build($('po-filter').value);
+  };
   closePopovers('popover');
   box.classList.add('on');
 }
@@ -289,8 +346,9 @@ export function openModelPopover(back) {
 export function openIntelPopover() {
   const box = $('popover');
   const idx = intelIndex(S.options && S.options.effort);
-  const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';
-  const modelBad = !!(S.options && S.options.model && (S.options.unavailable || []).indexOf(S.options.model) >= 0);
+  const modelName = modelLabel();
+  const curOpt = (S.options && (S.options.models || []).find((m) => m.id === S.options.model)) || null;
+  const modelBad = !!(curOpt && curOpt.unavailable);
   box.innerHTML = '<div class="intel-head">' + INTEL[idx].name + '<svg class="i"><use href="#i-chevron"/></svg></div>' +
     '<div class="reason init" id="reason">' +
     '<div class="reason-track" id="reason-track">' +
@@ -307,6 +365,7 @@ export function openIntelPopover() {
     esc(modelName) + (modelBad ? '（不可用）' : '') + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
   const track = $('reason-track');
   closePopovers('popover');
+  placePopover(box);
   box.classList.add('on');   // 先可见，量宽度才算得准
   const PAD = 12, N = INTEL.length;
   let rect = null;
@@ -457,7 +516,7 @@ $('attach').onclick = (e) => {
   e.stopPropagation();
   const box = $('plusmenu');
   if (box.classList.contains('on')) { box.classList.remove('on'); return; }
-  renderPlusMenu(); closePopovers('plusmenu'); box.classList.add('on');
+  renderPlusMenu(); closePopovers('plusmenu'); placePopover(box); box.classList.add('on');
 };
 $('intelbtn').onclick = (e) => {
   e.stopPropagation();

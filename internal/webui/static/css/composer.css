@@ -54,7 +54,17 @@
 }
 .popover.on { display: block; animation: pop .12s ease-out; }
 #plusmenu { left: 0; bottom: calc(100% + 10px); width: min(250px, calc(100vw - 24px)); }
-#popover { right: 0; bottom: calc(100% + 10px); width: min(380px, calc(100vw - 24px)); padding: 0; }
+#popover {
+  right: 0; bottom: calc(100% + 10px); width: min(380px, calc(100vw - 24px)); padding: 0;
+  /* 模型多了以后要限高，否则弹层顶部（筛选/只看免费）会顶出屏幕 */
+  max-height: min(560px, calc(100dvh - 190px));
+  flex-direction: column;
+}
+#popover.on { display: flex; }
+#popover > * { flex: none; }                     /* 标题/筛选行/头部不参与压缩 */
+/* 空会话时 composer 居中，弹层改为向下展开（上面没那么多空间） */
+#popover.below, #plusmenu.below, #cmdpalette.below { top: calc(100% + 10px); bottom: auto; }
+#popover .po-scroll { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
 .po-title { font-size: 11.5px; color: var(--text-3); padding: 6px 10px 4px; }
 /* Intelligence 面板（对齐 GPT：宽面板/粗滑轨/大圆钮/通栏分隔线） */
 .intel-head {

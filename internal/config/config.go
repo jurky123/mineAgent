@@ -223,6 +223,21 @@ type Model struct {
 	// Options 模型切换列表（网页 + 菜单）；留空 = 从网关 GET /models 自动拉。
 	// 想限制可选范围就手填几个模型名。
 	Options []string `json:"options"`
+	// Providers 额外的模型提供商（如 OpenRouter）：模型选择器写成 "<id>/<模型名>"，
+	// 选择器里的模型会用该 provider 的 baseURL/apiKey 调用。
+	Providers []Provider `json:"providers"`
+}
+
+// Provider 是额外模型提供商（OpenAI 兼容）。
+type Provider struct {
+	ID      string `json:"id"`      // 选择器前缀，如 openrouter
+	Label   string `json:"label"`   // 界面展示名
+	BaseURL string `json:"baseURL"` // 如 https://openrouter.ai/api/v1
+	APIKey  string `json:"apiKey"`
+	// FreeOnly 只列免费模型（OpenRouter 有 450+ 个，建议开）。
+	FreeOnly bool `json:"freeOnly"`
+	// Models 手填模型列表；留空则拉 {baseURL}/models（OpenRouter 会带定价，可判免费）。
+	Models []string `json:"models"`
 }
 
 type Storage struct {

@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"mineagent/internal/config"
 )
 
 // accountPrefs 是网页账号的偏好（+ 菜单里改）：模型与思考强度。
@@ -85,6 +89,155 @@ func validEffort(v string) bool {
 		}
 	}
 	return false
+}
+
+// ---------- 模型列表：默认提供商 + 额外提供商（OpenRouter 等），带免费标记 ----------
+
+// ModelOption 是给 UI 的模型条目。
+type ModelOption struct {
+	ID            string `json:"id"`       // 选择器：默认提供商就是模型名；额外提供商是 "<id>/<模型名>"
+	Label         string `json:"label"`    // 展示名
+	Provider      string `json:"provider"` // "default" 或 provider id
+	ProviderLabel string `json:"providerLabel"`
+	Free          bool   `json:"free"`
+	NeedsKey      bool   `json:"needsKey,omitempty"`
+	Unavailable   bool   `json:"unavailable,omitempty"`
+}
+
+// isFreeModelID 免费模型的启发式判断（网关不给定价，OpenRouter 会给定价另算）：
+// 常见命名 -free / :free / contributor。
+func isFreeModelID(id string) bool {
+	l := strings.ToLower(id)
+	return strings.Contains(l, "-free") || strings.HasSuffix(l, ":free") ||
+		strings.Contains(l, "contributor")
+}
+
+type providerCache struct {
+	at   time.Time
+	opts []ModelOption
+}
+
+// providerOptions 拉额外提供商的模型（缓存 1 小时）。
+// OpenRouter 的 /models 带 pricing，能准确判免费；没有定价就退回命名启发式。
+func (c *Channel) providerOptions(ctx context.Context, p config.Provider) []ModelOption {
+	if p.ID == "" || p.BaseURL == "" {
+		return nil
+	}
+	c.mu.Lock()
+	if e, ok := c.providerModels[p.ID]; ok && time.Since(e.at) < time.Hour {
+		opts := append([]ModelOption(nil), e.opts...)
+		c.mu.Unlock()
+		return opts
+	}
+	c.mu.Unlock()
+
+	build := func(rawID, name string, pricingPrompt, pricingCompletion *string, hasPricing bool) ModelOption {
+		free := isFreeModelID(rawID)
+		if hasPricing {
+			free = pricingPrompt != nil && pricingCompletion != nil && *pricingPrompt == "0" && *pricingCompletion == "0"
+		}
+		label := strings.TrimSpace(name)
+		if label == "" {
+			label = rawID
+		}
+		return ModelOption{
+			ID: p.ID + "/" + rawID, Label: label, Provider: p.ID,
+			ProviderLabel: p.Label, Free: free, NeedsKey: p.APIKey == "",
+		}
+	}
+	var opts []ModelOption
+	if len(p.Models) > 0 {
+		for _, m := range p.Models {
+			opts = append(opts, build(m, m, nil, nil, false))
+		}
+	} else {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.BaseURL, "/")+"/models", nil)
+		if err != nil {
+			return nil
+		}
+		if p.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.APIKey)
+		}
+		req.Header.Set("x-opencode-session", "mineagent-webui")
+		res, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+		if err != nil {
+			c.log.Warn("provider models fetch failed", "provider", p.ID, "err", err)
+			return nil
+		}
+		defer res.Body.Close()
+		var body struct {
+			Data []struct {
+				ID      string `json:"id"`
+				Name    string `json:"name"`
+				Pricing *struct {
+					Prompt     string `json:"prompt"`
+					Completion string `json:"completion"`
+				} `json:"pricing"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+			c.log.Warn("provider models decode failed", "provider", p.ID, "err", err)
+			return nil
+		}
+		for _, m := range body.Data {
+			if m.ID == "" {
+				continue
+			}
+			var pp, pc *string
+			has := false
+			if m.Pricing != nil {
+				has = true
+				pp, pc = &m.Pricing.Prompt, &m.Pricing.Completion
+			}
+			opt := build(m.ID, m.Name, pp, pc, has)
+			if p.FreeOnly && !opt.Free {
+				continue
+			}
+			opts = append(opts, opt)
+		}
+	}
+	sort.SliceStable(opts, func(i, j int) bool {
+		if opts[i].Free != opts[j].Free {
+			return opts[i].Free
+		}
+		return strings.ToLower(opts[i].Label) < strings.ToLower(opts[j].Label)
+	})
+	c.mu.Lock()
+	if c.providerModels == nil {
+		c.providerModels = make(map[string]providerCache)
+	}
+	c.providerModels[p.ID] = providerCache{at: time.Now(), opts: opts}
+	c.mu.Unlock()
+	return opts
+}
+
+// modelCatalog 汇总默认提供商 + 额外提供商的模型列表（给 UI 的完整目录）。
+func (c *Channel) modelCatalog(ctx context.Context) []ModelOption {
+	label := "默认"
+	if u, err := url.Parse(c.modelBaseURL); err == nil && u.Host != "" {
+		label = u.Host
+	}
+	bad := map[string]bool{}
+	for _, m := range c.models.Unavailable() {
+		bad[m] = true
+	}
+	var out []ModelOption
+	for _, id := range c.availableModels(ctx) {
+		out = append(out, ModelOption{
+			ID: id, Label: id, Provider: "default", ProviderLabel: label,
+			Free: isFreeModelID(id), Unavailable: bad[id],
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Free != out[j].Free {
+			return out[i].Free
+		}
+		return strings.ToLower(out[i].Label) < strings.ToLower(out[j].Label)
+	})
+	for _, p := range c.providers {
+		out = append(out, c.providerOptions(ctx, p)...)
+	}
+	return out
 }
 
 // ---------- 模型列表：优先 config.model.options，否则拉网关 GET /models（带缓存） ----------

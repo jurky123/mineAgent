@@ -375,27 +375,54 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	return a, nil
 }
 
-// chatModel 按 (模型名, 思考强度) 取/建 chat model。
-// 留空用配置默认；effort 非空时透传 reasoning_effort（低/中/高）。
+// resolveModel 解析模型选择器：默认提供商直接用模型名；
+// 额外提供商写成 "<id>/<模型名>"（如 openrouter/qwen/qwen3.8-27b:free）。
+func (a *Agent) resolveModel(sel string) (baseURL, apiKey, modelID, providerID string, err error) {
+	if sel == "" {
+		return a.modelCfg.BaseURL, a.modelCfg.APIKey, a.modelCfg.Name, "default", nil
+	}
+	for _, p := range a.modelCfg.Providers {
+		if p.ID == "" {
+			continue
+		}
+		prefix := p.ID + "/"
+		if strings.HasPrefix(sel, prefix) {
+			if p.APIKey == "" {
+				return "", "", "", "", fmt.Errorf("模型提供商 %s 未配置 apiKey", p.ID)
+			}
+			return p.BaseURL, p.APIKey, strings.TrimPrefix(sel, prefix), p.ID, nil
+		}
+	}
+	return a.modelCfg.BaseURL, a.modelCfg.APIKey, sel, "default", nil
+}
+
+// chatModel 按 (模型选择器, 思考强度) 取/建 chat model。
+// 留空用配置默认；effort 非空时透传（默认提供商 reasoning_effort，
+// 额外提供商如 OpenRouter 用 reasoning:{effort}）。
 func (a *Agent) chatModel(ctx context.Context, name, effort string) (model.BaseModel[*schema.Message], error) {
-	if name == "" {
-		name = a.modelCfg.Name
+	baseURL, apiKey, modelID, providerID, rerr := a.resolveModel(name)
+	if rerr != nil {
+		return nil, rerr
 	}
 	key := name + "|" + effort
 	a.mu.Lock()
-	m := a.models[key]
+	mm := a.models[key]
 	a.mu.Unlock()
-	if m != nil {
-		return m, nil
+	if mm != nil {
+		return mm, nil
 	}
 	cfg := &openai.ChatModelConfig{
-		BaseURL:    a.modelCfg.BaseURL,
-		APIKey:     a.modelCfg.APIKey,
-		Model:      name,
+		BaseURL:    baseURL,
+		APIKey:     apiKey,
+		Model:      modelID,
 		HTTPClient: a.httpClient,
 	}
 	if effort != "" {
-		cfg.ExtraFields = map[string]any{"reasoning_effort": effort}
+		if providerID == "default" {
+			cfg.ExtraFields = map[string]any{"reasoning_effort": effort}
+		} else {
+			cfg.ExtraFields = map[string]any{"reasoning": map[string]any{"effort": effort}}
+		}
 	}
 	m, err := openai.NewChatModel(ctx, cfg)
 	if err != nil {
@@ -404,7 +431,7 @@ func (a *Agent) chatModel(ctx context.Context, name, effort string) (model.BaseM
 	a.mu.Lock()
 	a.models[key] = m
 	a.mu.Unlock()
-	a.log.Info("chat model ready", "model", name, "effort", effort)
+	a.log.Info("chat model ready", "model", modelID, "provider", providerID, "effort", effort)
 	return m, nil
 }
 

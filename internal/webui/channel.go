@@ -51,8 +51,11 @@ type Channel struct {
 	webTools []tool.BaseTool
 
 	// 模型切换：可选项（config.model.options 优先，否则拉网关）与加载器。
-	modelOptions []string
-	models       *modelLister
+	modelOptions   []string
+	models         *modelLister
+	providers      []config.Provider
+	providerModels map[string]providerCache
+	modelBaseURL   string
 
 	srv *http.Server
 
@@ -79,24 +82,27 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		dataDir = "data/webui"
 	}
 	c := &Channel{
-		log:           log,
-		cfg:           cfg.Web,
-		workspaceRoot: cfg.WorkspaceRoot(),
-		model:         cfg.Model.Name,
-		usage:         usage.New(cfg.Model.BaseURL, cfg.Model.APIKey),
-		modelOptions:  cfg.Model.Options,
-		hub:           hub,
-		store:         store,
-		ag:            ag,
-		webTools:      webTools,
-		sessions:      make(map[string]*session.Session),
-		lastSend:      make(map[string]time.Time),
-		subs:          make(map[string]map[chan []byte]struct{}),
-		tokens:        make(map[string][]string),
-		tokensPath:    filepath.Join(dataDir, "tokens.json"),
-		prefs:         make(map[string]accountPrefs),
-		prefsPath:     filepath.Join(dataDir, "prefs.json"),
-		running:       make(map[string]runState),
+		log:            log,
+		cfg:            cfg.Web,
+		workspaceRoot:  cfg.WorkspaceRoot(),
+		model:          cfg.Model.Name,
+		usage:          usage.New(cfg.Model.BaseURL, cfg.Model.APIKey),
+		modelOptions:   cfg.Model.Options,
+		providers:      cfg.Model.Providers,
+		providerModels: make(map[string]providerCache),
+		modelBaseURL:   cfg.Model.BaseURL,
+		hub:            hub,
+		store:          store,
+		ag:             ag,
+		webTools:       webTools,
+		sessions:       make(map[string]*session.Session),
+		lastSend:       make(map[string]time.Time),
+		subs:           make(map[string]map[chan []byte]struct{}),
+		tokens:         make(map[string][]string),
+		tokensPath:     filepath.Join(dataDir, "tokens.json"),
+		prefs:          make(map[string]accountPrefs),
+		prefsPath:      filepath.Join(dataDir, "prefs.json"),
+		running:        make(map[string]runState),
 	}
 	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, dataDir, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
 	c.loadTokens()

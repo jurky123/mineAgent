@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -74,6 +75,11 @@ func main() {
 	approvals.SetMaxPerRequester(cfg.QQ.MaxPendingPerUser)
 	agentTools := append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...)
 
+	// MC 通道的查服状态闭包（/status 直回用，经网关调 minecraft_server_status）。
+	mcStatusFn := func(ctx context.Context) (string, error) {
+		return gw.Call(ctx, "minecraft_server_status", json.RawMessage(`{}`))
+	}
+
 	// QQ 通道工具集：只读查询 + MC 高权限（转游戏内审批）+ workspace 四件套 + 绑定。
 	// 注意 workspace_exec 的管理员门禁不在工具里写死，而是在 Submit 前按消息身份
 	// 动态放进 ctx（WithQQAdmin），这样同一套工具对管理员/普通群友表现不同。
@@ -132,7 +138,8 @@ func main() {
 		senderFn := func(ctx context.Context, sess *session.Session, target, text string) error {
 			return sess.Reply(ctx, text, target)
 		}
-		qqCh = qq.NewChannel(log, cfg, hub, store, ag, api, wrapQQTools(qqBaseTools, wsTools, store, sessionsFn, senderFn))
+		qqCh = qq.NewChannel(log, cfg, hub, store, ag, api, wrapQQTools(qqBaseTools, wsTools, store, sessionsFn, senderFn)).
+			WithMCStatus(mcStatusFn)
 		qqCh.Start()
 		defer qqCh.Stop()
 		log.Info("qq channel enabled")
@@ -169,6 +176,28 @@ func main() {
 				return
 			}
 			if query, ok := matchTrigger(chat.Message, cfg.Minecraft.Trigger); ok {
+				// 系统命令硬编码直回：不进 agent 队列，不调 LLM，直接回服内。
+				// MC 通道 Target 语义：broadcast 模式传 ""（全体可见），player 模式传玩家名。
+				if cmd, arg := tools.MatchSystemCommand(query); cmd != "" {
+					target := chat.Player
+					if cfg.Minecraft.ReplyMode == "broadcast" {
+						target = ""
+					}
+					reply := tools.ExecSystemCommand(tools.SysCtx{
+						Ctx:       ctx,
+						Store:     store,
+						SessionID: cfg.Minecraft.SessionID,
+						Channel:   "minecraft",
+						IsAdmin:   false,
+						Model:     cfg.Model.Name,
+						MCStatus:  mcStatusFn,
+						QQIDs:     nil,
+						Requester: chat.Player,
+					}, cmd, arg)
+					log.Info("mc syscmd", "player", chat.Player, "cmd", cmd, "arg", arg)
+					_ = sess.Reply(ctx, reply, target)
+					return
+				}
 				log.Info("agent trigger", "player", chat.Player, "query", query, "messageId", msg.ID)
 				if !ag.Submit(agent.Request{
 					Session:          sess,

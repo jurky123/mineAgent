@@ -102,6 +102,13 @@ func (g *Gateway) snapshot() (session string, seq int64) {
 	return g.sessionID, g.seq
 }
 
+// Connected 供 /status 查 QQ 网关状态：有 session_id 就是已连接。
+func (g *Gateway) Connected() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.sessionID != ""
+}
+
 func (g *Gateway) loop() {
 	defer close(g.stopped)
 	backoff := time.Second

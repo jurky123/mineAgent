@@ -266,6 +266,25 @@ func (s *Store) SummaryAtOrBefore(ctx context.Context, sessionID string, maxMess
 	return &sum, nil
 }
 
+// CountSummaries 统计某会话的摘要份数（chat_memory/info 用）。
+func (s *Store) CountSummaries(ctx context.Context, sessionID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM summaries WHERE session_id=?`, sessionID).Scan(&n)
+	return n, err
+}
+
+// ClearSession 删掉某会话的全部消息和摘要（chat_memory/clear 用）。
+// 只删自己会话，不碰别的会话和审计。
+func (s *Store) ClearSession(ctx context.Context, sessionID string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM messages WHERE session_id=?`, sessionID); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM summaries WHERE session_id=?`, sessionID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) UpsertIdentity(ctx context.Context, platform, platformID, displayName string, now int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO identity_links(platform, platform_id, display_name, created_at) VALUES(?, ?, ?, ?)

@@ -38,6 +38,8 @@ type Channel struct {
 	// workspaceRoot 发本地图片时定位 workspace（channel 拿的是整个 config，
 	// 见 NewChannel）。默认 "workspace"。
 	workspaceRoot string
+	model         string
+	mcStatus      func(ctx context.Context) (string, error)
 
 	hub     *session.Hub
 	store   *storage.Store
@@ -60,6 +62,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		log:           log,
 		cfg:           cfg.QQ,
 		workspaceRoot: cfg.WorkspaceRoot(),
+		model:         cfg.Model.Name,
 		hub:         hub,
 		store:       store,
 		ag:          ag,
@@ -72,6 +75,35 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 	}
 	c.gw = NewGateway(api, api.tokens, log, c.onMessage)
 	return c
+}
+
+// WithMCStatus 注入查服状态闭包（main.go 经 tools.Gateway 调 minecraft_server_status）。
+func (c *Channel) WithMCStatus(fn func(ctx context.Context) (string, error)) *Channel {
+	c.mcStatus = fn
+	return c
+}
+
+// isAdmin 判 QQ 管理员：union/user/member 任一命中 adminOpenIds。
+func (c *Channel) isAdmin(ids ...string) bool {
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		for _, admin := range c.cfg.AdminOpenIDs {
+			if admin != "" && id == admin {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// QQStatus 供 /status：已连接/未连接。
+func (c *Channel) QQStatus() string {
+	if c.gw != nil && c.gw.Connected() {
+		return "已连接"
+	}
+	return "未连接（等网关重连）"
 }
 
 func (c *Channel) Name() string { return "qq" }
@@ -279,10 +311,36 @@ func (c *Channel) onMessage(m InboundMessage) {
 		return
 	}
 
+	// 系统命令硬编码直回：不进 agent 队列，不调 LLM，直接回。
+	// QQ 管理员身份按 union/user/member 任一命中 adminOpenIds 判定。
+	qqIDs := []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID}
+	qqID := firstNonEmpty(qqIDs...)
+	isAdmin := c.isAdmin(qqIDs...)
+	if cmd, arg := tools.MatchSystemCommand(text); cmd != "" {
+		reply := tools.ExecSystemCommand(tools.SysCtx{
+			Ctx:       ctx,
+			Store:     c.store,
+			SessionID: sessionKey,
+			Channel:   "qq",
+			IsAdmin:   isAdmin,
+			Model:     c.model,
+			MCStatus:  c.mcStatus,
+			QQStatus:  c.QQStatus,
+			QQIDs:     qqIDs,
+			Requester: tools.QQRequesterPrefix + qqID,
+		}, cmd, arg)
+		c.log.Info("qq syscmd", "session", sessionKey, "cmd", cmd, "arg", arg)
+		_ = sess.Reply(ctx, reply, target)
+		c.mu.Lock()
+		c.lastSend[sessionKey] = time.Now()
+		c.mu.Unlock()
+		return
+	}
+
 	// 昵称留痕（platform=qq）：只用于日志展示，与绑定隔离。
 	// 绑定关系存 platform=qq_bind（见 tools.BindPlatform），两者不互相覆盖。
 	now := time.Now().UnixMilli()
-	for _, id := range []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID} {
+	for _, id := range qqIDs {
 		if id == "" {
 			continue
 		}
@@ -306,7 +364,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 	// 读 platform=qq_bind（绑定专用），不读昵称留痕的 qq。
 	// Gateway.Call 里 toolRequester 取它发给插件；approvalTool 审计仍用 qq: 身份。
 	var mcName string
-	for _, id := range []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID} {
+	for _, id := range qqIDs {
 		if id == "" {
 			continue
 		}
@@ -321,7 +379,6 @@ func (c *Channel) onMessage(m InboundMessage) {
 		"union", m.UnionOpenID != "", "boundMC", mcName,
 		"query", text, "messageId", stored.ID)
 
-	qqID := firstNonEmpty(m.UnionOpenID, m.UserOpenID, m.MemberOpenID)
 	if !c.ag.Submit(agent.Request{
 		Session:           sess,
 		SessionKey:        sessionKey,
@@ -406,8 +463,10 @@ func firstLine(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-const qqInstruction = `你是 Minecraft 服务器「jzk 的服务器」的 QQ 聊天 AI 助手，同时也是一个能写代码、
-执行代码的轻量 agent。说话对象可能是服主（QQ 私聊）或玩家群（QQ 群），消息格式为 [QQ名] 内容。
+const qqInstruction = `你是 MineAgent，一个能写代码、执行代码、查资料、画图发图的轻量 agent，
+当前在 QQ 里跟人聊天（可能是服主私聊，也可能是玩家群，消息格式为 [QQ名] 内容）。
+你的能力很多，Minecraft 服务器「jzk 的服务器」只是其中一个可用的功能（查服状态、
+传送/给物/执行命令需审批），不要把自己只当成服的客服。
 
 规则：
 - 用简体中文回答，语气轻松友好。
@@ -420,7 +479,8 @@ const qqInstruction = `你是 Minecraft 服务器「jzk 的服务器」的 QQ �
   拿到结果再调下一步；画图直接用 PIL（已装），中文字体用
   /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc（已装，别用黑体/DejaVu）。
   不要反复试探同一条失败命令，换一条路走；20 步内完不成就先回一条进度，再继续。
-- 被问到服务器实时情况（在线玩家、TPS/内存、时间、天气）时必须先调用 minecraft_* 只读工具查，不要编造。
+- MC 服务器只是功能之一：被问到服实时情况（在线玩家、TPS/内存、时间、天气）时才调用
+  minecraft_* 只读工具查，不要编造；平时聊天、写代码、查资料都不用碰 MC。
 - minecraft_teleport / minecraft_give / minecraft_run_command 是高权限操作：只能应明确请求发起，
   发起后必须等待游戏内管理员批准；请求者没有绑定 MC 身份时要先提醒他用「绑定 <MC名>」绑定。
 - workspace_ls / workspace_read / workspace_write / workspace_exec 是写代码和执行代码的工具，
@@ -429,5 +489,6 @@ const qqInstruction = `你是 Minecraft 服务器「jzk 的服务器」的 QQ �
   装依赖用 $VENV_BIN/pip install（只能装进 workspace/.venv），下载用 curl/wget（只允许从公开 http(s) 下载到 workspace 内）；
   这两类会先过静态约束再送 LLM 语义审查，审查不通过就执行不了——被拒时如实转告，不要编造结果。
   写文件前先 ls/read 确认，不要覆盖已有重要文件；exec 一次只做一件事，重要操作先 dry-run。
-- 「绑定 <MC名>」是用户要绑定 MC 身份：调用 qq_bind 工具；「解绑」调用 qq_unbind。
-- 不确定的服务器信息不要编造，直接说不知道。`
+- 对话管理命令（/help /status /memory /bind /unbind /myid）由系统层直接回复，
+  不经过你：如果用户问起这些命令，你照着 help 文案介绍，不要自己编命令列表。
+- 不确定的信息不要编造，直接说不知道。`

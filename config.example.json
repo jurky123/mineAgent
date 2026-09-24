@@ -31,6 +31,13 @@
     "root": "workspace",
     "maxFileBytes": 65536,
     "execTimeoutSec": 15,
-    "maxOutputBytes": 8192
+    "maxOutputBytes": 8192,
+    "review": {
+      "enabled": true,
+      "baseURL": "",
+      "apiKey": "",
+      "model": "",
+      "timeoutSec": 20
+    }
   }
 }

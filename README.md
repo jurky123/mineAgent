@@ -37,9 +37,11 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
   之后 `把我传送到 Alex 身边` 这类请求会转到游戏内管理员审批；
   `解绑` 解除绑定
 - 写代码/跑代码（仅管理员）：`在 workspace 写个 hello.py 并跑一下`。
-  所有读写和执行都被限制在 `workspace/` 目录内，有超时、输出上限、
-  危险命令黑名单和全程审计；`curl/wget/ssh/pip/npm/docker` 等 v1 一律禁用，
-  要装依赖先在服务器上手动装
+  所有读写和执行都被限制在 `workspace/` 目录内，有超时、输出上限和全程审计。
+  执行分三层：危险命令（rm/sudo/ssh/docker 等）直接拒绝；
+  装依赖/下载（`$VENV_BIN/pip install` 装进 workspace/.venv、
+  curl/wget 从公开 http(s) 下载到 workspace 内）先过静态约束再送 LLM 语义审查，
+  审查不通过或审查器不可用则拒绝；普通跑代码命令直接执行
 
 ## 高权限操作与审批
 

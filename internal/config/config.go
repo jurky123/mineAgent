@@ -46,7 +46,7 @@ type QQ struct {
 
 // Workspace 是写代码/执行代码工具的沙箱根目录。
 // 所有读写/执行都被限制在这个目录内，v1 不做强隔离，靠目录约束+
-// 命令黑名单+超时+输出上限+单并发+审计来防止破坏服务器。
+// 命令硬拦截+受审命令约束+LLM语义审查+超时+输出上限+单并发+审计来防止破坏服务器。
 type Workspace struct {
 	Root string `json:"root"`
 	// 单个文件读写上限（字节）。
@@ -55,6 +55,21 @@ type Workspace struct {
 	ExecTimeoutSec int `json:"execTimeoutSec"`
 	// 单次命令输出上限（字节），超出截断。
 	MaxOutputBytes int `json:"maxOutputBytes"`
+	// 语义审查：curl/wget/pip 这类"本身正当但参数可变坏"的命令，
+	// 静态约束通过后送 LLM 二审。留空 model 即复用主模型。
+	Review ExecReview `json:"review"`
+}
+
+// ExecReview 是 workspace_exec 的 LLM 二审配置。
+// enabled=false 则 review 类命令一律拒绝（fail-closed）。
+type ExecReview struct {
+	Enabled bool `json:"enabled"`
+	// 复用主模型时留空；想用更便宜/更严的模型就填 OpenAI 兼容的 baseURL/apiKey/name。
+	BaseURL string `json:"baseURL"`
+	APIKey  string `json:"apiKey"`
+	Model   string `json:"model"`
+	// 单次审查超时（秒），默认 20。
+	TimeoutSec int `json:"timeoutSec"`
 }
 
 type Model struct {
@@ -91,6 +106,7 @@ func Default() Config {
 			MaxFileBytes:   65536,
 			ExecTimeoutSec: 15,
 			MaxOutputBytes: 8192,
+			Review:         ExecReview{Enabled: true, TimeoutSec: 20},
 		},
 	}
 }
@@ -133,6 +149,9 @@ func Load(path string) (Config, error) {
 	if cfg.Workspace.MaxOutputBytes <= 0 {
 		cfg.Workspace.MaxOutputBytes = Default().Workspace.MaxOutputBytes
 	}
+	if cfg.Workspace.Review.TimeoutSec <= 0 {
+		cfg.Workspace.Review.TimeoutSec = Default().Workspace.Review.TimeoutSec
+	}
 	return cfg, nil
 }
 
@@ -159,6 +178,9 @@ func (c Config) Redacted() Config {
 	if c.QQ.Secret != "" {
 		c.QQ.Secret = "<set>"
 	}
+	if c.Workspace.Review.APIKey != "" {
+		c.Workspace.Review.APIKey = "<set>"
+	}
 	return c
 }
 
@@ -177,4 +199,7 @@ func applyEnv(cfg *Config) {
 	set(&cfg.QQ.AppID, "MINEAGENT_QQ_APPID")
 	set(&cfg.QQ.Secret, "MINEAGENT_QQ_SECRET")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
+	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
+	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")
+	set(&cfg.Workspace.Review.Model, "MINEAGENT_REVIEW_MODEL")
 }

@@ -34,6 +34,7 @@ type Workspace struct {
 	admins map[string]bool
 	store *storage.Store
 	log   *slog.Logger
+	reviewer Reviewer
 
 	execMu sync.Mutex
 }
@@ -46,6 +47,12 @@ func NewWorkspace(cfg config.Workspace, adminOpenIDs []string, store *storage.St
 		}
 	}
 	return &Workspace{cfg: cfg, admins: admins, store: store, log: log}
+}
+
+// SetReviewer 装配默认审查器（main.go 在模型就绪后调用）。
+// ctx 里单独放的（WithReviewer）优先于这个。
+func (w *Workspace) SetReviewer(r Reviewer) {
+	w.reviewer = r
 }
 
 // IsAdmin 供 main.go 装配时判断：QQ 消息的 union/user/member openid 任一命中即管理员。
@@ -79,9 +86,9 @@ func (w *Workspace) Tools() []tool.BaseTool {
 				"content": {Type: schema.String, Desc: "完整文件内容", Required: true},
 			}, fn: w.write},
 		&wsTool{w: w, name: "workspace_exec",
-			desc: "在 workspace 内执行一条 shell 命令（工作目录即沙箱根）。适合跑 python3/go/编译和小脚本。一次只做一件事，有超时和输出上限，危险命令会被拦截。",
+			desc: "在 workspace 内执行一条 shell 命令（工作目录即沙箱根）。适合跑 python3/$VENV_BIN/python、$VENV_BIN/pip install 装包、curl/wget 从公开 http(s) 下载到 workspace 内、go 构建和小脚本。一次只做一件事，有超时和输出上限。rm/sudo/ssh/docker 等危险命令直接拒绝；curl/wget/pip 会先过静态约束再送 LLM 语义审查，审查不通过或审查器不可用则拒绝。",
 			params: map[string]*schema.ParameterInfo{
-				"command": {Type: schema.String, Desc: "shell 命令，如 python3 main.py", Required: true},
+				"command": {Type: schema.String, Desc: "shell 命令，如 $VENV_BIN/pip install requests 或 curl -s --max-time 10 https://example.com/data.json -o data.json", Required: true},
 			}, fn: w.exec},
 	}
 }

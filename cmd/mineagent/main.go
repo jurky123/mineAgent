@@ -79,6 +79,29 @@ func main() {
 	// 动态放进 ctx（WithQQAdmin），这样同一套工具对管理员/普通群友表现不同。
 	// qq_bind/qq_unbind 的身份同样走 ctx（WithQQIdentity）。
 	wsTools := tools.NewWorkspace(cfg.Workspace, cfg.QQ.AdminOpenIDs, store, log)
+	// workspace_exec 的 LLM 二审：默认复用主模型（省一个配置），
+	// 想用更便宜/更严的模型就填 workspace.review.baseURL/apiKey/model。
+	// enabled=false 或主模型都没配 = 无审查器，review 类命令 fail-closed 全拒。
+	if cfg.Workspace.Review.Enabled && cfg.Model.BaseURL != "" && cfg.Model.Name != "" {
+		baseURL := cfg.Workspace.Review.BaseURL
+		apiKey := cfg.Workspace.Review.APIKey
+		model := cfg.Workspace.Review.Model
+		if baseURL == "" {
+			baseURL = cfg.Model.BaseURL
+		}
+		if apiKey == "" {
+			apiKey = cfg.Model.APIKey
+		}
+		if model == "" {
+			model = cfg.Model.Name
+		}
+		wsTools.SetReviewer(tools.NewLLMReviewer(baseURL, apiKey, model,
+			time.Duration(cfg.Workspace.Review.TimeoutSec)*time.Second, log))
+		log.Info("workspace reviewer enabled", "model", model)
+	} else {
+		log.Warn("workspace reviewer disabled, review-gated commands will be denied",
+			"hint", "set workspace.review.enabled=true and model.baseURL/model.name")
+	}
 	bindTools := tools.NewQQBind(store, log)
 	qqBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
 		append(wsTools.Tools(), bindTools.Tools()...)...)

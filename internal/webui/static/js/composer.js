@@ -301,34 +301,50 @@ export function openIntelPopover() {
   const track = $('reason-track');
   closePopovers('popover');
   box.classList.add('on');   // 先可见，量宽度才算得准
-  const posOf = (i) => {
-    const r = track.getBoundingClientRect();
-    const pad = 12;
-    return pad + (r.width - pad * 2) * (i / (INTEL.length - 1));
+  const PAD = 12, N = INTEL.length;
+  let rect = null;
+  const trackRect = () => rect || (rect = track.getBoundingClientRect());
+  const xAt = (f) => PAD + (trackRect().width - PAD * 2) * (f / (N - 1));   // f 允许小数
+  const fracFromX = (clientX) => {
+    const r = trackRect();
+    const rel = Math.min(Math.max(clientX - r.left, PAD), r.width - PAD);
+    return Math.max(0, Math.min(N - 1, (rel - PAD) / ((r.width - PAD * 2) / (N - 1))));
   };
-  const paint = (i) => {
-    const x = posOf(i);
-    // transform 位移（GPU），比 left/width 逐帧改布局平滑
+
+  // paint 接受小数档位：拖动时跟手连续移动，点击/松手传整数吸附
+  const paint = (f) => {
+    const x = xAt(f);
     $('reason-thumb').style.transform = 'translate3d(' + x + 'px, -50%, 0)';
-    $('reason-fill').style.width = Math.max(0, x - 12) + 'px';
-    $('reason-labels').querySelectorAll('span').forEach((n, k) => n.classList.toggle('on', k === i));
+    $('reason-fill').style.width = Math.max(0, x - PAD) + 'px';
+    const near = Math.round(f);
+    $('reason-labels').querySelectorAll('span').forEach((n, k) => n.classList.toggle('on', k === near));
     const head = document.querySelector('.intel-head');
-    if (head) head.firstChild.textContent = INTEL[i].name;
-    // 刻度点：只建一次，之后只更新位置/选中态（拖动时不再重建 DOM）
+    if (head) head.firstChild.textContent = INTEL[near].name;
+    // 刻度点：只建一次，之后只更新位置/选中态（拖动不再重建 DOM）
     const dots = $('reason-dots');
     if (dots) {
-      if (dots.children.length !== INTEL.length) {
+      if (dots.children.length !== N) {
         dots.innerHTML = INTEL.map(() => '<div class="reason-dot"></div>').join('');
       }
       Array.prototype.forEach.call(dots.children, (d, k) => {
-        const dx = posOf(k);
+        const dx = xAt(k);
         d.style.left = dx + 'px';
         d.classList.toggle('on', dx <= x + 0.5);
       });
     }
-    $('reason').classList.toggle('max', i === INTEL.length - 1);
-    intelPaint = paint;   // 供 setPrefs 原地重绘（避免整块重建导致从最左滑过来）
+    $('reason').classList.toggle('max', near === N - 1);
+    intelPaint = (i) => paint(i);   // 供 setPrefs 原地重绘
   };
+
+  // 立即播放吸附动画（乐观更新），网络请求在后台跑，失败回滚
+  function applyEffort(i) {
+    const v = INTEL[i].v;
+    const cur = (S.options && S.options.effort) || '';
+    paint(i);
+    if (v === cur) return;
+    const prev = intelIndex(cur);
+    setPrefs({ effort: v }).then((ok) => { if (!ok) paint(prev); });
+  }
 
   renderSparkles();   // 常驻渲染，靠 .max 透明度淡入
   // 白色粒子：确定性伪随机，尺寸/位置/漂移/时长各不同
@@ -352,36 +368,38 @@ export function openIntelPopover() {
     }
     box.innerHTML = html;
   }
-  const idxFromX = (clientX) => {
-    const r = track.getBoundingClientRect();
-    const pad = 12;
-    const rel = Math.min(Math.max(clientX - r.left, pad), r.width - pad);
-    return Math.max(0, Math.min(INTEL.length - 1, Math.round((rel - pad) / ((r.width - pad * 2) / (INTEL.length - 1)))));
-  };
+
   paint(idx);
   requestAnimationFrame(() => $('reason').classList.remove('init'));
-  let dragging = false;
+
+  let dragging = false, rafPending = false, lastX = 0;
   track.addEventListener('pointerdown', (e) => {
-    dragging = true; $('reason').classList.add('dragging');
+    dragging = true;
+    rect = track.getBoundingClientRect();   // 缓存几何，拖动期间避免反复 layout
+    $('reason').classList.add('dragging');
     try { track.setPointerCapture(e.pointerId); } catch (err) {}
-    paint(idxFromX(e.clientX));
+    paint(fracFromX(e.clientX));
   });
-  track.addEventListener('pointermove', (e) => { if (dragging) paint(idxFromX(e.clientX)); });
+  track.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    lastX = e.clientX;
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (dragging) paint(fracFromX(lastX));   // 跟手（小数位置）
+    });
+  });
   const stop = (e) => {
     if (!dragging) return;
-    dragging = false; $('reason').classList.remove('dragging');
-    const v = INTEL[idxFromX(e.clientX)].v;
-    if (v === ((S.options && S.options.effort) || '')) { paint(intelIndex(v)); return; }
-    setPrefs({ effort: v });
+    dragging = false;
+    $('reason').classList.remove('dragging');
+    applyEffort(Math.round(fracFromX(e.clientX)));   // 立刻吸附，不等网络
   };
   track.addEventListener('pointerup', stop);
   track.addEventListener('pointercancel', stop);
   $('reason-labels').querySelectorAll('span').forEach((n) => {
-    n.onclick = () => {
-      const i = +n.dataset.i;
-      if (INTEL[i].v === ((S.options && S.options.effort) || '')) return;
-      setPrefs({ effort: INTEL[i].v });
-    };
+    n.onclick = () => applyEffort(+n.dataset.i);
   });
   $('po-model').onclick = (e) => { e.stopPropagation(); openModelPopover(true); };
 }
@@ -397,7 +415,8 @@ async function setPrefs(patch) {
     } else if (intelPaint && $('reason-track')) {
       intelPaint(intelIndex(r.effort));   // 原地重绘：平滑吸附，不重建 DOM
     }
-  } catch (e) { showError(e.message); }
+    return true;
+  } catch (e) { showError(e.message); return false; }
 }
 
 export async function loadOptions(force) {

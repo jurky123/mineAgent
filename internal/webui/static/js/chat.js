@@ -3,7 +3,7 @@
 import { $, esc, fmtSize, fmtTime, bus, ICON, extInfo, showError } from './ui.js';
 import { S, withTok, convParam } from './state.js';
 import { api } from './api.js';
-import { renderContent } from './markdown.js';
+import { renderContent, enhanceContent } from './markdown.js';
 import { openViewer } from './viewer.js';
 
 let msgIds = new Set();
@@ -32,21 +32,6 @@ function fileBubble(f) {
     '<span class="fdl">' + ICON.download + '</span></a>';
 }
 
-function addCodeCopy(row) {
-  row.querySelectorAll('pre').forEach((pre) => {
-    const btn = document.createElement('button');
-    btn.className = 'codecopy';
-    btn.textContent = '复制';
-    btn.onclick = () => {
-      const code = pre.querySelector('code');
-      navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
-        btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制'; }, 1200);
-      });
-    };
-    pre.appendChild(btn);
-  });
-}
-
 // ---------- 渲染 ----------
 export function renderMsg(m, prepend) {
   if (msgIds.has(m.id)) return;
@@ -68,15 +53,18 @@ export function renderMsg(m, prepend) {
   html += '</div>';
   row.innerHTML = html;
   const content = row.querySelector('.content');
-  if (m.role === 'assistant') renderContent(content, m.text || '');
-  else content.textContent = m.text || '';
+  if (m.role === 'assistant') {
+    renderContent(content, m.text || '');
+    enhanceContent(content);   // 懒加载高亮/KaTeX（没有代码/公式就不加载）
+  } else {
+    content.textContent = m.text || '';
+  }
   const copy = row.querySelector('.copy');
   if (copy) copy.onclick = () => {
     navigator.clipboard.writeText(row.dataset.raw).then(() => {
       copy.innerHTML = ICON.check + '已复制'; setTimeout(() => { copy.innerHTML = ICON.copy + '复制'; }, 1200);
     });
   };
-  addCodeCopy(row);
   oldestId = oldestId ? Math.min(oldestId, m.id) : m.id;
   const near = scrollNearBottom();
   if (prepend) $('listInner').insertBefore(row, $('loadolder').nextSibling);

@@ -1,0 +1,8 @@
+本目录是自托管的第三方前端库（避免依赖外部 CDN）：
+
+- KaTeX 0.16.22 — MIT License — https://katex.org/  (katex/*)
+  用于渲染 LaTeX 数学公式（$...$ 行内、$$...$$ 块级）
+- highlight.js 11.11.1 — BSD-3-Clause License — https://highlightjs.org/  (highlight/*)
+  用于代码块语法高亮（主题 github / github-dark，已按本站 data-theme 作用域化）
+
+只在使用到时才由前端懒加载；不需要构建步骤。

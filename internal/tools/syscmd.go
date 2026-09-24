@@ -137,100 +137,58 @@ func ExecSystemCommand(s SysCtx, cmd, arg string) string {
 
 func sysHelp(s SysCtx) string {
 	var b strings.Builder
-	switch s.Channel {
-	case "qq":
-		b.WriteString("MineAgent 命令（QQ）：\n")
-		b.WriteString("/help —— 显示这份帮助\n")
-		b.WriteString("/status —— 服状态、连接状态、会话消息数\n")
-		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/usage —— 查模型 key 的额度用量\n")
-		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
-		b.WriteString("直接说话就是聊天；要版式说一声，要图说一声\n")
-		if s.IsAdmin {
-			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
-		} else {
-			b.WriteString("写代码跑代码仅管理员可用")
-		}
-	case "wecom":
-		b.WriteString("MineAgent 命令（企业微信）：\n")
-		b.WriteString("/help —— 显示这份帮助\n")
-		b.WriteString("/status —— 服状态、回调状态、会话消息数\n")
-		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
-		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
-		b.WriteString("直接说话就是聊天；要版式说一声，要图说一声\n")
-		if s.IsAdmin {
-			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
-		} else {
-			b.WriteString("写代码跑代码仅管理员可用")
-		}
-	case "wechat":
-		b.WriteString("MineAgent 命令（个人微信）：\n")
-		b.WriteString("/help —— 显示这份帮助\n")
-		b.WriteString("/status —— 服状态、登录状态、会话消息数\n")
-		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
-		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
-		b.WriteString("直接说话就是聊天\n")
-		if s.IsAdmin {
-			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
-		} else {
-			b.WriteString("写代码跑代码仅管理员可用")
-		}
-	case "web":
-		b.WriteString("MineAgent 命令（网页）：\n")
-		b.WriteString("/help —— 显示这份帮助\n")
-		b.WriteString("/status —— 服状态、网页状态、会话消息数\n")
-		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
-		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
-		b.WriteString("直接说话就是聊天；支持 Markdown 排版；拖入/粘贴文件即可上传，让 agent 发文件就调 web_file\n")
-		if s.IsAdmin {
-			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
-		} else {
-			b.WriteString("写代码跑代码仅管理员可用")
-		}
-	case "aibot":
-		b.WriteString("MineAgent 命令（企微智能机器人）：\n")
-		b.WriteString("/help —— 显示这份帮助\n")
-		b.WriteString("/status —— 服状态、长连接状态、会话消息数\n")
-		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
-		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
-		b.WriteString("单聊直接说话；群里 @我 再说\n")
-		if s.IsAdmin {
-			b.WriteString("管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）")
-		} else {
-			b.WriteString("写代码跑代码仅管理员可用")
-		}
-	default:
+	admin := "写代码跑代码仅管理员可用"
+	if s.IsAdmin {
+		admin = "管理员：workspace 写代码跑代码可用（沙箱内，curl/pip 经审查）"
+	}
+	// 服内 MC 通道
+	if s.Channel != "qq" && s.Channel != "wecom" && s.Channel != "wechat" && s.Channel != "aibot" && s.Channel != "web" {
 		b.WriteString("MineAgent 命令（服内，@agent 提问外再加）：\n")
 		b.WriteString("@agent /help —— 显示这份帮助\n")
 		b.WriteString("@agent /status —— 服状态、在线玩家\n")
 		b.WriteString("@agent /memory —— 当前会话记忆概况\n")
 		b.WriteString("@agent /usage —— 查模型 key 额度\n")
 		b.WriteString("MC 操作（传送/给物/命令）直接说，管理员批准后执行")
+		return b.String()
 	}
+
+	switch s.Channel {
+	case "qq":
+		b.WriteString("MineAgent 命令（QQ）：\n")
+	case "wecom":
+		b.WriteString("MineAgent 命令（企业微信）：\n")
+	case "aibot":
+		b.WriteString("MineAgent 命令（企微智能机器人）：\n")
+	case "wechat":
+		b.WriteString("MineAgent 命令（个人微信）：\n")
+	case "web":
+		b.WriteString("MineAgent 命令（网页）：\n")
+	}
+	b.WriteString("/help —— 显示这份帮助\n")
+	switch s.Channel {
+	case "qq":
+		b.WriteString("/status —— 服状态、连接状态、会话消息数\n")
+	case "wecom":
+		b.WriteString("/status —— 服状态、回调状态、会话消息数\n")
+	case "aibot":
+		b.WriteString("/status —— 服状态、长连接状态、会话消息数\n")
+	case "wechat":
+		b.WriteString("/status —— 服状态、登录状态、会话消息数\n")
+	case "web":
+		b.WriteString("/status —— 服状态、网页状态、会话消息数\n")
+	}
+	b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
+	b.WriteString("/usage —— 查模型 key 的额度用量\n")
+	b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
+	switch s.Channel {
+	case "aibot":
+		b.WriteString("单聊直接说话；群里 @我 再说\n")
+	case "web":
+		b.WriteString("直接说话就是聊天；支持 Markdown/公式/代码高亮；拖入或粘贴文件即可上传\n")
+	default:
+		b.WriteString("直接说话就是聊天；要版式说一声，要图说一声\n")
+	}
+	b.WriteString(admin)
 	return b.String()
 }
 

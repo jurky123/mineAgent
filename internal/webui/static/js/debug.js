@@ -76,7 +76,7 @@ export function startDebug() {
     { id: 1, role: 'user', text: '帮我看下站点配置，端口好像冲突了', at: now - 300000 },
     {
       id: 2, role: 'assistant', at: now - 240000,
-      text: '## 结论\n\n有两处需要改：\n\n1. **端口冲突**：`8100` 已经被 BlueMap 占用\n2. 反代少了 `X-Forwarded-For`\n\n```yaml\nserver:\n  listen: 8123\n  proxy: true\n```\n\n> 改完记得重载配置，不要直接重启\n\n| 项 | 现状 | 建议 |\n|---|---|---|\n| 端口 | 8100 | 8123 |\n| 超时 | 30s | 60s |\n\n改完可以发我一份新配置，我再过一遍。'
+      text: '## 结论\n\n有两处需要改：\n\n1. **端口冲突**：`8100` 已经被 BlueMap 占用\n2. ~~超时太短~~ 反代少了 `X-Forwarded-For`\n\n```yaml\nserver:\n  listen: 8123\n  proxy: true\n```\n\n光线追踪的渲染方程是 $L_o(x,\\omega_o) = L_e(x,\\omega_o) + \\int_{\\Omega} f_r(x,\\omega_i,\\omega_o) L_i(x,\\omega_i) (\\omega_i \\cdot n) d\\omega_i$，实时里一般近似为：\n\n$$L_o \\approx \\sum_{k=1}^{N} f_r \\cdot L_i \\cdot \\cos\\theta_k \\cdot \\Delta\\omega_k$$\n\n```python\ndef shade(normal, light, albedo, intensity=1.0):\n    cos_theta = max(0.0, normal.dot(light))\n    return albedo * intensity * cos_theta\n```\n\n待办：\n- [x] 检查端口占用\n- [ ] 补 X-Forwarded-For\n- [ ] 重载配置\n\n> 改完记得重载配置，不要直接重启\n\n| 项 | 现状 | 建议 |\n|---|---|---|\n| 端口 | 8100 | 8123 |\n| 超时 | 30s | 60s |'
     },
     { id: 3, role: 'user', text: '顺便看下这张拓扑图，中间那层是不是多余的？', at: now - 120000, files: [{ name: 'network-topo.png', url: TINY_IMG, image: true }] },
     {

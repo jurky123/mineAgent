@@ -436,34 +436,12 @@ export async function loadOptions(force) {
 // ---------- 事件绑定 ----------
 const isMobile = () => window.matchMedia('(max-width: 899px)').matches;
 
-// 移动端：点输入框就把 composer 停到底部（键盘弹出时不被中央布局顶住），
-// 并用 visualViewport 高度撑着布局，避免输入框被键盘遮住。
-function fitKeyboard(on) {
-  const vv = window.visualViewport;
-  if (!vv || !isMobile()) return;
-  const root = document.documentElement;
-  const apply = () => {
-    if (document.activeElement === $('text')) root.style.setProperty('--app-h', vv.height + 'px');
-    else root.style.removeProperty('--app-h');
-  };
-  if (on) {
-    apply();
-    vv.addEventListener('resize', apply);
-    vv.addEventListener('scroll', apply);
-    fitKeyboard.cleanup = () => {
-      vv.removeEventListener('resize', apply);
-      vv.removeEventListener('scroll', apply);
-      root.style.removeProperty('--app-h');
-    };
-  } else if (fitKeyboard.cleanup) {
-    fitKeyboard.cleanup();
-    fitKeyboard.cleanup = null;
-  }
-}
+// 移动端：点输入框就把 composer 停到底部（键盘弹出时被浏览器自动上推即可，
+// 不再自己改高度——iOS 下改高度反而会把整个应用推出屏幕）。
 $('text').addEventListener('focus', () => {
-  if (isMobile()) { dockAtBottom(); fitKeyboard(true); }
+  if (isMobile()) dockAtBottom();
 });
-$('text').addEventListener('blur', () => fitKeyboard(false));
+
 $('text').addEventListener('input', () => { autoGrow(); syncPalette(); });
 $('text').addEventListener('keydown', (e) => {
   if ($('cmdpalette').classList.contains('on') && cmdList.length) {

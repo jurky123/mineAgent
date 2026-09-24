@@ -146,19 +146,30 @@ export function layout(force) {
 }
 
 // dockAtBottom 供移动端"聚焦输入框"时调用：把 composer 从空状态中央移到底部。
+// 移动端不做位移动画——键盘弹出会同时改变视口，动画中途的 transform 容易把输入框带出屏幕。
 export function dockAtBottom() {
   typingDocked = true;
-  dockComposer(true, true);
+  dockComposer(true, false);
   docked = true;
 }
 
 function dockComposer(atBottom, animate) {
   const c = $('composer');
   const target = atBottom ? $('bottomSlot') : $('emptySlot');
-  if (c.parentElement === target) return;
-  const from = c.getBoundingClientRect();
+  // 清掉上一次可能残留的动画状态（键盘弹出/resize 打断时最容易出问题）
+  if (c._dockTimer) { clearTimeout(c._dockTimer); c._dockTimer = null; }
+  if (c.parentElement === target) {
+    c.style.transition = '';
+    c.style.transform = '';
+    return;
+  }
+  const from = animate ? c.getBoundingClientRect() : null;
   target.appendChild(c);
-  if (!animate) return;
+  if (!animate) {
+    c.style.transition = '';
+    c.style.transform = '';
+    return;
+  }
   const to = c.getBoundingClientRect();
   const dx = from.left - to.left, dy = from.top - to.top;
   if (!dx && !dy) return;
@@ -167,7 +178,11 @@ function dockComposer(atBottom, animate) {
   requestAnimationFrame(() => {
     c.style.transition = 'transform .3s cubic-bezier(.2,.8,.2,1)';
     c.style.transform = '';
-    setTimeout(() => { c.style.transition = ''; }, 340);
+    c._dockTimer = setTimeout(() => {
+      c.style.transition = '';
+      c.style.transform = '';
+      c._dockTimer = null;
+    }, 360);
   });
 }
 

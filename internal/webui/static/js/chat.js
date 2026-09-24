@@ -36,11 +36,14 @@ function fileBubble(f) {
 export function renderMsg(m, prepend) {
   if (msgIds.has(m.id)) return;
   msgIds.add(m.id);
+  // 注意：服务端给 agent 消息的 role 是 "agent"（不是 assistant），
+  // 这里统一按"非 user 即助手"处理，否则会走纯文本分支（线上踩过）。
+  const isAgent = m.role !== 'user';
   const row = document.createElement('div');
-  row.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+  row.className = 'msg ' + (isAgent ? 'assistant' : 'user');
   row.dataset.raw = m.text || '';
   let html = '<div class="body">';
-  if (m.role === 'assistant') {
+  if (isAgent) {
     html += '<div class="content"></div>' +
       (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
       '<div class="actions"><span class="time">' + fmtTime(m.at) + '</span>' +
@@ -53,7 +56,7 @@ export function renderMsg(m, prepend) {
   html += '</div>';
   row.innerHTML = html;
   const content = row.querySelector('.content');
-  if (m.role === 'assistant') {
+  if (isAgent) {
     renderContent(content, m.text || '');
     enhanceContent(content);   // 懒加载高亮/KaTeX（没有代码/公式就不加载）
   } else {

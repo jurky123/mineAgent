@@ -116,9 +116,27 @@ async function openUsage() {
 function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); }
 function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); }
 
+// 页面比服务端旧（开着标签页时后端更新过）→ 自动带新参数刷新一次，避免旧 JS 一直用下去
+async function ensureFresh() {
+  try {
+    const cur = document.querySelector('meta[name="mineagent-version"]')?.content || '';
+    console.info('[mineagent] web', cur);
+    const res = await fetch('/api/version', { cache: 'no-store' });
+    const { version } = await res.json();
+    if (!version || !cur || cur === version) return;
+    if (sessionStorage.getItem('mineagent.reloaded') === version) return;   // 防循环
+    sessionStorage.setItem('mineagent.reloaded', version);
+    const u = new URL(location.href);
+    u.searchParams.set('_v', version);
+    console.warn('[mineagent] 页面版本', cur, '比服务端', version, '旧，自动刷新');
+    location.replace(u.toString());
+  } catch (e) { /* 离线等场景忽略 */ }
+}
+
 // ---------- 启动 ----------
 function boot() {
   initTheme();
+  ensureFresh();
   // 渲染调试模式：?ui=1 不连后端，直接用假数据渲染（给截图/视觉对比用）
   if (new URLSearchParams(location.search).has('ui')) {
     import('./debug.js').then((m) => m.startDebug());

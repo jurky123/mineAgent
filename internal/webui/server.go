@@ -49,6 +49,10 @@ func (c *Channel) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.handleIndex)
 	mux.HandleFunc("/api/login", c.handleLogin)
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
+	})
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("/api/logout", c.handleLogout)
 	mux.HandleFunc("/api/me", c.withAuth(c.handleMe))

@@ -279,7 +279,7 @@ function openModelPopover(back) {
   box.classList.add('on');
 }
 
-function openIntelPopover() {
+export function openIntelPopover() {
   const box = $('popover');
   const idx = intelIndex(S.options && S.options.effort);
   const modelName = (S.options && (S.options.model || S.options.defaultModel)) || '';

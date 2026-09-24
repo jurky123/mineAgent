@@ -23,15 +23,15 @@ export function initConversations() {
   searchInput.addEventListener('input', () => {
     search = searchInput.value.trim().toLowerCase();
     syncClear();
-    render();
+    renderList();
   });
-  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { searchInput.value = ''; search = ''; syncClear(); render(); } });
-  clearBtn.onclick = () => { searchInput.value = ''; search = ''; syncClear(); render(); searchInput.focus(); };
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { searchInput.value = ''; search = ''; syncClear(); renderList(); } });
+  clearBtn.onclick = () => { searchInput.value = ''; search = ''; syncClear(); renderList(); searchInput.focus(); };
   bus.on('conversations-changed', () => { refresh().catch(() => {}); });
   bus.on('message-other', ({ conv }) => {
     if (!S.conversations.some((c) => c.conv === conv)) return;
     S.unread.add(conv);
-    render();
+    renderList();
   });
 }
 
@@ -41,7 +41,7 @@ export function newChat() {
   setConv(null);
   S.unread.clear();
   clearMessages();
-  render();
+  renderList();
   $('sidebar').classList.remove('open');
   $('backdrop').classList.remove('on');
   $('text').focus();
@@ -55,7 +55,7 @@ export async function refresh() {
     setConv(null);
     clearMessages();
   }
-  render();
+  renderList();
 }
 
 function dayBucket(ms) {
@@ -68,7 +68,7 @@ function dayBucket(ms) {
   return 2;
 }
 
-function render() {
+export function renderList() {
   const box = $('conv-list');
   box.innerHTML = '';
   const groups = ['今天', '昨天', '更早'];
@@ -115,7 +115,7 @@ function render() {
 async function switchTo(conv) {
   setConv(conv);
   S.unread.delete(conv);
-  render();
+  renderList();
   $('sidebar').classList.remove('open');
   $('backdrop').classList.remove('on');
   await loadHistory();

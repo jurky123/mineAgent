@@ -91,6 +91,11 @@ function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').c
 // ---------- 启动 ----------
 function boot() {
   initTheme();
+  // 渲染调试模式：?ui=1 不连后端，直接用假数据渲染（给截图/视觉对比用）
+  if (new URLSearchParams(location.search).has('ui')) {
+    import('./debug.js').then((m) => m.startDebug());
+    return;
+  }
   initWorkspace();
   initConversations();
   setUnauthorizedHandler(() => logout(true));

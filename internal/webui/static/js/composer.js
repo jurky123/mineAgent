@@ -42,7 +42,7 @@ export async function sendMsg() {
     $('text').value = ''; autoGrow();
     S.pending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
     S.pending = []; renderPending();
-    setTyping(true);
+    setTyping(true, '正在思考…');
     setTimeout(() => { if (S.waiting) setTyping(false); }, 180000);
     if (!wasDraft) bus.emit('conversations-changed');
   } catch (e) {

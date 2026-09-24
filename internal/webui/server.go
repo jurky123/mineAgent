@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"mineagent/internal/storage"
+	"mineagent/internal/version"
 )
 
 //go:embed static
@@ -64,7 +66,7 @@ func (c *Channel) handler() http.Handler {
 	mux.HandleFunc("/api/conversations", c.withAuth(c.handleConversations))
 	mux.HandleFunc("/api/conversations/delete", c.withAuth(c.handleConversationDelete))
 	mux.HandleFunc("/api/conversations/rename", c.withAuth(c.handleConversationRename))
-	mux.Handle("/static/", http.StripPrefix("/static/", noCache(http.FileServer(http.FS(staticRoot)))))
+	mux.Handle("/static/", noCache(http.HandlerFunc(c.handleStatic)))
 	return c.cors(mux)
 }
 
@@ -118,14 +120,40 @@ func (c *Channel) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	// 版本号注入 + 禁缓存（含中间代理）
+	b = []byte(strings.ReplaceAll(string(b), "__VER__", url.PathEscape(version.Version)))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	_, _ = w.Write(b)
+}
+
+// handleStatic 静态资源：支持 /static/<version>/... 与 /static/... 两种路径。
+// index.html 里引用的是带版本号的路径（每次构建都不同），
+// 这样即使中间有代理/CDN 乱缓存，也不会把新旧 JS 混用。
+func (c *Channel) handleStatic(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/static/")
+	if i := strings.Index(rest, "/"); i >= 0 {
+		// 第一段是版本号（或历史遗留的目录名）：剥掉
+		switch rest[:i] {
+		case "css", "js":
+			// /static/css/... 形式，原样
+		default:
+			rest = rest[i+1:]
+		}
+	}
+	if rest == "" || strings.Contains(rest, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFileFS(w, r, staticRoot, rest)
 }
 
 // noCache 静态资源禁缓存（文件没做 hash，改版即生效更重要）。
 func noCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -732,6 +760,8 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 	name, tok := c.auth(r)
 	if name == "" {
+		c.log.Info("msgfile rejected", "m", r.URL.Query().Get("m"), "hasToken", r.URL.Query().Get("token") != "",
+			"hasCookie", hasAuthCookie(r), "ua", short(r.UserAgent(), 60), "remote", r.RemoteAddr)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 		return
 	}
@@ -778,7 +808,23 @@ func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 		disp = "inline"
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename*=UTF-8''%s", disp, urlEscape(fileName)))
+	c.log.Info("msgfile served", "m", msg.ID, "name", short(name, 24), "file", short(rel, 60))
 	http.ServeFile(w, r, full)
+}
+
+// hasAuthCookie 只看有没有带登录 cookie（不读值，日志用）。
+func hasAuthCookie(r *http.Request) bool {
+	_, err := r.Cookie("mineagent_token")
+	return err == nil
+}
+
+// short 日志用的截断（按 rune，避免砍半个中文）。
+func short(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

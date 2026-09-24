@@ -69,6 +69,9 @@ type Request struct {
 	// 用 systemInstruction 区分两个通道的人设与约束。
 	Tools             []tool.BaseTool
 	SystemInstruction string
+	// Progress 可选：运行中的进度回调（工具类别变化时回调，用于"正在查资料…"这类动态状态）。
+	// 网页通道接 SSE 实时状态；IM 通道传 nil（它们没有可编辑的状态位，避免刷屏）。
+	Progress func(text string)
 	// Model / ReasoningEffort 为空用默认（config.Model.Name / 不传 reasoning_effort）。
 	// 网页通道按账号偏好填（+ 菜单里切模型/思考强度）。
 	Model           string
@@ -89,6 +92,85 @@ type pendingRun struct {
 	cutoff      int64
 	tools       []tool.BaseTool
 	instruction string
+}
+
+// runProgress 收集一次 run 里用过的工具类别，供动态状态与后台文案使用。
+type runProgress struct {
+	mu     sync.Mutex
+	kinds  []string
+	last   string
+	lastAt time.Time
+}
+
+func (p *runProgress) note(kind, text string, cb func(string)) {
+	p.mu.Lock()
+	if kind != "" {
+		dup := false
+		for _, k := range p.kinds {
+			if k == kind {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			p.kinds = append(p.kinds, kind)
+		}
+	}
+	emit := cb != nil && text != "" && text != p.last && time.Since(p.lastAt) > 1200*time.Millisecond
+	if emit {
+		p.last = text
+		p.lastAt = time.Now()
+	}
+	p.mu.Unlock()
+	if emit {
+		cb(text)
+	}
+}
+
+// summary 用中文概括正在做什么（"查资料/跑代码"），用于后台提示文案。
+func (p *runProgress) summary() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	label := map[string]string{
+		"search": "在查资料", "code": "在跑代码", "file": "在整理文件",
+		"send": "在准备文件", "mc": "在查服务器", "remind": "在设置提醒",
+	}
+	var parts []string
+	for _, k := range p.kinds {
+		if s := label[k]; s != "" && !containsStr(parts, s) {
+			parts = append(parts, s)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "、")
+}
+
+// toolProgress 工具名 -> (类别, 给用户看的动态状态文案)。
+func toolProgress(name string) (kind, text string) {
+	switch {
+	case name == "web_search":
+		return "search", "正在搜索资料…"
+	case name == "web_fetch":
+		return "search", "正在阅读网页…"
+	case name == "workspace_exec":
+		return "code", "正在运行代码…"
+	case name == "workspace_write":
+		return "file", "正在写文件…"
+	case name == "workspace_read" || name == "workspace_ls":
+		return "file", "正在读文件…"
+	case name == "qq_image" || name == "wecom_image" || name == "web_file":
+		return "send", "正在发送文件…"
+	case name == "qq_markdown" || name == "wecom_markdown":
+		return "send", "正在排版发送…"
+	case strings.HasPrefix(name, "minecraft_"):
+		return "mc", "正在查服务器…"
+	case name == "remind":
+		return "remind", "正在设置提醒…"
+	default:
+		return "", ""
+	}
 }
 
 type Agent struct {
@@ -344,6 +426,10 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		_ = req.Session.Reply(rctx, "抱歉，助手初始化失败。", req.Player)
 		return
 	}
+	progress := &runProgress{}
+	if req.Progress != nil {
+		req.Progress("正在思考…")
+	}
 	iter := runner.Run(rctx, msgs, adk.WithCheckPointID(cpID))
 	// 后台任务：只有 QQ 请求（ReplyTarget 非空）且配了 BackgroundAfterSec 才启用。
 	// MC 聊天是同步问答，不转后台。
@@ -354,7 +440,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	// 发出去时 msg_id 可能已过期，channel.Send 会自动降级成主动消息。
 	backgroundAfter := time.Duration(a.cfg.BackgroundAfterSec) * time.Second
 	if req.ReplyTarget == "" || backgroundAfter <= 0 {
-		replied := a.consume(rctx, req, sessionKey, runnerKey, cpID, iter)
+		replied := a.consume(rctx, req, sessionKey, runnerKey, cpID, iter, progress)
 		if replied {
 			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String())
 		}
@@ -362,7 +448,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	}
 	done := make(chan bool, 1)
 	go func() {
-		done <- a.consume(rctx, req, sessionKey, runnerKey, cpID, iter)
+		done <- a.consume(rctx, req, sessionKey, runnerKey, cpID, iter, progress)
 	}()
 	select {
 	case replied := <-done:
@@ -371,7 +457,14 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		}
 	case <-time.After(backgroundAfter):
 		a.log.Info("agent backgrounded", "session", sessionKey, "player", req.Player, "after", backgroundAfter.String())
-		_ = req.Session.Reply(rctx, "收到，这个要跑一会儿（查资料/跑代码/画图），做完我直接发你，不用再问。", req.ReplyTarget)
+		// 有实时进度的通道（网页）不用再发一条固定文案；IM 通道按已发生的动作拼一句。
+		if req.Progress == nil {
+			notice := "收到，这个要跑一会儿，做完我直接发你，不用再问。"
+			if s := progress.summary(); s != "" {
+				notice = "收到，" + s + "，做完我直接发你，不用再问。"
+			}
+			_ = req.Session.Reply(rctx, notice, req.ReplyTarget)
+		}
 		replied := <-done
 		if replied {
 			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String(), "background", true)
@@ -451,7 +544,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	return r, key, nil
 }
 
-func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey, cpID string, iter *adk.AsyncIterator[*adk.AgentEvent]) bool {
+func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey, cpID string, iter *adk.AsyncIterator[*adk.AgentEvent], progress *runProgress) bool {
 	var reply string
 	for {
 		ev, ok := iter.Next()
@@ -482,6 +575,10 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 		if err != nil {
 			a.log.Warn("agent message decode", "err", err)
 			continue
+		}
+		for _, tc := range msg.ToolCalls {
+			kind, text := toolProgress(tc.Function.Name)
+			progress.note(kind, text, req.Progress)
 		}
 		if msg.Role == schema.Assistant && strings.TrimSpace(msg.Content) != "" {
 			reply = strings.TrimSpace(msg.Content)
@@ -589,7 +686,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		_ = run.session.Reply(rctx, "恢复执行失败："+err.Error(), a.target(resumeReq))
 		return
 	}
-	a.consume(rctx, resumeReq, run.sessionKey, run.runnerKey, run.cpID, iter)
+	a.consume(rctx, resumeReq, run.sessionKey, run.runnerKey, run.cpID, iter, &runProgress{})
 }
 
 // paramFixTool 给"没有参数的"工具有效化 parameters（补空 object）。
@@ -623,6 +720,15 @@ func withParamSchemas(tools []tool.BaseTool) []tool.BaseTool {
 		out = append(out, &paramFixTool{inner: t})
 	}
 	return out
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 type headerTransport struct {

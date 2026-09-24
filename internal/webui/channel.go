@@ -429,6 +429,9 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *stri
 		SystemInstruction: webInstruction,
 		Model:             prefs.Model,
 		ReasoningEffort:   prefs.Effort,
+		Progress: func(text string) {
+			c.publishRaw(name, map[string]any{"type": "progress", "conv": convID, "text": text})
+		},
 	}) {
 		_ = sess.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", target)
 	}

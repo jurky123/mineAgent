@@ -89,15 +89,34 @@ export function clearMessages() {
   updateLoadOlder(); setTyping(false); layout(true);
 }
 
-export function setTyping(on) {
+let typingTimer = null, typingStart = 0, typingLabel = '正在思考…';
+
+// setTyping(true, '正在搜索资料…')：动态状态行，带已用秒数
+export function setTyping(on, text) {
   S.waiting = on;
-  const old = $('listInner').querySelector('.typing');
-  if (!on) { if (old) old.remove(); return; }
-  if (old) return;
-  const row = document.createElement('div');
-  row.className = 'typing';
-  row.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> 正在输入…';
-  $('listInner').appendChild(row);
+  const box = $('listInner');
+  let row = box.querySelector('.typing');
+  if (!on) {
+    if (typingTimer) { clearInterval(typingTimer); typingTimer = null; }
+    if (row) row.remove();
+    return;
+  }
+  if (text) typingLabel = text;
+  if (!row) {
+    row = document.createElement('div');
+    row.className = 'typing';
+    row.innerHTML = '<span class="dots"><span></span><span></span><span></span></span><span class="typing-text"></span>';
+    box.appendChild(row);
+    typingStart = Date.now();
+  }
+  const paint = () => {
+    const el = row.querySelector('.typing-text');
+    if (!el) return;
+    const secs = Math.floor((Date.now() - typingStart) / 1000);
+    el.textContent = typingLabel + (secs >= 3 ? '（' + secs + 's）' : '');
+  };
+  paint();
+  if (!typingTimer) typingTimer = setInterval(paint, 1000);
   if (scrollNearBottom()) toBottom();
 }
 
@@ -204,6 +223,8 @@ export function connectSSE() {
       if (data.message.role === 'agent') setTyping(false);
     } else if (data.type === 'cleared') {
       if (S.conv !== null && data.conv === S.conv) clearMessages();
+    } else if (data.type === 'progress') {
+      if (S.conv !== null && (data.conv || '') === S.conv) setTyping(true, data.text || '正在思考…');
     } else if (data.type === 'conversations') {
       bus.emit('conversations-changed');
     }

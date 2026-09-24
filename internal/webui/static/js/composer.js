@@ -451,7 +451,12 @@ $('attach').onclick = (e) => {
   if (box.classList.contains('on')) { box.classList.remove('on'); return; }
   renderPlusMenu(); closePopovers('plusmenu'); box.classList.add('on');
 };
-$('intelbtn').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
+$('intelbtn').onclick = (e) => {
+  e.stopPropagation();
+  const box = $('popover');
+  if (box.classList.contains('on')) { box.classList.remove('on'); return; }  // 再点一次关闭
+  openIntelPopover();
+};
 $('file').onchange = () => { addFiles($('file').files); $('file').value = ''; };
 document.querySelectorAll('.suggests button').forEach((b) => {
   b.onclick = () => { $('text').value = b.dataset.q; autoGrow(); $('text').focus(); };

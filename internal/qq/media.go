@@ -214,8 +214,15 @@ func (a *API) uploadLocal(ctx context.Context, scene, target, fileName string, d
 		blockSize = 5 << 20
 	}
 	putClient := &http.Client{Timeout: 60 * time.Second}
+	// 注意：parts 的 index 是从 1 开始的（实测返回 index:1），不是文档写的从 0 开始。
+	// 切片偏移必须用 (index-1)*blockSize，不能用 index*blockSize，
+	// 否则 start>=len(data) 直接 break，一个分片都不传，合并时报 40093006。
 	for _, part := range prep.Parts {
-		start := part.Index * blockSize
+		seq := part.Index - 1
+		if seq < 0 {
+			seq = 0
+		}
+		start := seq * blockSize
 		if start >= len(data) {
 			break
 		}

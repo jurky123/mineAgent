@@ -142,7 +142,9 @@ func TestUploadLocalImageFlow(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/upload_prepare"):
 			// block_size 给 1MB，64 字节文件只 1 片。
-			fmt.Fprintf(w, `{"upload_id":"up1","block_size":"1048576","parts":[{"index":0,"presigned_url":"http://%s/put0","block_size":"68"}],"upload_config":{"concurrency":1,"retry_timeout":300,"retry_delay":1}}`, r.Host)
+			// 注意：真实网关 parts 的 index 从 1 开始（不是文档的从 0 开始），
+			// 单测用 index:1 覆盖这个分支。
+			fmt.Fprintf(w, `{"upload_id":"up1","block_size":"1048576","parts":[{"index":1,"presigned_url":"http://%s/put0","block_size":"68"}],"upload_config":{"concurrency":1,"retry_timeout":300,"retry_delay":1}}`, r.Host)
 		case strings.HasSuffix(r.URL.Path, "/upload_part_finish"):
 			fmt.Fprint(w, `{}`)
 		case strings.HasSuffix(r.URL.Path, "/files"):

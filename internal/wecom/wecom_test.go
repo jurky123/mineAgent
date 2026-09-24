@@ -196,3 +196,58 @@ func TestChannelTargetSplit(t *testing.T) {
 		}
 	}
 }
+
+func TestDecryptAnyLearnsCorpID(t *testing.T) {
+	key := testAESKey()
+	corpID := "wwlearned1234"
+	enc, err := Encrypt(key, "<xml><MsgType>text</MsgType></xml>", corpID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, receiveID, err := DecryptAny(key, enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receiveID != corpID {
+		t.Fatalf("receiveID = %q, want %q", receiveID, corpID)
+	}
+	if !strings.Contains(msg, "text") {
+		t.Fatalf("msg = %q", msg)
+	}
+}
+
+func TestCallbackLearnsCorpIDOnGET(t *testing.T) {
+	key := testAESKey()
+	realCorpID := "wwrealsecret"
+	token := "tok"
+	// 服务器配置里 corpId 留空。
+	echostrEnc, _ := Encrypt(key, "echo-ok", realCorpID)
+	srv := &CallbackServer{
+		cfg: Config{Token: token, EncodingAES: key},
+		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	var learned string
+	srv.WithCorpIDLearner(func(id string) { learned = id })
+	ts := httptest.NewServer(http.HandlerFunc(srv.handle))
+	t.Cleanup(ts.Close)
+
+	tsStr, nonce := "1", "2"
+	sig := Sign(token, tsStr, nonce, echostrEnc)
+	q := url.Values{}
+	q.Set("msg_signature", sig)
+	q.Set("timestamp", tsStr)
+	q.Set("nonce", nonce)
+	q.Set("echostr", echostrEnc)
+	resp, err := http.Get(ts.URL + "/wecom?" + q.Encode())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || string(body) != "echo-ok" {
+		t.Fatalf("status=%d body=%q", resp.StatusCode, body)
+	}
+	if learned != realCorpID {
+		t.Fatalf("learned = %q, want %q", learned, realCorpID)
+	}
+}

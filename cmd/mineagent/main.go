@@ -150,11 +150,12 @@ func main() {
 		log.Info("qq channel disabled (qq.appId/appSecret empty)")
 	}
 
-	// 企业微信通道：corpId/secret/token/aesKey 都配齐才启动。
+	// 企业微信通道：secret/token/aesKey 配齐就启动（corpId 可留空，
+	// 首次回调解密时会自动学到并写日志，之后补进 config.json 更稳）。
 	// 回调服务监听 cfg.WeCom.Port（默认 80，微信只允许 80/443），
-	// 腾讯云控制台需放行该端口；被动回复走主动 SendText，无 5 秒窗口压力。
+	// 腾讯云控制台需放行该端口；回复走主动 SendText，无 5 秒窗口压力。
 	var wecomCh *wecom.Channel
-	if cfg.WeCom.CorpID != "" && cfg.WeCom.Secret != "" && cfg.WeCom.Token != "" && cfg.WeCom.EncodingAES != "" {
+	if cfg.WeCom.Secret != "" && cfg.WeCom.Token != "" && cfg.WeCom.EncodingAES != "" {
 		wecomTokens := wecom.NewTokenSource(cfg.WeCom.CorpID, cfg.WeCom.Secret, log)
 		wecomAPI := wecom.NewAPI(wecomTokens, cfg.WeCom.AgentID, log)
 		wecomCh = wecom.NewChannel(log, cfg, hub, store, ag, wecomAPI,
@@ -166,9 +167,9 @@ func main() {
 			}
 		}()
 		defer wecomCh.Stop()
-		log.Info("wecom channel enabled", "port", cfg.WeCom.Port)
+		log.Info("wecom channel enabled", "port", cfg.WeCom.Port, "corpIdKnown", cfg.WeCom.CorpID != "")
 	} else {
-		log.Info("wecom channel disabled (wecom.corpId/secret/token/encodingAesKey incomplete)")
+		log.Info("wecom channel disabled (wecom.secret/token/encodingAesKey incomplete)")
 	}
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {

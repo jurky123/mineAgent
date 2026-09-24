@@ -12,9 +12,11 @@ import (
 	"time"
 )
 
-// access_token 管 access_token：
+// TokenSource 管 access_token：
 // GET {qyapi}/cgi-bin/gettoken?corpid=..&corpsecret=.. -> {access_token, expires_in}。
 // 有效期 7200s，提前 600s 刷新；单飞；失败沿用旧值宽限 300s（与 QQ TokenSource 同构）。
+// corpID 支持后置学习（SetCorpID）：首次只填 Secret/Token/AESKey 时，
+// gettoken 还拿不到 token，学到 corpId 后即可用。
 type TokenSource struct {
 	corpID  string
 	secret  string
@@ -36,8 +38,32 @@ func NewTokenSource(corpID, secret string, log *slog.Logger) *TokenSource {
 	}
 }
 
+// SetCorpID 学到的 corpId 写回（只在原先为空且 token 未就绪时生效）。
+func (t *TokenSource) SetCorpID(id string) {
+	if id == "" {
+		return
+	}
+	t.mu.Lock()
+	if t.corpID == "" {
+		t.corpID = id
+		t.log.Info("wecom corpId learned", "corpId", id, "hint", "建议写入 config.json 的 wecom.corpId")
+	}
+	t.mu.Unlock()
+}
+
+// CorpID 当前 corpId（可能为空=还没学到）。
+func (t *TokenSource) CorpID() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.corpID
+}
+
 func (t *TokenSource) Token(ctx context.Context) (string, error) {
 	t.mu.Lock()
+	if t.corpID == "" {
+		t.mu.Unlock()
+		return "", fmt.Errorf("wecom corpId 未配置（等首次回调学到或写入 config.json）")
+	}
 	if t.token != "" && time.Now().Before(t.expires) {
 		tok := t.token
 		t.mu.Unlock()
@@ -132,6 +158,9 @@ type API struct {
 func NewAPI(tokens *TokenSource, agentID int, log *slog.Logger) *API {
 	return &API{tokens: tokens, agentID: agentID, log: log, client: &http.Client{Timeout: 15 * time.Second}}
 }
+
+// Tokens 暴露 token 源（channel 用它接 corpId 学习回调）。
+func (a *API) Tokens() *TokenSource { return a.tokens }
 
 type apiErr struct {
 	ErrCode int    `json:"errcode"`

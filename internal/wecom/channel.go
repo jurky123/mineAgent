@@ -3,6 +3,7 @@ package wecom
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ type Channel struct {
 	store   *storage.Store
 	ag      *agent.Agent
 	api     *API
+	tokens  *TokenSource
 	cb      *CallbackServer
 	weTools []tool.BaseTool
 
@@ -62,6 +64,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		store:         store,
 		ag:            ag,
 		api:           api,
+		tokens:        api.Tokens(),
 		weTools:       weTools,
 		sessions:      make(map[string]*session.Session),
 		lastSend:      make(map[string]time.Time),
@@ -73,7 +76,11 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		Token:       cfg.WeCom.Token,
 		EncodingAES: cfg.WeCom.EncodingAES,
 		Port:        cfg.WeCom.Port,
-	}, log, c.onMessage)
+	}, log, c.onMessage).WithCorpIDLearner(func(id string) {
+		if c.tokens != nil {
+			c.tokens.SetCorpID(id)
+		}
+	})
 	return c
 }
 
@@ -90,41 +97,16 @@ func (c *Channel) WithMCStatus(fn func(ctx context.Context) (string, error)) *Ch
 	return c
 }
 
-// WeComStatus 供 /status：回调服务已监听即视为可用。
+// WeComStatus 供 /status：回调服务已监听即视为可用；corpId 未知时标注。
 func (c *Channel) WeComStatus() string {
-	if c.cb != nil {
-		return "回调已监听（端口" + itoa(c.cfg.Port) + "）"
+	if c.cb == nil {
+		return "未启动"
 	}
-	return "未启动"
-}
-
-func itoa(n int) string {
-	if n <= 0 {
-		n = 80
+	s := "回调已监听（端口" + strconv.Itoa(c.cfg.Port) + "）"
+	if c.tokens != nil && c.tokens.CorpID() == "" {
+		s += "，corpId 未学到（发条消息即自动学）"
 	}
-	return strings.TrimSpace(strings.Join([]string{intToStr(n)}, ""))
-}
-
-func intToStr(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [12]byte
-	i := len(b)
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
+	return s
 }
 
 // isAdmin 判企微管理员：明文 userid 命中 adminUserIds。

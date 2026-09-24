@@ -28,6 +28,8 @@ type CallbackServer struct {
 	srv  *http.Server
 
 	onMessage func(InboundMessage)
+	// onCorpID 学到 corpId 时回调（首次配置只有 Secret/Token/AESKey 时靠它自动补全）。
+	onCorpID func(string)
 }
 
 type Config struct {
@@ -39,6 +41,30 @@ type Config struct {
 
 func NewCallbackServer(cfg Config, log *slog.Logger, onMessage func(InboundMessage)) *CallbackServer {
 	return &CallbackServer{cfg: cfg, log: log, onMessage: onMessage}
+}
+
+// WithCorpIDLearner 设置 corpId 学习回调。
+func (s *CallbackServer) WithCorpIDLearner(fn func(string)) *CallbackServer {
+	s.onCorpID = fn
+	return s
+}
+
+// decrypt 解回调密文：corpId 已配置就严格校验，未配置则不校验并学一手。
+func (s *CallbackServer) decrypt(encrypt string) (string, error) {
+	if s.cfg.CorpID != "" {
+		return Decrypt(s.cfg.EncodingAES, encrypt, s.cfg.CorpID)
+	}
+	msg, receiveID, err := DecryptAny(s.cfg.EncodingAES, encrypt)
+	if err != nil {
+		return "", err
+	}
+	if receiveID != "" {
+		s.cfg.CorpID = receiveID // 后续请求走严格校验
+		if s.onCorpID != nil {
+			s.onCorpID(receiveID)
+		}
+	}
+	return msg, nil
 }
 
 func (s *CallbackServer) Start() error {
@@ -75,7 +101,7 @@ func (s *CallbackServer) handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad signature", http.StatusForbidden)
 			return
 		}
-		plain, err := Decrypt(s.cfg.EncodingAES, echostr, s.cfg.CorpID)
+		plain, err := s.decrypt(echostr)
 		if err != nil {
 			s.log.Warn("wecom verify: decrypt failed", "err", err)
 			http.Error(w, "decrypt failed", http.StatusForbidden)
@@ -107,7 +133,7 @@ func (s *CallbackServer) handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad signature", http.StatusForbidden)
 			return
 		}
-		plain, err := Decrypt(s.cfg.EncodingAES, env.Encrypt, s.cfg.CorpID)
+		plain, err := s.decrypt(env.Encrypt)
 		if err != nil {
 			s.log.Warn("wecom callback: decrypt failed", "err", err)
 			http.Error(w, "decrypt failed", http.StatusForbidden)

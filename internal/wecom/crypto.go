@@ -92,20 +92,34 @@ func Encrypt(encodingAES, plainXML, corpID string) (string, error) {
 
 // Decrypt 解 base64 密文，校验 corpID，返回明文 XML。
 func Decrypt(encodingAES, encryptB64, corpID string) (string, error) {
-	key, err := aesKey(encodingAES)
+	msg, receiveID, err := DecryptAny(encodingAES, encryptB64)
 	if err != nil {
 		return "", err
+	}
+	if corpID != "" && receiveID != corpID {
+		return "", fmt.Errorf("corpId mismatch")
+	}
+	return msg, nil
+}
+
+// DecryptAny 解 base64 密文，不校验 receiveID（corpId 未知时用），
+// 返回 (明文, receiveid)。receiveid 对自建应用就是 corpId——
+// 首次配置只拿到 Secret/Token/AESKey 没填 corpId 时，靠它自动学会。
+func DecryptAny(encodingAES, encryptB64 string) (string, string, error) {
+	key, err := aesKey(encodingAES)
+	if err != nil {
+		return "", "", err
 	}
 	raw, err := base64.StdEncoding.DecodeString(encryptB64)
 	if err != nil {
-		return "", fmt.Errorf("bad encrypt: %w", err)
+		return "", "", fmt.Errorf("bad encrypt: %w", err)
 	}
 	if len(raw) == 0 || len(raw)%32 != 0 {
-		return "", fmt.Errorf("bad encrypt length %d", len(raw))
+		return "", "", fmt.Errorf("bad encrypt length %d", len(raw))
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	iv := key[:16]
 	mode := cipher.NewCBCDecrypter(block, iv)
@@ -113,21 +127,18 @@ func Decrypt(encodingAES, encryptB64, corpID string) (string, error) {
 	mode.CryptBlocks(plain, raw)
 	plain, err = pkcs7Unpad(plain, 32)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if len(plain) < 20 {
-		return "", fmt.Errorf("plain too short")
+		return "", "", fmt.Errorf("plain too short")
 	}
 	msgLen := binary.BigEndian.Uint32(plain[16:20])
 	if int(20+msgLen) > len(plain) {
-		return "", fmt.Errorf("bad msg_len %d", msgLen)
+		return "", "", fmt.Errorf("bad msg_len %d", msgLen)
 	}
 	msg := plain[20 : 20+msgLen]
-	gotCorp := string(plain[20+msgLen:])
-	if gotCorp != corpID {
-		return "", fmt.Errorf("corpId mismatch")
-	}
-	return string(msg), nil
+	receiveID := string(plain[20+msgLen:])
+	return string(msg), receiveID, nil
 }
 
 func pkcs7Pad(b []byte, blockSize int) []byte {

@@ -59,6 +59,8 @@ func MatchSystemCommand(text string) (cmd, arg string) {
 			return "unbind", ""
 		case "myid":
 			return "myid", ""
+		case "usage", "用量", "额度":
+			return "usage", ""
 		}
 		return "", ""
 	}
@@ -74,6 +76,8 @@ func MatchSystemCommand(text string) (cmd, arg string) {
 		return "unbind", ""
 	case "我是谁", "我的绑定", "我是管理吗", "我是管理员吗":
 		return "myid", ""
+	case "额度", "用量", "还剩多少额度", "key额度":
+		return "usage", ""
 	}
 	// "绑定 X" / "绑定X"（不带 /）。
 	if rest, ok := strings.CutPrefix(t, "绑定"); ok {
@@ -100,6 +104,8 @@ type SysCtx struct {
 	QQIDs []string
 	// Requester 请求者展示名：MC=玩家名，QQ=qq:<openid>。
 	Requester string
+	// Usage 查模型额度（/usage），返回一行中文；nil 表示该通道不支持。
+	Usage func(ctx context.Context) (string, error)
 }
 
 // ExecSystemCommand 执行系统命令，返回直接回复用户的文本。
@@ -122,6 +128,8 @@ func ExecSystemCommand(s SysCtx, cmd, arg string) string {
 		return sysBind(s, "")
 	case "myid":
 		return sysMyID(s)
+	case "usage":
+		return sysUsage(s)
 	default:
 		return ""
 	}
@@ -135,6 +143,31 @@ func sysHelp(s SysCtx) string {
 		b.WriteString("/help —— 显示这份帮助\n")
 		b.WriteString("/status —— 服状态、连接状态、会话消息数\n")
 		b.WriteString("/memory —— 看当前会话记了多少（/memory clear 清空，/memory summary 看摘要）\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
+		b.WriteString("/usage —— 查模型 key 的额度用量\n")
 		b.WriteString("/bind <MC名> —— 绑定 MC 身份（MC 操作审批用）；/unbind 解绑；/myid 看身份\n")
 		b.WriteString("直接说话就是聊天；要版式说一声，要图说一声\n")
 		if s.IsAdmin {
@@ -195,6 +228,7 @@ func sysHelp(s SysCtx) string {
 		b.WriteString("@agent /help —— 显示这份帮助\n")
 		b.WriteString("@agent /status —— 服状态、在线玩家\n")
 		b.WriteString("@agent /memory —— 当前会话记忆概况\n")
+		b.WriteString("@agent /usage —— 查模型 key 额度\n")
 		b.WriteString("MC 操作（传送/给物/命令）直接说，管理员批准后执行")
 	}
 	return b.String()
@@ -301,6 +335,17 @@ func sysBind(s SysCtx, player string) string {
 		}
 	}
 	return fmt.Sprintf("已绑定到 MC 玩家 %s，之后请求 MC 操作会转游戏内管理员审批", player)
+}
+
+func sysUsage(s SysCtx) string {
+	if s.Usage == nil {
+		return "这个通道暂不支持查额度"
+	}
+	out, err := s.Usage(s.Ctx)
+	if err != nil {
+		return "查额度失败：" + truncate(err.Error(), 120)
+	}
+	return out
 }
 
 func sysMyID(s SysCtx) string {

@@ -60,6 +60,7 @@ func (c *Channel) handler() http.Handler {
 	mux.HandleFunc("/api/prefs", c.withAuth(c.handlePrefs))
 	mux.HandleFunc("/api/workspace", c.withAuth(c.handleWorkspaceList))
 	mux.HandleFunc("/api/workspace/file", c.withAuth(c.handleWorkspaceFile))
+	mux.HandleFunc("/api/usage", c.withAuth(c.handleUsage))
 	mux.HandleFunc("/api/conversations", c.withAuth(c.handleConversations))
 	mux.HandleFunc("/api/conversations/delete", c.withAuth(c.handleConversationDelete))
 	mux.HandleFunc("/api/conversations/rename", c.withAuth(c.handleConversationRename))
@@ -454,6 +455,16 @@ func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name strin
 	c.log.Info("web session cleared", "name", name, "conv", req.Conv)
 	c.publishRaw(name, map[string]any{"type": "cleared", "conv": req.Conv})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleUsage 查模型 key 的额度（网关 /usage，60s 缓存）。
+func (c *Channel) handleUsage(w http.ResponseWriter, r *http.Request, _ string) {
+	report, err := c.usage.Fetch(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"usage": report, "text": report.Text()})
 }
 
 // handleConversations 会话列表：纯读，不改库（GET 不产生任何副作用）。

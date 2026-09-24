@@ -15,6 +15,7 @@ import (
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
+	"mineagent/internal/usage"
 )
 
 // Channel 是「个人微信 ClawBot」通道（直连腾讯 iLink，不跑 OpenClaw）：
@@ -23,11 +24,12 @@ import (
 // 会话隔离：wechat:c2c:<from_user_id>（群消息若带 group_id 则 wechat:group:<group_id>）。
 // 回复目标与官方插件一致：回给 from_user_id，context_token 用该用户最近一次上行 token。
 type Channel struct {
-	log        *slog.Logger
-	cfg        config.WeChat
-	statePath  string
-	model      string
-	mcStatus   func(ctx context.Context) (string, error)
+	log       *slog.Logger
+	cfg       config.WeChat
+	statePath string
+	model     string
+	mcStatus  func(ctx context.Context) (string, error)
+	usage     *usage.Client
 
 	hub     *session.Hub
 	store   *storage.Store
@@ -60,6 +62,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, statePath string, hub *sess
 		cfg:         cfg.WeChat,
 		statePath:   statePath,
 		model:       cfg.Model.Name,
+		usage:       usage.New(cfg.Model.BaseURL, cfg.Model.APIKey),
 		hub:         hub,
 		store:       store,
 		ag:          ag,
@@ -199,6 +202,7 @@ func (c *Channel) onMessage(m WeixinMessage) {
 			Channel:   "wechat",
 			IsAdmin:   c.IsAdmin(m.FromUserID),
 			Model:     c.model,
+			Usage:     c.usage.Text,
 			MCStatus:  c.mcStatus,
 			QQStatus:  c.Status,
 			QQIDs:     []string{m.FromUserID},
@@ -259,6 +263,16 @@ func (c *Channel) onMessage(m WeixinMessage) {
 	c.mu.Unlock()
 }
 
+// Deliver 把一条消息发回指定会话（提醒等主动消息用；顺带注册本通道，
+// 服务重启后会话未注册时也能送达）。
+func (c *Channel) Deliver(ctx context.Context, sessionKey, target, text string) error {
+	sess, err := c.session(sessionKey)
+	if err != nil {
+		return err
+	}
+	return sess.Reply(ctx, text, target)
+}
+
 func (c *Channel) session(key string) (*session.Session, error) {
 	c.mu.Lock()
 	if s, ok := c.sessions[key]; ok {
@@ -313,24 +327,18 @@ func StatePathFor(storagePath string) string {
 	return filepath.Join(filepath.Dir(storagePath), "wechat.json")
 }
 
-const wechatInstruction = `你是 MineAgent，一个能写代码、执行代码、查资料、画图的轻量 agent，
-当前通过「个人微信 ClawBot」跟人聊天（消息格式为 [userid] 内容）。
-Minecraft 服务器「jzk 的服务器」只是你其中一个功能。
-
-规则：
-- 用简体中文回答，语气轻松友好；微信里单条不要超过 1500 字（超了系统会自动分片）。
-- 不做 markdown 重排版（微信不适合表格），需要时用短段落/短列表。
-- 做多步任务（查数据->装包->画图）时：每步一次只调一个工具，拿到结果再调下一步；
-  不要反复试探同一条失败命令，换一条路走。
-- MC 服务器只是功能之一：被问到服实时情况（在线玩家、TPS/内存/时间/天气）时才调用
-  minecraft_* 只读工具查，不要编造。
-- minecraft_teleport / minecraft_give / minecraft_run_command 是高权限操作：只能应明确请求发起，
-  发起后必须等待游戏内管理员批准；请求者没有绑定 MC 身份时要先提醒他用「绑定 <MC名>」绑定。
-- workspace_ls / workspace_read / workspace_write / workspace_exec 是写代码和执行代码的工具，
-  只能管理员使用——非管理员调用会被直接拒绝，不要绕过。
-  操作限制在 workspace 目录内；装依赖用 $VENV_BIN/pip install，下载用 curl/wget（公开 http(s)），
-  这两类先过静态约束再送 LLM 语义审查。
-- 对话管理命令（/help /status /memory /bind /unbind /myid）由系统层直接回复，
-  不经过你；用户问起就照 help 文案介绍，不要自己编命令列表。
-- v1 暂不支持收/发图片（个人微信 ClawBot 图片通道待后续版本）。
-- 不确定的信息不要编造，直接说不知道。`
+const wechatInstruction = `你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、联网搜索、设提醒），
+当前在个人微信里跟人聊天（消息格式为 [微信名] 内容）。
+Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态、传送/给物/执行命令需审批）。
+` +
+	agent.CoreAgentPrinciples + `
+渠道规则（个人微信）：
+- 用简体中文回答，语气轻松友好；微信是纯文本，不要用 Markdown 语法（标题/表格/代码块），
+  可以用短横线和换行做简单排版；单条 500 字内。
+- 画图/写文件用 workspace 工具（仅管理员），发文件受限：微信侧暂不支持回传图片/文件，
+  需要给用户东西时把内容直接贴在消息里。
+- MC 服务器只是功能之一：只在被问到服实时情况时才调 minecraft_* 工具。
+- minecraft_teleport / minecraft_give / minecraft_run_command 只能应明确请求发起，
+  发起后等游戏内管理员批准；请求者没绑定 MC 身份时先提醒他用「绑定 <MC名>」。
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid）由系统层直接回复，
+  你照着 help 文案介绍，不要自己编命令列表。`

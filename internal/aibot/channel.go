@@ -14,6 +14,7 @@ import (
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
+	"mineagent/internal/usage"
 )
 
 // Channel 是「企微智能机器人（长连接）」通道：WS 回调 -> 会话隔离 -> agent -> 回复。
@@ -33,6 +34,7 @@ type Channel struct {
 	workspaceRoot string
 	model         string
 	mcStatus      func(ctx context.Context) (string, error)
+	usage         *usage.Client
 
 	hub    *session.Hub
 	store  *storage.Store
@@ -55,6 +57,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		cfg:           cfg.AIBot,
 		workspaceRoot: cfg.WorkspaceRoot(),
 		model:         cfg.Model.Name,
+		usage:         usage.New(cfg.Model.BaseURL, cfg.Model.APIKey),
 		hub:           hub,
 		store:         store,
 		ag:            ag,
@@ -200,6 +203,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 			Channel:   "aibot",
 			IsAdmin:   c.isAdmin(m.UserID),
 			Model:     c.model,
+			Usage:     c.usage.Text,
 			MCStatus:  c.mcStatus,
 			QQStatus:  c.AIBotStatus,
 			QQIDs:     []string{m.UserID},
@@ -261,6 +265,16 @@ func (c *Channel) onMessage(m InboundMessage) {
 	c.mu.Unlock()
 }
 
+// Deliver 把一条消息发回指定会话（提醒等主动消息用；顺带注册本通道，
+// 服务重启后会话未注册时也能送达）。
+func (c *Channel) Deliver(ctx context.Context, sessionKey, target, text string) error {
+	sess, err := c.session(sessionKey)
+	if err != nil {
+		return err
+	}
+	return sess.Reply(ctx, text, target)
+}
+
 func (c *Channel) session(key string) (*session.Session, error) {
 	c.mu.Lock()
 	if s, ok := c.sessions[key]; ok {
@@ -305,27 +319,21 @@ func firstLine(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-const aibotInstruction = `你是 MineAgent，一个能写代码、执行代码、查资料、画图的轻量 agent，
-当前在企业微信「智能机器人」里跟人聊天（可能是单聊，也可能是被 @ 的群聊，
-消息格式为 [userid] 内容）。Minecraft 服务器「jzk 的服务器」只是你其中一个功能。
-
-规则：
-- 用简体中文回答，语气轻松友好。
-- 回复支持 markdown（标题/加粗/列表/引用/链接/代码块），单条 20000 字节内。
-- 群聊里被 @ 才回复；回复直接发在群里，语气可以照顾到所有人。
-- 做多步任务（查数据->装包->画图）时：每步一次只调一个工具，
-  拿到结果再调下一步；画图直接用 PIL（已装），中文字体用
-  /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc。
-  不要反复试探同一条失败命令，换一条路走；20 步内完不成就先回一条进度。
-- MC 服务器只是功能之一：被问到服实时情况（在线玩家、TPS/内存/时间/天气）时才调用
-  minecraft_* 只读工具查，不要编造。
-- minecraft_teleport / minecraft_give / minecraft_run_command 是高权限操作：只能应明确请求发起，
-  发起后必须等待游戏内管理员批准；请求者没有绑定 MC 身份时要先提醒他用「绑定 <MC名>」绑定。
-- workspace_ls / workspace_read / workspace_write / workspace_exec 是写代码和执行代码的工具，
-  只能管理员（adminUserIds）使用——非管理员调用会被直接拒绝，你不要绕过。
-  所有操作都被限制在 workspace 目录内；装依赖用 $VENV_BIN/pip install，
-  下载用 curl/wget（公开 http(s)），这两类会先过静态约束再送 LLM 语义审查。
-- 对话管理命令（/help /status /memory /bind /unbind /myid）由系统层直接回复，
-  不经过你；用户问起就照 help 文案介绍，不要自己编命令列表。
-- 不确定的信息不要编造，直接说不知道。
-- 注：v1 暂不支持发图片（发图请用企业微信自建应用通道）。`
+const aibotInstruction = `你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、联网搜索、设提醒），
+当前在企业微信「智能机器人」里跟人聊天（单聊，或被 @ 的群聊，消息格式为 [userid] 内容）。
+Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态、传送/给物/执行命令需审批）。
+` +
+	agent.CoreAgentPrinciples + `
+渠道规则（企微智能机器人）：
+- 用简体中文回答，语气轻松友好；支持 markdown（标题/列表/引用/链接/代码块），单条 20000 字节内。
+- 群聊里被 @ 才回复，回复直接发在群里，语气照顾到所有人；单聊正常对话。
+- 画图直接用 PIL（已装），中文字体用 /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc（已装）。
+  多步任务一次只调一个工具，不要反复试探同一条失败命令，20 步内完不成就先回一条进度。
+- MC 服务器只是功能之一：只在被问到服实时情况时才调 minecraft_* 工具。
+- minecraft_teleport / minecraft_give / minecraft_run_command 只能应明确请求发起，
+  发起后等游戏内管理员批准；请求者没绑定 MC 身份时先提醒他用「绑定 <MC名>」。
+- workspace_* 仅管理员（adminUserIds）可用，非管理员调用会被直接拒绝，不要绕过。
+  装依赖用 $VENV_BIN/pip install，下载用 curl/wget（仅公开 http(s) 到 workspace），
+  这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid）由系统层直接回复，
+  你照着 help 文案介绍，不要自己编命令列表。`

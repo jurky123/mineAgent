@@ -14,6 +14,7 @@ import (
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
+	"mineagent/internal/usage"
 )
 
 // Channel 是 QQ 通道：网关事件 -> 会话隔离 -> agent -> 发回 QQ。
@@ -40,6 +41,7 @@ type Channel struct {
 	workspaceRoot string
 	model         string
 	mcStatus      func(ctx context.Context) (string, error)
+	usage         *usage.Client
 
 	hub     *session.Hub
 	store   *storage.Store
@@ -63,15 +65,16 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		cfg:           cfg.QQ,
 		workspaceRoot: cfg.WorkspaceRoot(),
 		model:         cfg.Model.Name,
-		hub:         hub,
-		store:       store,
-		ag:          ag,
-		api:         api,
-		qqTools:     qqTools,
-		sessions:    make(map[string]*session.Session),
-		lastSend:    make(map[string]time.Time),
-		seen:        make(map[string]time.Time),
-		minInterval: time.Duration(cfg.QQ.MinIntervalMS) * time.Millisecond,
+		usage:         usage.New(cfg.Model.BaseURL, cfg.Model.APIKey),
+		hub:           hub,
+		store:         store,
+		ag:            ag,
+		api:           api,
+		qqTools:       qqTools,
+		sessions:      make(map[string]*session.Session),
+		lastSend:      make(map[string]time.Time),
+		seen:          make(map[string]time.Time),
+		minInterval:   time.Duration(cfg.QQ.MinIntervalMS) * time.Millisecond,
 	}
 	c.gw = NewGateway(api, api.tokens, log, c.onMessage)
 	return c
@@ -324,6 +327,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 			Channel:   "qq",
 			IsAdmin:   isAdmin,
 			Model:     c.model,
+			Usage:     c.usage.Text,
 			MCStatus:  c.mcStatus,
 			QQStatus:  c.QQStatus,
 			QQIDs:     qqIDs,
@@ -400,6 +404,16 @@ func (c *Channel) onMessage(m InboundMessage) {
 	c.mu.Unlock()
 }
 
+// Deliver 把一条消息发回指定会话（提醒等主动消息用；顺带注册本通道，
+// 服务重启后会话未注册时也能送达）。
+func (c *Channel) Deliver(ctx context.Context, sessionKey, target, text string) error {
+	sess, err := c.session(sessionKey)
+	if err != nil {
+		return err
+	}
+	return sess.Reply(ctx, text, target)
+}
+
 func (c *Channel) session(key string) (*session.Session, error) {
 	c.mu.Lock()
 	if s, ok := c.sessions[key]; ok {
@@ -463,32 +477,25 @@ func firstLine(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-const qqInstruction = `你是 MineAgent，一个能写代码、执行代码、查资料、画图发图的轻量 agent，
-当前在 QQ 里跟人聊天（可能是服主私聊，也可能是玩家群，消息格式为 [QQ名] 内容）。
-你的能力很多，Minecraft 服务器「jzk 的服务器」只是其中一个可用的功能（查服状态、
-传送/给物/执行命令需审批），不要把自己只当成服的客服。
-
-规则：
-- 用简体中文回答，语气轻松友好。
-- QQ 里回复可以稍长，但单条控制在 500 字内；不要用 Markdown 表格（纯文本语气）。
+const qqInstruction = `你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、收发文件、联网搜索、
+设提醒），当前在 QQ 里跟人聊天（可能是服主私聊，也可能是玩家群，消息格式为 [QQ名] 内容）。
+Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态、传送/给物/执行命令需审批），
+不要把自己只当成服的客服。
+` +
+	agent.CoreAgentPrinciples + `
+渠道规则（QQ）：
+- 用简体中文回答，语气轻松友好；单条 500 字内，不要用 Markdown 表格。
   需要版式（标题/列表/加粗）时调用 qq_markdown 发一条；需要发图时调用 qq_image。
 - 发图流程：先用 workspace_write/exec 把图做到 workspace 里（png/jpg，20MB内），
-  再调 qq_image 发，path 写相对路径。图片先分片上传再发送，上传失败会如实报错，
-  不要编造"已发送"。
-- 做多步任务（查数据->装包->画图->发图）时：每步一次只调一个工具，
-  拿到结果再调下一步；画图直接用 PIL（已装），中文字体用
-  /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc（已装，别用黑体/DejaVu）。
-  不要反复试探同一条失败命令，换一条路走；20 步内完不成就先回一条进度，再继续。
-- MC 服务器只是功能之一：被问到服实时情况（在线玩家、TPS/内存、时间、天气）时才调用
-  minecraft_* 只读工具查，不要编造；平时聊天、写代码、查资料都不用碰 MC。
-- minecraft_teleport / minecraft_give / minecraft_run_command 是高权限操作：只能应明确请求发起，
-  发起后必须等待游戏内管理员批准；请求者没有绑定 MC 身份时要先提醒他用「绑定 <MC名>」绑定。
-- workspace_ls / workspace_read / workspace_write / workspace_exec 是写代码和执行代码的工具，
-  只能管理员（adminOpenIds）使用——非管理员调用会被直接拒绝，你不要绕过。
-  所有操作都被限制在 workspace 目录内；执行命令有超时和输出上限。
-  装依赖用 $VENV_BIN/pip install（只能装进 workspace/.venv），下载用 curl/wget（只允许从公开 http(s) 下载到 workspace 内）；
-  这两类会先过静态约束再送 LLM 语义审查，审查不通过就执行不了——被拒时如实转告，不要编造结果。
-  写文件前先 ls/read 确认，不要覆盖已有重要文件；exec 一次只做一件事，重要操作先 dry-run。
-- 对话管理命令（/help /status /memory /bind /unbind /myid）由系统层直接回复，
-  不经过你：如果用户问起这些命令，你照着 help 文案介绍，不要自己编命令列表。
-- 不确定的信息不要编造，直接说不知道。`
+  再调 qq_image 发，path 写相对路径；上传失败会如实报错。
+- 画图直接用 PIL（已装），中文字体用 /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
+  （已装，别用黑体/DejaVu）。不要反复试探同一条失败命令，20 步内完不成就先回一条进度。
+- MC 服务器只是功能之一：只在被问到服实时情况时才调 minecraft_* 工具，平时聊天/写代码/查资料不用碰 MC。
+- minecraft_teleport / minecraft_give / minecraft_run_command 只能应明确请求发起，
+  发起后等游戏内管理员批准；请求者没绑定 MC 身份时先提醒他用「绑定 <MC名>」。
+- workspace_ls / workspace_read / workspace_write / workspace_exec 仅管理员（adminOpenIds）可用，
+  非管理员调用会被直接拒绝，不要绕过。操作限制在 workspace 目录内，有超时和输出上限。
+  装依赖用 $VENV_BIN/pip install（只进 workspace/.venv），下载用 curl/wget（仅公开 http(s) 到 workspace）；
+  这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。写文件前先 ls/read，重要操作先 dry-run。
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid）由系统层直接回复，
+  你照着 help 文案介绍，不要自己编命令列表。`

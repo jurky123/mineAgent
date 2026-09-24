@@ -22,6 +22,7 @@ import (
 	"mineagent/internal/config"
 	"mineagent/internal/protocol"
 	"mineagent/internal/qq"
+	"mineagent/internal/reminder"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -100,7 +101,8 @@ func main() {
 	approvalTimeout := time.Duration(cfg.Tools.ApprovalTimeoutSeconds) * time.Second
 	approvals := tools.NewApprovals(mc, approvalTimeout, log)
 	approvals.SetMaxPerRequester(cfg.QQ.MaxPendingPerUser)
-	agentTools := append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...)
+	remindTools := tools.NewRemind(store, log).Tools()
+	agentTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...), remindTools...)
 
 	// MC 通道的查服状态闭包（/status 直回用，经网关调 minecraft_server_status）。
 	mcStatusFn := func(ctx context.Context) (string, error) {
@@ -148,11 +150,11 @@ func main() {
 	wecomSendTools := tools.NewWeComSend()
 	webSendTools := tools.NewWebSend()
 	qqBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
-		append(append(wsTools.Tools(), bindTools.Tools()...), sendTools.Tools()...)...)
+		append(append(append(wsTools.Tools(), bindTools.Tools()...), sendTools.Tools()...), remindTools...)...)
 	wecomBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
-		append(append(wsTools.Tools(), bindTools.Tools()...), wecomSendTools.Tools()...)...)
+		append(append(append(wsTools.Tools(), bindTools.Tools()...), wecomSendTools.Tools()...), remindTools...)...)
 	webBaseTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
-		append(append(wsTools.Tools(), bindTools.Tools()...), webSendTools.Tools()...)...)
+		append(append(append(wsTools.Tools(), bindTools.Tools()...), webSendTools.Tools()...), remindTools...)...)
 
 	ag, err := agent.New(ctx, cfg, store, log, agentTools, approvals)
 	if err != nil {
@@ -212,7 +214,7 @@ func main() {
 		// aibot v1 不带 wecom_* 发送工具（回复统一走 consume 的被动回复），
 		// 复用 wecom 的门禁包装（识别 wecom: 前缀做 admin/绑定/审批）。
 		aibotTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
-			append(wsTools.Tools(), bindTools.Tools()...)...)
+			append(append(wsTools.Tools(), bindTools.Tools()...), remindTools...)...)
 		aibotCh = aibot.NewChannel(log, cfg, hub, store, ag,
 			wrapWeComTools(aibotTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
@@ -227,7 +229,7 @@ func main() {
 	var wechatCh *wechat.Channel
 	wechatStatePath := wechat.StatePathFor(cfg.Storage.Path)
 	wechatTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
-		append(wsTools.Tools(), bindTools.Tools()...)...)
+		append(append(wsTools.Tools(), bindTools.Tools()...), remindTools...)...)
 	wechatCh, err = wechat.NewChannel(log, cfg, wechatStatePath, hub, store, ag,
 		wrapWeComTools(wechatTools, wsTools, store, sessionsFn, senderFn))
 	if err != nil {
@@ -261,6 +263,33 @@ func main() {
 	} else {
 		log.Info("webui channel disabled (web.listen empty)")
 	}
+
+	// 提醒调度器：每 20s 扫一次到点提醒，走对应通道的 Deliver 发回原会话。
+	deliverers := map[string]reminder.Deliver{
+		"minecraft": func(ctx context.Context, _, target, text string) error {
+			sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
+			if err != nil {
+				return err
+			}
+			return sess.Reply(ctx, text, target)
+		},
+	}
+	if qqCh != nil {
+		deliverers["qq"] = qqCh.Deliver
+	}
+	if wecomCh != nil {
+		deliverers["wecom"] = wecomCh.Deliver
+	}
+	if aibotCh != nil {
+		deliverers["aibot"] = aibotCh.Deliver
+	}
+	if wechatCh != nil {
+		deliverers["wechat"] = wechatCh.Deliver
+	}
+	if webCh != nil {
+		deliverers["web"] = webCh.Deliver
+	}
+	go reminder.New(store, log, deliverers).Run(ctx)
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {
 		if !authorizeMessage(c.RemoteRole(), env.Type, mc.Attached() == c) {

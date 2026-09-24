@@ -43,8 +43,9 @@ func (t *rpcTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ..
 	return out, nil
 }
 
+// ReadOnly 返回只读工具：MC 查询 + 网页搜索/抓取/时间（所有通道共用，无需审批）。
 func ReadOnly(gw *Gateway) []tool.BaseTool {
-	return []tool.BaseTool{
+	base := []tool.BaseTool{
 		&rpcTool{
 			gw:   gw,
 			name: "minecraft_list_players",
@@ -84,4 +85,5 @@ func ReadOnly(gw *Gateway) []tool.BaseTool {
 			desc: "列出服务器安装的插件及版本、是否启用。回答“装了什么插件/有没有XX插件”必须调用此工具。",
 		},
 	}
+	return append(base, webTools()...)
 }

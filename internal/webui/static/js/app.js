@@ -89,6 +89,29 @@ async function startChat() {
   $('text').focus();
 }
 
+// ---------- 额度 ----------
+async function openUsage() {
+  $('usagemodal').classList.add('on');
+  const body = $('usage-body');
+  body.innerHTML = '<div class="usage-loading">加载中…</div>';
+  try {
+    const r = await api('/api/usage');
+    const u = r.usage || {};
+    const rows = [['滚动窗口（5 小时）', u.rolling], ['本周', u.weekly], ['本月', u.monthly]];
+    body.innerHTML = rows.map(([label, win]) => {
+      const pct = Math.max(0, Math.min(100, (win && win.percent) || 0));
+      const cls = pct >= 90 ? ' hot' : pct >= 70 ? ' warm' : '';
+      const reset = win && win.resetsAt ? '重置：' + new Date(win.resetsAt).toLocaleString() : '';
+      return '<div class="usage-row"><div class="usage-top"><span>' + label + '</span><span class="pct">' + pct + '%</span></div>' +
+        '<div class="usage-bar"><div class="usage-fill' + cls + '" style="width:' + pct + '%"></div></div>' +
+        '<div class="usage-reset">' + reset + '</div></div>';
+    }).join('') +
+      '<div class="usage-note">' + (r.text || '') + '<br>百分比是网关（opencode）计费窗口内的已用比例，到点自动重置。</div>';
+  } catch (e) {
+    body.innerHTML = '<div class="usage-loading">' + e.message + '</div>';
+  }
+}
+
 // ---------- 侧栏 ----------
 function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); }
 function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); }
@@ -116,6 +139,9 @@ function boot() {
   });
   $('menu-ws').onclick = () => { closeAccount(); openWorkspace(); };
   $('menu-theme').onclick = () => { closeAccount(); openAppearance(); };
+  $('menu-usage').onclick = () => { closeAccount(); openUsage(); };
+  $('usage-close').onclick = () => $('usagemodal').classList.remove('on');
+  $('usagemodal').addEventListener('click', (e) => { if (e.target === $('usagemodal')) $('usagemodal').classList.remove('on'); });
   $('menu-logout').onclick = () => { closeAccount(); logoutRequest(); logout(false); };
   $('menu').onclick = () => $('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
   $('backdrop').onclick = closeSidebar;

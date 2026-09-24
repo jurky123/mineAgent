@@ -40,6 +40,18 @@ const (
 	KindFile     = "file:"
 )
 
+// Reminder 是定时提醒（到点由 scheduler 通过对应通道发一条消息）。
+type Reminder struct {
+	ID        int64  `json:"id"`
+	SessionID string `json:"sessionId"`
+	Channel   string `json:"channel"`
+	Target    string `json:"target"`
+	Text      string `json:"text"`
+	DueAt     int64  `json:"dueAt"`
+	CreatedAt int64  `json:"createdAt"`
+	Done      int    `json:"done"`
+}
+
 // Conversation 是网页入口的一条会话（账号 + 会话短 id）。
 // conv 为空串表示"默认会话"（历史遗留的 web:c2c:<名字> 单会话）。
 type Conversation struct {
@@ -129,6 +141,18 @@ CREATE TABLE IF NOT EXISTS agent_checkpoints (
 	data       BLOB NOT NULL,
 	updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS reminders (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	session_id TEXT NOT NULL,
+	channel    TEXT NOT NULL DEFAULT '',
+	target     TEXT NOT NULL DEFAULT '',
+	text       TEXT NOT NULL,
+	due_at     INTEGER NOT NULL,
+	created_at INTEGER NOT NULL,
+	done       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(done, due_at);
 
 CREATE TABLE IF NOT EXISTS web_conversations (
 	account    TEXT NOT NULL,
@@ -420,6 +444,76 @@ func (s *Store) ConversationPreview(ctx context.Context, sessionID string) (titl
 
 func (s *Store) DeleteConversation(ctx context.Context, account, conv string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM web_conversations WHERE account=? AND conv=?`, account, conv)
+	return err
+}
+
+func (s *Store) AddReminder(ctx context.Context, r Reminder) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO reminders(session_id, channel, target, text, due_at, created_at)
+		 VALUES(?, ?, ?, ?, ?, ?)`,
+		r.SessionID, r.Channel, r.Target, r.Text, r.DueAt, r.CreatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *Store) ListReminders(ctx context.Context, sessionID string) ([]Reminder, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, session_id, channel, target, text, due_at, created_at, done FROM reminders
+		 WHERE session_id=? AND done=0 ORDER BY due_at ASC LIMIT 50`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Reminder
+	for rows.Next() {
+		var r Reminder
+		if err := rows.Scan(&r.ID, &r.SessionID, &r.Channel, &r.Target, &r.Text, &r.DueAt, &r.CreatedAt, &r.Done); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CountPendingReminders(ctx context.Context, sessionID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM reminders WHERE session_id=? AND done=0`, sessionID).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CancelReminder(ctx context.Context, sessionID string, id int64) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM reminders WHERE id=? AND session_id=? AND done=0`, id, sessionID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// DueReminders 取到点的提醒（未完成且 due_at <= now）。
+func (s *Store) DueReminders(ctx context.Context, now int64, limit int) ([]Reminder, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, session_id, channel, target, text, due_at, created_at, done FROM reminders
+		 WHERE done=0 AND due_at<=? ORDER BY due_at ASC LIMIT ?`, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Reminder
+	for rows.Next() {
+		var r Reminder
+		if err := rows.Scan(&r.ID, &r.SessionID, &r.Channel, &r.Target, &r.Text, &r.DueAt, &r.CreatedAt, &r.Done); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CompleteReminder(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE reminders SET done=1 WHERE id=?`, id)
 	return err
 }
 

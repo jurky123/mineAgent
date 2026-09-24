@@ -31,6 +31,20 @@
 .ws-row .i { color: var(--text-3); }
 .ws-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 26px; }
 
+/* 额度弹窗 */
+.usage-card { max-width: 460px; }
+.usage-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.usage-row { display: flex; flex-direction: column; gap: 6px; }
+.usage-top { display: flex; justify-content: space-between; font-size: 13.5px; }
+.usage-top .pct { color: var(--text-2); font-variant-numeric: tabular-nums; }
+.usage-bar { height: 8px; border-radius: 999px; background: var(--control-bg); overflow: hidden; }
+.usage-fill { height: 100%; border-radius: 999px; background: var(--interactive); transition: width .45s cubic-bezier(.22,1,.36,1); }
+.usage-fill.warm { background: #f59e0b; }
+.usage-fill.hot { background: #ef4444; }
+.usage-reset { font-size: 11.5px; color: var(--text-3); }
+.usage-note { font-size: 11.5px; color: var(--text-3); line-height: 1.6; }
+.usage-loading { padding: 22px 0; text-align: center; color: var(--text-3); font-size: 13px; }
+
 /* 通用确认 / 输入弹窗 */
 .dlg-card { max-width: 400px; padding: 20px 20px 16px; }
 .dlg-title { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }

@@ -147,7 +147,7 @@ func TestToolFailureReturnedToModel(t *testing.T) {
 func TestReadOnlyTools(t *testing.T) {
 	gw, _ := testGateway(t)
 	ts := ReadOnly(gw)
-	if len(ts) != 7 {
+	if len(ts) != 10 { // 7 个 MC 只读 + web_search/web_fetch/current_time
 		t.Fatalf("tools = %d", len(ts))
 	}
 	names := map[string]bool{}
@@ -159,6 +159,9 @@ func TestReadOnlyTools(t *testing.T) {
 		names[info.Name] = true
 	}
 	for _, want := range []string{
+		"web_search",
+		"web_fetch",
+		"current_time",
 		"minecraft_list_players",
 		"minecraft_player_info",
 		"minecraft_server_status",

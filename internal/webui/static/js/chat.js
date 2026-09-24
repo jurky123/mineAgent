@@ -10,6 +10,8 @@ let msgIds = new Set();
 let lastId = 0, oldestId = 0, hasMore = false;
 let es = null;
 let docked = null;
+// typingDocked：移动端点了输入框后，即使还没发消息也把 composer 停在底部
+let typingDocked = false;
 
 // ---------- 附件 ----------
 function fileBubble(f) {
@@ -137,8 +139,17 @@ export function hasMessages() { return $('listInner').querySelectorAll('.msg').l
 
 export function layout(force) {
   const has = hasMessages();
-  if (docked !== has || force) { dockComposer(has, !force); docked = has; }
+  if (force) typingDocked = false;   // 清空/切会话时重置回中央
+  const wantBottom = has || typingDocked;
+  if (docked !== wantBottom || force) { dockComposer(wantBottom, !force); docked = wantBottom; }
   $('empty').style.display = has ? 'none' : '';
+}
+
+// dockAtBottom 供移动端"聚焦输入框"时调用：把 composer 从空状态中央移到底部。
+export function dockAtBottom() {
+  typingDocked = true;
+  dockComposer(true, true);
+  docked = true;
 }
 
 function dockComposer(atBottom, animate) {

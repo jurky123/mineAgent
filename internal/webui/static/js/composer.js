@@ -3,7 +3,7 @@
 import { $, esc, fmtSize, bus, ICON, showError, toast } from './ui.js';
 import { S, setConv } from './state.js';
 import { api, apiPost } from './api.js';
-import { setTyping, syncAfter } from './chat.js';
+import { setTyping, syncAfter, dockAtBottom } from './chat.js';
 import { refresh as refreshConversations } from './conversations.js';
 import { openViewer } from './viewer.js';
 
@@ -434,6 +434,36 @@ export async function loadOptions(force) {
 }
 
 // ---------- 事件绑定 ----------
+const isMobile = () => window.matchMedia('(max-width: 899px)').matches;
+
+// 移动端：点输入框就把 composer 停到底部（键盘弹出时不被中央布局顶住），
+// 并用 visualViewport 高度撑着布局，避免输入框被键盘遮住。
+function fitKeyboard(on) {
+  const vv = window.visualViewport;
+  if (!vv || !isMobile()) return;
+  const root = document.documentElement;
+  const apply = () => {
+    if (document.activeElement === $('text')) root.style.setProperty('--app-h', vv.height + 'px');
+    else root.style.removeProperty('--app-h');
+  };
+  if (on) {
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    fitKeyboard.cleanup = () => {
+      vv.removeEventListener('resize', apply);
+      vv.removeEventListener('scroll', apply);
+      root.style.removeProperty('--app-h');
+    };
+  } else if (fitKeyboard.cleanup) {
+    fitKeyboard.cleanup();
+    fitKeyboard.cleanup = null;
+  }
+}
+$('text').addEventListener('focus', () => {
+  if (isMobile()) { dockAtBottom(); fitKeyboard(true); }
+});
+$('text').addEventListener('blur', () => fitKeyboard(false));
 $('text').addEventListener('input', () => { autoGrow(); syncPalette(); });
 $('text').addEventListener('keydown', (e) => {
   if ($('cmdpalette').classList.contains('on') && cmdList.length) {

@@ -121,22 +121,22 @@ func TestIsFatalGatewayErr(t *testing.T) {
 }
 
 func TestSplitImageTarget(t *testing.T) {
-	// 真实 msgID 含冒号：ROBOT1.0_xxx:xxx:...!
-	kind, id, msgID, path := splitImageTarget("c2c:U1:ROBOT1.0_abc:def.ghi!:weather_card.png")
-	if kind != "c2c" || id != "U1" || msgID != "ROBOT1.0_abc:def.ghi!" || path != "weather_card.png" {
+	// 真实 msgID：ROBOT1.0_ 后面是点/下划线/感叹号，不含冒号。
+	kind, id, msgID, path := splitImageTarget("c2c:U1:ROBOT1.0_DwtI.ts505ZjegaXy4tWZlegbLwKD2guAlBIETQ43dA3E1WGLre.VarBxW6JyY3VaTFXtIl71An7gglzV6dQZ7K7vOIcYRDE9IfsMXwqNnE!:weather_card.png")
+	if kind != "c2c" || id != "U1" || msgID != "ROBOT1.0_DwtI.ts505ZjegaXy4tWZlegbLwKD2guAlBIETQ43dA3E1WGLre.VarBxW6JyY3VaTFXtIl71An7gglzV6dQZ7K7vOIcYRDE9IfsMXwqNnE!" || path != "weather_card.png" {
 		t.Fatalf("got %q %q %q %q", kind, id, msgID, path)
 	}
-	kind, id, msgID, path = splitImageTarget("group:G1:ROBOT1.0_x:y!:sub/plot.png")
-	if kind != "group" || id != "G1" || msgID != "ROBOT1.0_x:y!" || path != "sub/plot.png" {
+	kind, id, msgID, path = splitImageTarget("group:G1:ROBOT1.0_x_y!:sub/plot.png")
+	if kind != "group" || id != "G1" || msgID != "ROBOT1.0_x_y!" || path != "sub/plot.png" {
 		t.Fatalf("got %q %q %q %q", kind, id, msgID, path)
 	}
-	// 非法：段数不对 / 非 ROBOT / path 含冒号 / kind 非法。
+	// 非法：段数不对 / 非 ROBOT / path 空或含冒号 / kind 非法。
 	for _, bad := range []string{
 		"c2c:U1:MSG1",
-		"c2c:U1:MSG1:xxx:a:b",
-		"c2c:U1:NOTROBOT:x:p.png",
-		"dm:U1:ROBOT1.0_a:b:p.png",
-		"c2c:U1:ROBOT1.0_a:b:",
+		"c2c:U1:NOTROBOTxxx:p.png",
+		"dm:U1:ROBOT1.0_a:p.png",
+		"c2c:U1:ROBOT1.0_a:",
+		"c2c:U1:ROBOT1.0_a:a:b.png",
 	} {
 		if k, _, _, _ := splitImageTarget(bad); k != "" {
 			t.Fatalf("%q should fail", bad)

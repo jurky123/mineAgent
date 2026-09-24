@@ -371,13 +371,13 @@ func splitTarget(target string) (kind, id, msgID string) {
 	return parts[0], parts[1], parts[2]
 }
 
-// splitImageTarget 切 "<c2c|group>:<id>:<ROBOT1.0_...含冒号>:<path>"。
-// msgID 本身含冒号（ROBOT1.0_xxx:xxx:...!），所以按 5 段切：
-// [kind, id, ROBOT1.0_xxx, xxx, path...]，msgID=中间拼回，path=最后一段。
-// path 本身不许含冒号（workspace 相对路径，冒号无意义，含了就拒）。
+// splitImageTarget 切 "<c2c|group>:<id>:<ROBOT1.0_...含点和下划线>:<path>"。
+// 注意真实 msgID 是 ROBOT1.0_Dxxx.ts...Xy4tWZ...NnE! 形态——
+// 点/下划线虽多但不含冒号，所以直接 SplitN(: ,4)：
+// [kind, id, msgID, path]。path 不许含冒号/为空。
 func splitImageTarget(target string) (kind, id, msgID, relPath string) {
-	parts := strings.SplitN(target, ":", 5)
-	if len(parts) != 5 {
+	parts := strings.SplitN(target, ":", 4)
+	if len(parts) != 4 {
 		return "", "", "", ""
 	}
 	if parts[0] != "c2c" && parts[0] != "group" {
@@ -386,11 +386,11 @@ func splitImageTarget(target string) (kind, id, msgID, relPath string) {
 	if !strings.HasPrefix(parts[2], "ROBOT") {
 		return "", "", "", ""
 	}
-	relPath = parts[4]
+	relPath = parts[3]
 	if relPath == "" || strings.Contains(relPath, ":") {
 		return "", "", "", ""
 	}
-	return parts[0], parts[1], parts[2] + ":" + parts[3], relPath
+	return parts[0], parts[1], parts[2], relPath
 }
 
 func firstLine(s string, max int) string {

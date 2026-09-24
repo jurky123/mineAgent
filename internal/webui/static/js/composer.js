@@ -1,0 +1,369 @@
+// Composer：输入 / 发送 / 附件上传压缩 / 斜杠命令 / ＋菜单 / 模型与思考强度
+
+import { $, esc, fmtSize, bus, ICON, showError, toast } from './ui.js';
+import { S } from './state.js';
+import { api, apiPost } from './api.js';
+import { setTyping } from './chat.js';
+import { openViewer } from './viewer.js';
+
+// ---------- 输入 ----------
+export function autoGrow() {
+  const t = $('text');
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 200) + 'px';
+  updateSendBtn();
+}
+
+export function updateSendBtn() {
+  const ready = ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done && !p.err);
+  $('send').classList.toggle('ready', !!ready);
+  $('send').disabled = !ready;
+}
+
+// ---------- 发送 ----------
+export async function sendMsg() {
+  const text = $('text').value.trim();
+  const files = S.pending.filter((p) => p.done).map((p) => p.file);
+  if (!text && !files.length) return;
+  if (S.pending.some((p) => !p.done && !p.err)) { showError('还有文件在上传，稍等'); return; }
+  $('send').disabled = true;
+  try {
+    await apiPost('/api/send', { conv: S.conv, text: text, files: files });
+    $('text').value = ''; autoGrow();
+    S.pending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+    S.pending = []; renderPending();
+    setTyping(true);
+    setTimeout(() => { if (S.waiting) setTyping(false); }, 180000);
+    bus.emit('conversations-changed');
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    updateSendBtn();
+  }
+}
+
+// ---------- 待发附件 ----------
+export function renderPending() {
+  const box = $('pending');
+  box.innerHTML = '';
+  S.pending.forEach((p) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (p.done ? ' done' : '');
+    if (p.isImage) {
+      chip.innerHTML = '<img src="' + p.url + '" alt="">';
+      chip.querySelector('img').onclick = () => {
+        const imgs = S.pending.filter((q) => q.isImage && q.url);
+        openViewer(imgs.map((q) => ({ url: q.url, name: q.name })), imgs.indexOf(p));
+      };
+    } else {
+      chip.innerHTML = '<div class="doc">' + ICON.file + '<span class="n">' + esc(p.name) + '</span></div>';
+    }
+    if (!p.done) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.width = Math.round((p.progress || 0) * 100) + '%';
+      chip.appendChild(bar);
+    }
+    if (p.note && p.done) {
+      const note = document.createElement('div');
+      note.className = 'note';
+      note.textContent = p.note;
+      chip.appendChild(note);
+    }
+    const x = document.createElement('button');
+    x.className = 'x';
+    x.innerHTML = ICON.x;
+    x.onclick = () => {
+      if (p.url) URL.revokeObjectURL(p.url);
+      S.pending.splice(S.pending.indexOf(p), 1);
+      renderPending(); updateSendBtn();
+    };
+    chip.appendChild(x);
+    p.el = chip;
+    box.appendChild(chip);
+  });
+  updateSendBtn();
+}
+
+async function compressImage(file) {
+  const type = (file.type || '').toLowerCase();
+  if (!/^image\/(png|jpe?g|webp|bmp|avif)$/.test(type)) return null;
+  if (file.size < 400 * 1024) return null;
+  let bitmap;
+  try { bitmap = await createImageBitmap(file); } catch (e) { return null; }
+  const maxDim = 1600;
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  if (bitmap.close) try { bitmap.close(); } catch (e) {}
+  const blob = await new Promise((res) => { try { canvas.toBlob(res, 'image/jpeg', 0.85); } catch (e) { res(null); } });
+  if (!blob || blob.size >= file.size) return null;
+  const base = (file.name || 'image').replace(/\.[^.]+$/, '');
+  return new File([blob], base + '.jpg', { type: 'image/jpeg' });
+}
+
+function uploadOne(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload?name=' + encodeURIComponent(file.name));
+    xhr.setRequestHeader('Authorization', 'Bearer ' + S.token);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onload = () => {
+      let body = null;
+      try { body = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+      else if (xhr.status === 401) reject(new Error('登录已失效'));
+      else reject(new Error((body && body.error) || ('HTTP ' + xhr.status)));
+    };
+    xhr.onerror = () => reject(new Error('网络错误'));
+    xhr.send(file);
+  });
+}
+
+export async function addFiles(fileList) {
+  const jobs = [];
+  for (const f of Array.from(fileList)) {
+    if (f.size > 20 * 1024 * 1024) { showError('「' + f.name + '」超过 20MB 上限'); continue; }
+    jobs.push({ original: f, isImage: /^image\//.test(f.type || '') });
+  }
+  const prepared = await Promise.all(jobs.map(async (j) => {
+    const smaller = await compressImage(j.original);
+    return { file: smaller || j.original, isImage: j.isImage, saved: smaller ? j.original.size - smaller.size : 0 };
+  }));
+  for (const p of prepared) {
+    const item = {
+      file: p.file, name: p.file.name, isImage: p.isImage || /^image\//.test(p.file.type || ''),
+      progress: 0, done: false, note: p.saved > 0 ? '已压缩 ' + fmtSize(p.saved) : '',
+      url: p.isImage ? URL.createObjectURL(p.file) : ''
+    };
+    S.pending.push(item); renderPending();
+    uploadOne(p.file, (v) => {
+      item.progress = v;
+      const b = item.el && item.el.querySelector('.bar');
+      if (b) b.style.width = Math.round(v * 100) + '%';
+    }).then((ref) => { item.file = ref; item.done = true; renderPending(); })
+      .catch((e) => { item.err = true; showError('上传失败：' + e.message); S.pending.splice(S.pending.indexOf(item), 1); renderPending(); });
+  }
+  $('text').focus();
+}
+
+// ---------- 斜杠命令面板 ----------
+const CMDS = [
+  { c: '/help', d: '显示帮助' },
+  { c: '/status', d: '服务 / 连接状态' },
+  { c: '/memory', d: '记忆概况（clear 清空，summary 看摘要）' },
+  { c: '/bind', d: '绑定 MC 身份', arg: '<MC名>' },
+  { c: '/unbind', d: '解绑 MC 身份' },
+  { c: '/myid', d: '看自己的身份' }
+];
+let cmdList = [], cmdIndex = 0;
+
+function syncPalette() {
+  const v = $('text').value;
+  if (!v.startsWith('/') || v.includes(' ') || v.includes('\n') || v.length > 16) { $('cmdpalette').classList.remove('on'); cmdList = []; return; }
+  cmdList = CMDS.filter((x) => x.c.startsWith(v.toLowerCase()) && x.c !== v);
+  if (!cmdList.length) { $('cmdpalette').classList.remove('on'); cmdList = []; return; }
+  cmdIndex = Math.min(cmdIndex, cmdList.length - 1);
+  const box = $('cmdpalette');
+  box.innerHTML = '';
+  cmdList.forEach((x, i) => {
+    const b = document.createElement('button');
+    b.className = 'cmd-item' + (i === cmdIndex ? ' on' : '');
+    b.innerHTML = '<span class="c">' + esc(x.c + (x.arg ? ' ' + x.arg : '')) + '</span><span class="d">' + esc(x.d) + '</span>';
+    b.onmousedown = (e) => { e.preventDefault(); applyCmd(x); };
+    box.appendChild(b);
+  });
+  closePopovers('cmdpalette');
+  box.classList.add('on');
+}
+
+function applyCmd(x) {
+  $('text').value = x.c + (x.arg ? ' ' : '');
+  $('cmdpalette').classList.remove('on');
+  autoGrow(); $('text').focus();
+  $('text').setSelectionRange($('text').value.length, $('text').value.length);
+}
+
+// ---------- 弹层 ----------
+export function closePopovers(except) {
+  ['plusmenu', 'popover', 'cmdpalette'].forEach((id) => { if (id !== except) $(id).classList.remove('on'); });
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.popover') || e.target.closest('.tool-btn')) return;
+  closePopovers();
+});
+
+// ---------- 工具条（模型 / 思考） ----------
+export function renderToolbar() {
+  if (!S.options) return;
+  $('modellabel').textContent = S.options.model || S.options.defaultModel || '模型';
+  const eff = S.options.effort;
+  $('effortlabel').textContent = '思考 · ' + (eff ? ({ low: '低', medium: '中', high: '高' }[eff] || eff) : '自动');
+}
+
+function renderPlusMenu() {
+  const box = $('plusmenu');
+  const skills = (S.options && S.options.skills) || [];
+  box.innerHTML =
+    '<button class="po-item" id="pm-file"><svg class="i"><use href="#i-file"/></svg>上传文件</button>' +
+    '<button class="po-item" id="pm-image"><svg class="i"><use href="#i-image"/></svg>上传图片</button>' +
+    (skills.length
+      ? '<div class="po-sep"></div><div class="po-title">技能</div>' +
+        skills.map((s, i) => '<button class="po-item" data-skill="' + i + '"><svg class="i"><use href="#i-spark"/></svg><span>' + esc(s.name) +
+          '</span><span class="po-desc" style="margin-left:auto">' + esc(s.desc || '') + '</span></button>').join('')
+      : '');
+  $('pm-file').onclick = () => { closePopovers(); $('file').click(); };
+  $('pm-image').onclick = () => { closePopovers(); $('file').click(); };
+  box.querySelectorAll('[data-skill]').forEach((b) => {
+    b.onclick = () => {
+      const s = skills[+b.dataset.skill];
+      closePopovers();
+      $('text').value = s.prompt || s.name;
+      autoGrow(); $('text').focus();
+      $('text').setSelectionRange($('text').value.length, $('text').value.length);
+      updateSendBtn();
+    };
+  });
+}
+
+function openModelPopover() {
+  const box = $('popover');
+  const cur = S.options ? S.options.model || '' : '';
+  box.innerHTML = '<div class="po-title">模型</div>' +
+    '<input class="po-filter" id="po-filter" placeholder="筛选模型…"><div class="po-scroll" id="po-list"></div>';
+  const list = $('po-list');
+  const mk = (value, label, hint) => {
+    const b = document.createElement('button');
+    b.className = 'po-item' + (cur === value ? ' on' : '');
+    b.innerHTML = '<span>' + esc(label) + (hint ? ' <span class="po-desc">' + esc(hint) + '</span>' : '') + '</span><span class="check">' + ICON.check + '</span>';
+    b.onclick = () => setPrefs({ model: value });
+    list.appendChild(b);
+  };
+  const build = (f) => {
+    list.innerHTML = '';
+    const q = (f || '').trim().toLowerCase();
+    if (!q) mk('', '默认 · ' + ((S.options && S.options.defaultModel) || ''), '');
+    ((S.options && S.options.models) || []).forEach((m) => {
+      if (q && m.toLowerCase().indexOf(q) < 0) return;
+      mk(m, m, m === (S.options && S.options.defaultModel) ? '默认' : '');
+    });
+    if (!list.children.length) list.innerHTML = '<div class="po-desc" style="padding:8px 10px">没有匹配的模型</div>';
+  };
+  build('');
+  $('po-filter').oninput = () => build($('po-filter').value);
+  closePopovers('popover');
+  box.classList.add('on');
+}
+
+function openEffortPopover() {
+  const box = $('popover');
+  const EFFORTS = ['', 'low', 'medium', 'high'];
+  const LABELS = { '': '自动', low: '低', medium: '中', high: '高' };
+  const cur = (S.options && S.options.effort) || '';
+  box.innerHTML = '<div class="po-title">思考强度</div>' +
+    '<div class="seg" id="effort-seg" style="--segs:4"><div class="seg-thumb" id="seg-thumb"></div>' +
+    EFFORTS.map((v) => '<button class="seg-item" data-effort="' + v + '">' + LABELS[v] + '</button>').join('') +
+    '</div><div class="po-desc" style="padding:0 10px 6px">越高越聪明、也越慢；支持拖动或点击</div>';
+  const seg = $('effort-seg');
+  const idxOf = (v) => Math.max(0, EFFORTS.indexOf(v || ''));
+  const paint = (idx) => {
+    $('seg-thumb').style.transform = 'translateX(' + (idx * 100) + '%)';
+    seg.querySelectorAll('.seg-item').forEach((b, i) => b.classList.toggle('on', i === idx));
+  };
+  paint(idxOf(cur));
+  let dragging = false;
+  const frac = (x) => {
+    const r = seg.getBoundingClientRect();
+    const pad = 3, w = (r.width - pad * 2) / EFFORTS.length;
+    return Math.max(0, Math.min(EFFORTS.length - 1, (x - r.left - pad) / w - 0.5));
+  };
+  seg.addEventListener('pointerdown', (e) => {
+    dragging = true; seg.classList.add('dragging');
+    try { seg.setPointerCapture(e.pointerId); } catch (err) {}
+    paint(Math.round(frac(e.clientX)));
+  });
+  seg.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    $('seg-thumb').style.transform = 'translateX(' + (frac(e.clientX) * 100) + '%)';
+    paint(Math.round(frac(e.clientX)));
+  });
+  const stop = (e) => {
+    if (!dragging) return;
+    dragging = false; seg.classList.remove('dragging');
+    const v = EFFORTS[Math.round(frac(e.clientX))];
+    if (v === cur) { paint(idxOf(cur)); return; }
+    setPrefs({ effort: v });
+  };
+  seg.addEventListener('pointerup', stop);
+  seg.addEventListener('pointercancel', stop);
+  closePopovers('popover');
+  box.classList.add('on');
+}
+
+async function setPrefs(patch) {
+  try {
+    const r = await apiPost('/api/prefs', patch);
+    S.options.model = r.model; S.options.effort = r.effort;
+    renderToolbar();
+    if ($('popover').classList.contains('on')) {
+      if ('model' in patch) openModelPopover(); else openEffortPopover();
+    }
+    toast('已切换 · ' + [
+      r.model || '默认模型',
+      '思考 ' + (r.effort ? ({ low: '低', medium: '中', high: '高' }[r.effort] || r.effort) : '自动')
+    ].join(' · '), 'ok');
+  } catch (e) { showError(e.message); }
+}
+
+export async function loadOptions(force) {
+  if (S.options && !force) { renderToolbar(); return S.options; }
+  S.options = await api('/api/options');
+  renderToolbar();
+  $('nav-ws').hidden = !(S.options.admin || S.admin);
+  return S.options;
+}
+
+// ---------- 事件绑定 ----------
+$('text').addEventListener('input', () => { autoGrow(); syncPalette(); });
+$('text').addEventListener('keydown', (e) => {
+  if ($('cmdpalette').classList.contains('on') && cmdList.length) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); cmdIndex = (cmdIndex + 1) % cmdList.length; syncPalette(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); cmdIndex = (cmdIndex - 1 + cmdList.length) % cmdList.length; syncPalette(); return; }
+    if (e.key === 'Tab' || (e.key === 'Enter' && !e.isComposing)) { e.preventDefault(); applyCmd(cmdList[cmdIndex]); return; }
+    if (e.key === 'Escape') { e.preventDefault(); $('cmdpalette').classList.remove('on'); return; }
+  }
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMsg(); }
+});
+$('send').onclick = sendMsg;
+$('attach').onclick = (e) => {
+  e.stopPropagation();
+  const box = $('plusmenu');
+  if (box.classList.contains('on')) { box.classList.remove('on'); return; }
+  renderPlusMenu(); closePopovers('plusmenu'); box.classList.add('on');
+};
+$('modelbtn').onclick = (e) => { e.stopPropagation(); openModelPopover(); };
+$('effortbtn').onclick = (e) => { e.stopPropagation(); openEffortPopover(); };
+$('file').onchange = () => { addFiles($('file').files); $('file').value = ''; };
+document.querySelectorAll('.suggests button').forEach((b) => {
+  b.onclick = () => { $('text').value = b.dataset.q; autoGrow(); $('text').focus(); };
+});
+document.addEventListener('paste', (e) => {
+  if (!S.token) return;
+  const files = e.clipboardData && e.clipboardData.files;
+  if (files && files.length) { e.preventDefault(); addFiles(files); }
+});
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  if (!S.token) return;
+  if (++dragDepth === 1) $('drop').classList.add('on');
+});
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').classList.remove('on'); } });
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on');
+  if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});

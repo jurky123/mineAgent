@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -132,8 +133,8 @@ func (c *Channel) Stop() {
 	c.srv = nil
 }
 
-// Send 实现 session.Channel：agent 的回复 -> 对应账号的 SSE 订阅者。
-// Target="c2c:<名字>"（file: 前缀是 agent 发的文件消息）。
+// Send 实现 session.Channel：agent 的回复 -> 对应账号/会话的 SSE 订阅者。
+// Target="c2c:<名字>"（file: 前缀是 agent 发的文件消息），conv 从 SessionID 反解。
 func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 	target := strings.TrimPrefix(msg.Target, storage.KindFile)
 	target = strings.TrimPrefix(target, storage.KindMarkdown)
@@ -142,7 +143,8 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 		c.log.Warn("web send with bad target", "target", msg.Target)
 		return nil
 	}
-	c.publish(name, WireMessage{
+	conv := convOfSession(msg.SessionID, name)
+	c.publish(name, conv, WireMessage{
 		ID:   msg.ID,
 		Role: "agent",
 		Name: "MineAgent",
@@ -176,9 +178,25 @@ func (c *Channel) unsubscribe(name string, ch chan []byte) {
 	c.mu.Unlock()
 }
 
-// publish 把一条消息送给该账号所有在线标签页。
-func (c *Channel) publish(name string, msg WireMessage) {
-	c.publishRaw(name, map[string]any{"type": "message", "message": msg})
+// publish 把一条消息送给该账号所有在线标签页（带会话 id，前端按当前会话过滤）。
+func (c *Channel) publish(name, conv string, msg WireMessage) {
+	c.publishRaw(name, map[string]any{"type": "message", "conv": conv, "message": msg})
+}
+
+// conversationTitle 首条消息自动命名：取第一行前 24 个字。
+func conversationTitle(text string, files []UploadedFile) string {
+	t := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
+	if t == "" && len(files) > 0 {
+		t = "文件：" + files[0].Name
+	}
+	if t == "" {
+		return "新会话"
+	}
+	r := []rune(t)
+	if len(r) > 24 {
+		return string(r[:24])
+	}
+	return t
 }
 
 // publishRaw 广播任意 SSE 事件（message / cleared）。
@@ -200,6 +218,52 @@ func (c *Channel) publishRaw(name string, v any) {
 		default:
 		}
 	}
+}
+
+// ErrConvNotFound 会话不存在（发送时给 404 而不是限流 429）。
+var ErrConvNotFound = errors.New("会话不存在")
+
+// webSessionKey 账号 + 会话短 id -> 会话 key（conv 为空是默认会话）。
+func webSessionKey(name, conv string) string {
+	if conv == "" {
+		return "web:c2c:" + name
+	}
+	return "web:c2c:" + name + ":" + conv
+}
+
+// convOfSession 从会话 key 反解会话短 id（不是本账号的返回 ""）。
+func convOfSession(sessionID, name string) string {
+	rest := strings.TrimPrefix(sessionID, "web:c2c:"+name)
+	if rest == sessionID {
+		return ""
+	}
+	return strings.TrimPrefix(rest, ":")
+}
+
+// sessionBelongsTo 判断会话 key 是否属于该账号（默认会话或带 conv 的）。
+func sessionBelongsTo(sessionID, name string) bool {
+	prefix := "web:c2c:" + name
+	if !strings.HasPrefix(sessionID, prefix) {
+		return false
+	}
+	rest := sessionID[len(prefix):]
+	return rest == "" || (strings.HasPrefix(rest, ":") && len(rest) > 1)
+}
+
+// ValidConv 校验会话短 id（客户端只从服务端拿，格式固定）。
+func ValidConv(conv string) bool {
+	if conv == "" {
+		return true
+	}
+	if len(conv) < 6 || len(conv) > 32 {
+		return false
+	}
+	for _, r := range conv {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // session 取/建账号会话并注册本通道（模式同其他通道）。
@@ -224,10 +288,11 @@ func (c *Channel) session(key string) (*session.Session, error) {
 }
 
 // HandleUserMessage 是一条来自网页的消息入口：系统命令直回 /
-// 限流 / 入库 / 触发 agent。files 是本次上传的文件（可为空）。
-func (c *Channel) HandleUserMessage(ctx context.Context, name, text string, files []UploadedFile) error {
-	sessionKey := "web:c2c:" + name
+// 限流 / 入库 / 触发 agent。conv 是会话短 id（空 = 默认会话），files 是本次上传的文件。
+func (c *Channel) HandleUserMessage(ctx context.Context, name, conv, text string, files []UploadedFile) error {
+	sessionKey := webSessionKey(name, conv)
 	target := "c2c:" + name
+	nowMs := time.Now().UnixMilli()
 
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
@@ -242,6 +307,15 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, text string, file
 		return fmt.Errorf("慢一点，消息太密了")
 	}
 	c.mu.Unlock()
+
+	// 会话必须存在（默认会话首次使用自动建行）。
+	if conv == "" {
+		_ = c.store.UpsertConversation(ctx, name, conv, "", nowMs)
+	} else if existing, err := c.store.Conversation(ctx, name, conv); err != nil {
+		return err
+	} else if existing == nil {
+		return ErrConvNotFound
+	}
 
 	sess, err := c.session(sessionKey)
 	if err != nil {
@@ -288,8 +362,10 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name, text string, file
 	if err != nil {
 		return err
 	}
-	// 多标签页同步：本通道的 Ingest 不 fanout 给自己，这里手动广播。
-	c.publish(name, ToWire(stored))
+	// 首条消息自动命名 + 刷新会话时间；多标签页同步广播（带 conv）。
+	_ = c.store.SetConversationTitleIfEmpty(ctx, name, conv, conversationTitle(text, files), nowMs)
+	_ = c.store.UpsertConversation(ctx, name, conv, "", nowMs)
+	c.publish(name, conv, ToWire(stored))
 
 	now := time.Now().UnixMilli()
 	_ = c.store.UpsertIdentity(ctx, "web", name, name, now)

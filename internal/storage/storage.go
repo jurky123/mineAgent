@@ -40,6 +40,16 @@ const (
 	KindFile     = "file:"
 )
 
+// Conversation 是网页入口的一条会话（账号 + 会话短 id）。
+// conv 为空串表示"默认会话"（历史遗留的 web:c2c:<名字> 单会话）。
+type Conversation struct {
+	Account   string `json:"account"`
+	Conv      string `json:"conv"`
+	Title     string `json:"title"`
+	CreatedAt int64  `json:"createdAt"`
+	UpdatedAt int64  `json:"updatedAt"`
+}
+
 type Summary struct {
 	ID            int64  `json:"id"`
 	SessionID     string `json:"sessionId"`
@@ -118,6 +128,15 @@ CREATE TABLE IF NOT EXISTS agent_checkpoints (
 	id         TEXT PRIMARY KEY,
 	data       BLOB NOT NULL,
 	updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS web_conversations (
+	account    TEXT NOT NULL,
+	conv       TEXT NOT NULL,
+	title      TEXT NOT NULL DEFAULT '',
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY (account, conv)
 );
 `
 
@@ -325,6 +344,64 @@ func (s *Store) LinkedMC(ctx context.Context, platform, platformID string) (stri
 		return "", err
 	}
 	return name, nil
+}
+
+// UpsertConversation 创建或更新会话行（title 为空时不动已有标题）。
+func (s *Store) UpsertConversation(ctx context.Context, account, conv, title string, now int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO web_conversations(account, conv, title, created_at, updated_at) VALUES(?, ?, ?, ?, ?)
+		 ON CONFLICT(account, conv) DO UPDATE SET
+		   title=CASE WHEN excluded.title <> '' THEN excluded.title ELSE web_conversations.title END,
+		   updated_at=excluded.updated_at`,
+		account, conv, title, now, now)
+	return err
+}
+
+// SetConversationTitleIfEmpty 首条消息自动命名：只在标题为空时写。
+func (s *Store) SetConversationTitleIfEmpty(ctx context.Context, account, conv, title string, now int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE web_conversations SET title=?, updated_at=?
+		 WHERE account=? AND conv=? AND (title IS NULL OR title='')`,
+		title, now, account, conv)
+	return err
+}
+
+func (s *Store) Conversation(ctx context.Context, account, conv string) (*Conversation, error) {
+	var c Conversation
+	err := s.db.QueryRowContext(ctx,
+		`SELECT account, conv, title, created_at, updated_at FROM web_conversations WHERE account=? AND conv=?`,
+		account, conv).Scan(&c.Account, &c.Conv, &c.Title, &c.CreatedAt, &c.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (s *Store) ListConversations(ctx context.Context, account string) ([]Conversation, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT account, conv, title, created_at, updated_at FROM web_conversations
+		 WHERE account=? ORDER BY updated_at DESC, created_at DESC`, account)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Conversation
+	for rows.Next() {
+		var c Conversation
+		if err := rows.Scan(&c.Account, &c.Conv, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteConversation(ctx context.Context, account, conv string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM web_conversations WHERE account=? AND conv=?`, account, conv)
+	return err
 }
 
 func (s *Store) SaveAudit(ctx context.Context, e AuditEntry) (int64, error) {

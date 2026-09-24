@@ -1,0 +1,222 @@
+// 消息区：渲染 / 历史分页 / SSE / 空状态与 composer 停靠
+
+import { $, esc, fmtSize, fmtTime, bus, ICON, extInfo, showError } from './ui.js';
+import { S, withTok } from './state.js';
+import { api } from './api.js';
+import { renderContent } from './markdown.js';
+import { openViewer } from './viewer.js';
+
+let msgIds = new Set();
+let lastId = 0, oldestId = 0, hasMore = false;
+let es = null;
+let docked = null;
+
+// ---------- 附件 ----------
+function fileBubble(f) {
+  const name = f.name || '文件';
+  if (f.image) {
+    const src = withTok(f.url);
+    return '<div class="imgbox"><img src="' + esc(src) + '" alt="' + esc(name) + '" loading="lazy" data-zoom="' + esc(src) + '" data-name="' + esc(name) + '">' +
+      '<div class="imgtools">' +
+      '<button class="itool" data-preview title="查看">' + ICON.expand + '</button>' +
+      '<a class="itool" href="' + esc(src) + '" download="' + esc(name) + '" title="下载">' + ICON.download + '</a>' +
+      '</div></div>';
+  }
+  const [label, cls] = extInfo(name);
+  return '<a class="filecard" href="' + esc(withTok(f.url)) + '" download="' + esc(name) + '" title="' + esc(name) + '">' +
+    '<span class="ext ' + cls + '">' + label + '</span>' +
+    '<span class="fmeta"><span class="fname">' + esc(name) + '</span>' +
+    (f.size ? '<span class="fsize">' + fmtSize(f.size) + '</span>' : '') + '</span>' +
+    '<span class="fdl">' + ICON.download + '</span></a>';
+}
+
+function addCodeCopy(row) {
+  row.querySelectorAll('pre').forEach((pre) => {
+    const btn = document.createElement('button');
+    btn.className = 'codecopy';
+    btn.textContent = '复制';
+    btn.onclick = () => {
+      const code = pre.querySelector('code');
+      navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
+        btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制'; }, 1200);
+      });
+    };
+    pre.appendChild(btn);
+  });
+}
+
+// ---------- 渲染 ----------
+export function renderMsg(m, prepend) {
+  if (msgIds.has(m.id)) return;
+  msgIds.add(m.id);
+  const row = document.createElement('div');
+  row.className = 'msg ' + (m.role === 'user' ? 'user' : 'assistant');
+  row.dataset.raw = m.text || '';
+  let html = '<div class="body">';
+  if (m.role === 'assistant') {
+    html += '<div class="content"></div>' +
+      (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
+      '<div class="actions"><span class="time">' + fmtTime(m.at) + '</span>' +
+      '<button class="act copy">' + ICON.copy + '复制</button></div>';
+  } else {
+    html += '<div class="content"></div>' +
+      (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
+      '<div class="actions"><button class="act copy">' + ICON.copy + '复制</button></div>';
+  }
+  html += '</div>';
+  row.innerHTML = html;
+  const content = row.querySelector('.content');
+  if (m.role === 'assistant') renderContent(content, m.text || '');
+  else content.textContent = m.text || '';
+  const copy = row.querySelector('.copy');
+  if (copy) copy.onclick = () => {
+    navigator.clipboard.writeText(row.dataset.raw).then(() => {
+      copy.innerHTML = ICON.check + '已复制'; setTimeout(() => { copy.innerHTML = ICON.copy + '复制'; }, 1200);
+    });
+  };
+  addCodeCopy(row);
+  oldestId = oldestId ? Math.min(oldestId, m.id) : m.id;
+  const near = scrollNearBottom();
+  if (prepend) $('listInner').insertBefore(row, $('loadolder').nextSibling);
+  else $('listInner').appendChild(row);
+  if (!prepend && near) toBottom(); else updateToBottom();
+  layout();
+}
+
+export function clearMessages() {
+  $('listInner').querySelectorAll('.msg,.typing').forEach((n) => n.remove());
+  msgIds.clear(); lastId = 0; oldestId = 0; hasMore = false;
+  updateLoadOlder(); setTyping(false); layout(true);
+}
+
+export function setTyping(on) {
+  S.waiting = on;
+  const old = $('listInner').querySelector('.typing');
+  if (!on) { if (old) old.remove(); return; }
+  if (old) return;
+  const row = document.createElement('div');
+  row.className = 'typing';
+  row.innerHTML = '<span class="dots"><span></span><span></span><span></span></span> 正在输入…';
+  $('listInner').appendChild(row);
+  if (scrollNearBottom()) toBottom();
+}
+
+// ---------- 滚动 ----------
+export function scrollNearBottom() {
+  const el = $('list');
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+}
+export function toBottom() { const el = $('list'); el.scrollTop = el.scrollHeight; updateToBottom(); }
+export function updateToBottom() {
+  const el = $('list');
+  $('tobottom').classList.toggle('on', el.scrollHeight - el.scrollTop - el.clientHeight > 300);
+}
+
+// ---------- 空状态 / composer 停靠 ----------
+export function hasMessages() { return $('listInner').querySelectorAll('.msg').length > 0; }
+
+export function layout(force) {
+  const has = hasMessages();
+  if (docked !== has || force) { dockComposer(has, !force); docked = has; }
+  $('empty').style.display = has ? 'none' : '';
+}
+
+function dockComposer(atBottom, animate) {
+  const c = $('composer');
+  const target = atBottom ? $('bottomSlot') : $('emptySlot');
+  if (c.parentElement === target) return;
+  const from = c.getBoundingClientRect();
+  target.appendChild(c);
+  if (!animate) return;
+  const to = c.getBoundingClientRect();
+  const dx = from.left - to.left, dy = from.top - to.top;
+  if (!dx && !dy) return;
+  c.style.transition = 'none';
+  c.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+  requestAnimationFrame(() => {
+    c.style.transition = 'transform .3s cubic-bezier(.2,.8,.2,1)';
+    c.style.transform = '';
+    setTimeout(() => { c.style.transition = ''; }, 340);
+  });
+}
+
+// ---------- 历史 ----------
+export async function loadHistory() {
+  clearMessages();
+  try {
+    const body = await api('/api/history?conv=' + encodeURIComponent(S.conv));
+    for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
+    hasMore = !!body.hasMore;
+    updateLoadOlder();
+    layout(true);
+    if ((body.messages || []).length) toBottom();
+  } catch (e) { showError(e.message); }
+}
+
+export async function syncAfter() {
+  try {
+    const body = await api('/api/history?after=' + lastId + '&conv=' + encodeURIComponent(S.conv));
+    for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
+  } catch (e) { /* SSE 会推 */ }
+}
+
+export function updateLoadOlder() { $('loadolder').hidden = !hasMore; }
+
+export async function loadOlder() {
+  const btn = $('loadolder');
+  if (!oldestId || btn.disabled) return;
+  btn.disabled = true; btn.textContent = '加载中…';
+  try {
+    const body = await api('/api/history?before=' + oldestId + '&conv=' + encodeURIComponent(S.conv));
+    const list = body.messages || [];
+    const el = $('list');
+    const prevH = el.scrollHeight, prevTop = el.scrollTop;
+    list.forEach((m) => renderMsg(m, true));
+    hasMore = !!body.hasMore;
+    el.scrollTop = el.scrollHeight - prevH + prevTop;
+  } catch (e) { showError(e.message); }
+  btn.disabled = false; btn.textContent = '载入更早消息';
+  updateLoadOlder();
+}
+
+// ---------- SSE ----------
+export function disconnect() {
+  if (es) { es.close(); es = null; }
+}
+
+export function connectSSE() {
+  if (es) es.close();
+  es = new EventSource('/api/events?token=' + encodeURIComponent(S.token));
+  es.addEventListener('message', (ev) => {
+    let data = null;
+    try { data = JSON.parse(ev.data); } catch (e) { return; }
+    if (data.type === 'message' && data.message) {
+      if (data.conv !== (S.conv || '')) {
+        // 其它会话来了新消息：标未读，不打扰当前会话
+        if (data.message.role === 'agent') bus.emit('message-other', { conv: data.conv || '' });
+        return;
+      }
+      lastId = Math.max(lastId, data.message.id);
+      renderMsg(data.message);
+      if (data.message.role === 'agent') setTyping(false);
+    } else if (data.type === 'cleared') {
+      if (data.conv === (S.conv || '')) clearMessages();
+    } else if (data.type === 'conversations') {
+      bus.emit('conversations-changed');
+    }
+  });
+  es.onopen = () => { $('connbar').hidden = true; syncAfter(); };
+  es.onerror = () => { $('connbar').hidden = false; };
+}
+
+// 列表内的图片点击（挂一次）
+$('list').addEventListener('click', (e) => {
+  const hit = e.target.closest('img[data-zoom],[data-preview]');
+  if (!hit) return;
+  const row = e.target.closest('.msg');
+  if (!row) return;
+  const imgs = Array.from(row.querySelectorAll('img[data-zoom]'));
+  if (!imgs.length) return;
+  const target = hit.tagName === 'IMG' ? hit : hit.closest('.imgbox').querySelector('img[data-zoom]');
+  openViewer(imgs.map((n) => ({ url: n.dataset.zoom, name: n.dataset.name || '' })), Math.max(0, imgs.indexOf(target)));
+});

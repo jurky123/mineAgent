@@ -1,0 +1,101 @@
+/* Composer（两层结构）、待发附件、弹层、toast */
+
+.composer { width: min(100%, var(--col)); margin: 0 auto; position: relative; }
+.composer-box {
+  display: flex; flex-direction: column; border: 1px solid var(--border-2);
+  border-radius: var(--radius-composer); background: var(--surface); padding: 12px 14px 8px;
+}
+.composer-box:focus-within { border-color: var(--text-3); }
+.composer-box textarea {
+  width: 100%; border: 0; outline: none; background: none; color: var(--text); font: inherit;
+  resize: none; max-height: 200px; min-height: 26px; padding: 0 2px;
+}
+.composer-box textarea::placeholder { color: var(--text-3); }
+.composer-tools { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.tool-btn {
+  display: flex; align-items: center; gap: 5px; padding: 5px 9px; border: 0; background: none;
+  border-radius: var(--radius-sm); color: var(--text-2); font-size: 13px; max-width: 42vw;
+}
+.tool-btn:hover { background: var(--surface-hover); color: var(--text); }
+.tool-btn .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-btn .i { width: 15px; height: 15px; }
+.send {
+  display: flex; align-items: center; justify-content: center; width: 32px; height: 32px;
+  border: 0; border-radius: 50%; background: var(--send-off-bg); color: var(--send-off-fg); padding: 0;
+}
+.send.ready { background: var(--accent); color: var(--accent-contrast); }
+.send.ready:hover { filter: brightness(.92); }
+.send:disabled { cursor: default; }
+
+#pending { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 8px; }
+#pending:empty { display: none; }
+.chip {
+  position: relative; width: 68px; height: 68px; border-radius: var(--radius-md); overflow: hidden;
+  border: 1px solid var(--border-2); background: var(--surface);
+}
+.chip img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.chip .doc { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; }
+.chip .doc .n { font-size: 9.5px; color: var(--text-3); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip .x {
+  position: absolute; top: 3px; right: 3px; width: 19px; height: 19px; border-radius: 50%;
+  border: 0; background: rgba(20,20,20,.72); color: #fff; font-size: 11px; padding: 0; line-height: 1;
+}
+.chip .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--text); width: 0; transition: width .15s; }
+.chip.done .bar { background: var(--ok); }
+.chip .note { position: absolute; left: 0; right: 0; bottom: 3px; font-size: 9px; text-align: center; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+
+/* ---------- 弹层 ---------- */
+.popover {
+  position: absolute; z-index: 12; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-popover); padding: 6px; display: none;
+}
+.popover.on { display: block; animation: pop .12s ease-out; }
+#plusmenu { left: 0; bottom: calc(100% + 10px); width: 250px; }
+#popover { right: 0; bottom: calc(100% + 10px); width: 300px; }
+.po-title { font-size: 11.5px; color: var(--text-3); padding: 6px 10px 4px; }
+.po-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: 0;
+  background: none; border-radius: var(--radius-sm); font-size: 13.5px; text-align: left;
+}
+.po-item:hover { background: var(--surface-hover); }
+.po-item .check { margin-left: auto; color: var(--text); visibility: hidden; }
+.po-item.on .check { visibility: visible; }
+.po-sep { height: 1px; background: var(--border); margin: 5px 4px; }
+.po-scroll { max-height: 220px; overflow-y: auto; }
+.po-desc { color: var(--text-3); font-size: 11.5px; }
+.po-filter {
+  width: calc(100% - 16px); margin: 2px 8px 6px; padding: 6px 9px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font: inherit; font-size: 13px; outline: none; color: var(--text);
+  background: var(--surface);
+}
+.po-filter:focus { border-color: var(--text-3); }
+
+/* 分段控件（思考强度 / 主题） */
+.seg { position: relative; display: flex; margin: 2px 6px 6px; padding: 3px; border-radius: 10px; background: var(--seg-bg); user-select: none; touch-action: none; }
+.seg-thumb {
+  position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--segs, 4));
+  border-radius: 8px; background: var(--surface); border: 1px solid var(--border-2);
+  transition: transform .3s cubic-bezier(.22,1.3,.36,1); z-index: 0; will-change: transform;
+}
+.seg.dragging .seg-thumb { transition: none; }
+.seg-item {
+  position: relative; z-index: 1; flex: 1; border: 0; background: none; padding: 6px 0;
+  font-size: 12.5px; color: var(--text-3); border-radius: 8px;
+}
+.seg-item.on { color: var(--text); font-weight: 600; }
+
+#cmdpalette { left: 0; right: 0; bottom: calc(100% + 10px); }
+.cmd-item { display: flex; gap: 12px; align-items: baseline; width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13.5px; }
+.cmd-item.on, .cmd-item:hover { background: var(--surface-hover); }
+.cmd-item .c { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); min-width: 92px; }
+.cmd-item .d { color: var(--text-3); font-size: 12px; }
+
+#toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: 108px; z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast {
+  pointer-events: auto; max-width: min(540px, 90vw); cursor: pointer; padding: 9px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  font-size: 13.5px; box-shadow: var(--shadow-popover);
+}
+.toast.err { border-color: #fda29b; color: var(--danger); }
+.toast.ok { border-color: #a6f4c5; color: var(--ok); }
+.toast.out { animation: fadein .2s ease reverse forwards; }

@@ -5,8 +5,10 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,8 +20,11 @@ import (
 	"mineagent/internal/storage"
 )
 
-//go:embed static/index.html
+//go:embed static
 var staticFS embed.FS
+
+// staticRoot 指向 static/ 子树（index.html 与 css/js 都在里面）。
+var staticRoot, _ = fs.Sub(staticFS, "static")
 
 // Serve 起 HTTP 服务：静态页 + JSON API + SSE。调用方 go 它。
 func (c *Channel) Serve() error {
@@ -42,6 +47,7 @@ func (c *Channel) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.handleIndex)
 	mux.HandleFunc("/api/login", c.handleLogin)
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("/api/logout", c.handleLogout)
 	mux.HandleFunc("/api/me", c.withAuth(c.handleMe))
 	mux.HandleFunc("/api/history", c.withAuth(c.handleHistory))
@@ -54,6 +60,10 @@ func (c *Channel) handler() http.Handler {
 	mux.HandleFunc("/api/prefs", c.withAuth(c.handlePrefs))
 	mux.HandleFunc("/api/workspace", c.withAuth(c.handleWorkspaceList))
 	mux.HandleFunc("/api/workspace/file", c.withAuth(c.handleWorkspaceFile))
+	mux.HandleFunc("/api/conversations", c.withAuth(c.handleConversations))
+	mux.HandleFunc("/api/conversations/delete", c.withAuth(c.handleConversationDelete))
+	mux.HandleFunc("/api/conversations/rename", c.withAuth(c.handleConversationRename))
+	mux.Handle("/static/", http.StripPrefix("/static/", noCache(http.FileServer(http.FS(staticRoot)))))
 	return c.cors(mux)
 }
 
@@ -101,7 +111,7 @@ func (c *Channel) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	b, err := staticFS.ReadFile("static/index.html")
+	b, err := fs.ReadFile(staticRoot, "index.html")
 	if err != nil {
 		http.Error(w, "index missing", http.StatusInternalServerError)
 		return
@@ -109,6 +119,14 @@ func (c *Channel) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(b)
+}
+
+// noCache 静态资源禁缓存（文件没做 hash，改版即生效更重要）。
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // tokenOf 从 Authorization: Bearer / ?token= / 登录 cookie 取令牌。
@@ -236,7 +254,12 @@ func (c *Channel) handleMe(w http.ResponseWriter, _ *http.Request, name string) 
 //   - ?after=<id> 拉更新的（SSE 断线补漏）；
 //   - ?before=<id> 向上翻页，一次 50 条，附带 hasMore。
 func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name string) {
-	sessionKey := "web:c2c:" + name
+	conv := strings.TrimSpace(r.URL.Query().Get("conv"))
+	if !ValidConv(conv) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
+		return
+	}
+	sessionKey := webSessionKey(name, conv)
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	var (
@@ -414,13 +437,112 @@ func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name strin
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
 	}
-	if err := c.store.ClearSession(r.Context(), "web:c2c:"+name); err != nil {
+	var req struct {
+		Conv string `json:"conv"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req)
+	if !ValidConv(req.Conv) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
+		return
+	}
+	if err := c.store.ClearSession(r.Context(), webSessionKey(name, req.Conv)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	c.log.Info("web session cleared", "name", name)
-	c.publishRaw(name, map[string]any{"type": "cleared"})
+	c.log.Info("web session cleared", "name", name, "conv", req.Conv)
+	c.publishRaw(name, map[string]any{"type": "cleared", "conv": req.Conv})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleConversations 会话列表（GET）/ 新建（POST）。
+func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, name string) {
+	ctx := r.Context()
+	switch r.Method {
+	case http.MethodGet:
+		// 保证至少有一个默认会话。
+		_ = c.store.UpsertConversation(ctx, name, "", "", time.Now().UnixMilli())
+		list, err := c.store.ListConversations(ctx, name)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"conversations": list})
+	case http.MethodPost:
+		conv, err := randomConv()
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成会话失败"})
+			return
+		}
+		now := time.Now().UnixMilli()
+		if err := c.store.UpsertConversation(ctx, name, conv, "", now); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		c.log.Info("web conversation created", "name", name, "conv", conv)
+		writeJSON(w, http.StatusOK, map[string]any{"conv": conv, "title": ""})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET/POST"})
+	}
+}
+
+// handleConversationDelete 删除会话（含消息与摘要）。
+func (c *Channel) handleConversationDelete(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Conv string `json:"conv"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil || !ValidConv(req.Conv) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
+		return
+	}
+	if err := c.store.ClearSession(r.Context(), webSessionKey(name, req.Conv)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := c.store.DeleteConversation(r.Context(), name, req.Conv); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	c.log.Info("web conversation deleted", "name", name, "conv", req.Conv)
+	c.publishRaw(name, map[string]any{"type": "conversations"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleConversationRename 重命名会话。
+func (c *Channel) handleConversationRename(w http.ResponseWriter, r *http.Request, name string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Conv  string `json:"conv"`
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || !ValidConv(req.Conv) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数非法"})
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	if r := []rune(title); len(r) > 60 {
+		title = string(r[:60])
+	}
+	if err := c.store.UpsertConversation(r.Context(), name, req.Conv, title, time.Now().UnixMilli()); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"conv": req.Conv, "title": title})
+}
+
+// randomConv 会话短 id（12 位小写十六进制）。
+func randomConv() (string, error) {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 func (c *Channel) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -535,11 +657,16 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		return
 	}
 	var req struct {
+		Conv  string         `json:"conv"`
 		Text  string         `json:"text"`
 		Files []UploadedFile `json:"files"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
+		return
+	}
+	if !ValidConv(req.Conv) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
 		return
 	}
 	// 文件引用只能是自己上传目录里的（防引用别人/别的目录）。
@@ -557,7 +684,11 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		}
 		files = append(files, f)
 	}
-	if err := c.HandleUserMessage(r.Context(), name, req.Text, files); err != nil {
+	if err := c.HandleUserMessage(r.Context(), name, req.Conv, req.Text, files); err != nil {
+		if errors.Is(err, ErrConvNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	}
@@ -587,8 +718,7 @@ func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "消息不存在"})
 		return
 	}
-	sessionKey := "web:c2c:" + name
-	if msg.SessionID != sessionKey {
+	if !sessionBelongsTo(msg.SessionID, name) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "不是你的消息"})
 		return
 	}

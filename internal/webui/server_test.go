@@ -490,6 +490,95 @@ func TestHistoryPagination(t *testing.T) {
 	}
 }
 
+func TestConversationsFlow(t *testing.T) {
+	ch, ts, _ := newTestChannel(t)
+	tok := loginTest(t, ts, "jzk")
+	_ = ch
+
+	// 默认会话
+	var list struct {
+		Conversations []storage.Conversation `json:"conversations"`
+	}
+	if code := doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &list); code != 200 {
+		t.Fatalf("list status=%d", code)
+	}
+	if len(list.Conversations) != 1 || list.Conversations[0].Conv != "" {
+		t.Fatalf("默认会话 = %+v", list.Conversations)
+	}
+
+	// 新建
+	var created struct {
+		Conv  string `json:"conv"`
+		Title string `json:"title"`
+	}
+	if code := doJSON(t, "POST", ts.URL+"/api/conversations", tok, map[string]any{}, &created); code != 200 {
+		t.Fatalf("create status=%d", code)
+	}
+	if created.Conv == "" || !ValidConv(created.Conv) {
+		t.Fatalf("新会话 id = %q", created.Conv)
+	}
+
+	send := func(conv, text string) int {
+		for i := 0; i < 50; i++ {
+			code := doJSON(t, "POST", ts.URL+"/api/send", tok, map[string]any{"conv": conv, "text": text}, nil)
+			if code != 429 {
+				return code
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		return 429
+	}
+	if code := send(created.Conv, "第二个会话的消息"); code != 200 {
+		t.Fatalf("send new status=%d", code)
+	}
+	if code := send("", "默认会话的消息"); code != 200 {
+		t.Fatalf("send default status=%d", code)
+	}
+
+	// 历史隔离
+	hist := func(conv string) []WireMessage {
+		var h struct {
+			Messages []WireMessage `json:"messages"`
+		}
+		_ = doJSON(t, "GET", ts.URL+"/api/history?conv="+conv, tok, nil, &h)
+		return h.Messages
+	}
+	h2 := hist(created.Conv)
+	h1 := hist("")
+	if len(h2) != 2 || h2[0].Text != "第二个会话的消息" {
+		t.Fatalf("新会话历史 = %+v", h2)
+	}
+	if len(h1) != 2 || h1[0].Text != "默认会话的消息" {
+		t.Fatalf("默认会话历史 = %+v", h1)
+	}
+
+	// 首条消息自动命名
+	_ = doJSON(t, "GET", ts.URL+"/api/conversations", tok, nil, &list)
+	found := false
+	for _, cv := range list.Conversations {
+		if cv.Conv == created.Conv {
+			found = true
+			if cv.Title != "第二个会话的消息" {
+				t.Fatalf("自动标题 = %q", cv.Title)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("新会话不在列表: %+v", list.Conversations)
+	}
+
+	// 删除后发送 404
+	if code := doJSON(t, "POST", ts.URL+"/api/conversations/delete", tok, map[string]any{"conv": created.Conv}, nil); code != 200 {
+		t.Fatalf("delete status=%d", code)
+	}
+	if code := send(created.Conv, "还在吗"); code != 404 {
+		t.Fatalf("deleted conv send status=%d", code)
+	}
+	if h := hist(created.Conv); len(h) != 0 {
+		t.Fatalf("删除后还有历史: %+v", h)
+	}
+}
+
 func TestFakeMarkerEscaped(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")

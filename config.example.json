@@ -70,7 +70,8 @@
     "summaryMessages": 80,
     "reductionTokens": 24000,
     "reductionKeep": 4,
-    "backgroundAfterSec": 90
+    "backgroundAfterSec": 90,
+    "maxConcurrentRuns": 4
   },
   "workspace": {
     "root": "workspace",

@@ -5,61 +5,25 @@ import (
 	"mime"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode"
 
 	"mineagent/internal/storage"
 )
 
-// 用户上传的文件在消息文本里用标记表示，agent 能读懂路径，网页前端由服务端
-// 转成结构化 files 数组。格式：[[file:<workspace相对路径>|<展示名>|<mime>|<字节数>]]
-// 展示名/mime 里出现 "|" "]" 会被替换（见 sanitizeMarkerPart）。
-const fileMarkerPrefix = "[[file:"
+// 文件标记/路径校验的格式定义在 storage 包（agent 拼多模态消息也要用），
+// 这里留别名，webui 内部调用不用带包名。
+type UploadedFile = storage.UploadedFile
 
-var fileMarkerRe = regexp.MustCompile(`\[\[file:([^|\]\n]+)\|([^|\]\n]*)\|([^|\]\n]*)\|(\d+)\]\]`)
+func BuildFileMarker(f UploadedFile) string { return storage.BuildFileMarker(f) }
 
-// UploadedFile 是网页端一次上传的结果，也是 /api/send 里 files 的元素。
-type UploadedFile struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
-	Mime string `json:"mime"`
-	Size int64  `json:"size"`
-}
+func ParseFileMarkers(text string) (string, []UploadedFile) { return storage.ParseFileMarkers(text) }
 
-// BuildFileMarker 生成单个文件的标记文本。
-func BuildFileMarker(f UploadedFile) string {
-	return fmt.Sprintf("%s%s|%s|%s|%d]]",
-		fileMarkerPrefix, f.Path, sanitizeMarkerPart(f.Name), sanitizeMarkerPart(f.Mime), f.Size)
-}
+func EscapeFileMarkers(text string) string { return storage.EscapeFileMarkers(text) }
 
-// ParseFileMarkers 从消息文本里剥出全部文件标记，返回剩余文本与文件列表。
-func ParseFileMarkers(text string) (string, []UploadedFile) {
-	var files []UploadedFile
-	clean := fileMarkerRe.ReplaceAllStringFunc(text, func(m string) string {
-		sub := fileMarkerRe.FindStringSubmatch(m)
-		var size int64
-		_, _ = fmt.Sscanf(sub[4], "%d", &size)
-		files = append(files, UploadedFile{Path: sub[1], Name: sub[2], Mime: sub[3], Size: size})
-		return ""
-	})
-	clean = strings.TrimSpace(clean)
-	return clean, files
-}
+func SafeWorkspaceRel(p string) bool { return storage.SafeWorkspaceRel(p) }
 
-// EscapeFileMarkers 防止用户自己拼出 [[file:...]] 标记：入库前先破坏前缀，
-// 否则历史接口会把伪造标记当附件，甚至借 msgfile 读到别的文件。
-func EscapeFileMarkers(text string) string {
-	return strings.ReplaceAll(text, "[[file:", "[[ file:")
-}
-
-// sanitizeMarkerPart 清掉会破坏标记分隔的字符。
-func sanitizeMarkerPart(s string) string {
-	s = strings.ReplaceAll(s, "|", "_")
-	s = strings.ReplaceAll(s, "]", "_")
-	s = strings.ReplaceAll(s, "\n", " ")
-	return strings.TrimSpace(s)
-}
+func sanitizeMarkerPart(s string) string { return storage.SanitizeMarkerPart(s) }
 
 // ValidAccountName 校验网页账号名：1-24 个字符，允许各语言字母数字与 _ - . ，
 // 必须字母数字开头（防 ".."、"."、隐藏目录），且不含路径分隔符。
@@ -139,19 +103,6 @@ func MimeByPath(p string) string {
 		return "image/" + strings.TrimPrefix(strings.ToLower(filepath.Ext(p)), ".")
 	}
 	return "application/octet-stream"
-}
-
-// SafeWorkspaceRel 校验 workspace 相对路径：非空、非绝对、不逃逸目录。
-// 反斜杠直接拒绝（Linux 上是文件名字符，容易在跨平台语义上出岔子）。
-func SafeWorkspaceRel(p string) bool {
-	if p == "" || filepath.IsAbs(p) || strings.ContainsAny(p, "\\:") {
-		return false
-	}
-	clean := path.Clean(p)
-	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
-		return false
-	}
-	return true
 }
 
 // WireFile / WireMessage 是给网页前端的消息结构。

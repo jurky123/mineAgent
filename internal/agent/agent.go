@@ -37,10 +37,10 @@ const systemInstruction = `你是「jzk 的服务器」（Minecraft Paper 服）
   如果玩家问起这些命令，你照着 help 文案介绍，不要自己编命令列表。`
 
 type Request struct {
-	Session          *session.Session
-	SessionKey       string
-	Player           string
-	RequesterID      string
+	Session     *session.Session
+	SessionKey  string
+	Player      string
+	RequesterID string
 	// MCRequester 只有 QQ 通道会填：QQ 身份绑定的 MC 玩家名（可能为空=未绑定）。
 	// 传给 Gateway.Call 作为发给 MC 插件的 requester；审批/审计用的请求者
 	// 仍是 Player（qq:<openid> 形式），见 pendingRun.mcRequester。
@@ -50,7 +50,7 @@ type Request struct {
 	// ReplyTarget 本次回复要发到哪。MC 侧是玩家名（broadcast 模式为空）；
 	// QQ 侧是 "c2c:<openid>:<msgID>" / "group:<groupid>:<msgID>"，
 	// 由 channel 填好，consume 回复时直接用，不再经 replyMode 推导。
-	ReplyTarget       string
+	ReplyTarget string
 	// Tools 为空则用默认集；QQ 通道传入自己的工具集（只读+workspace+MC高权限）。
 	// 用 systemInstruction 区分两个通道的人设与约束。
 	Tools             []tool.BaseTool
@@ -84,12 +84,15 @@ type Agent struct {
 	instruction  string
 	replyMode    string
 	cfg          config.Agent
+	// workspaceRoot 读用户上传的图片附件用（网页端上传落在 workspace 里）。
+	workspaceRoot string
 
 	mcRunner  *adk.Runner
 	approvals *tools.Approvals
 	enabled   bool
 
 	jobs chan Request
+	pool *sessionPool
 
 	mu      sync.Mutex
 	pending map[string]*pendingRun
@@ -101,17 +104,19 @@ type Agent struct {
 func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog.Logger,
 	agentTools []tool.BaseTool, approvals *tools.Approvals) (*Agent, error) {
 	a := &Agent{
-		store:        store,
-		log:          log,
-		sessionKey:   cfg.Minecraft.SessionID,
-		defaultTools: agentTools,
-		instruction:  systemInstruction,
-		replyMode:    cfg.Minecraft.ReplyMode,
-		cfg:          cfg.Agent,
-		jobs:         make(chan Request, 64),
-		pending:      make(map[string]*pendingRun),
-		approvals:    approvals,
-		runners:      make(map[string]*adk.Runner),
+		store:         store,
+		log:           log,
+		sessionKey:    cfg.Minecraft.SessionID,
+		defaultTools:  agentTools,
+		instruction:   systemInstruction,
+		replyMode:     cfg.Minecraft.ReplyMode,
+		cfg:           cfg.Agent,
+		workspaceRoot: cfg.WorkspaceRoot(),
+		pool:          newSessionPool(cfg.Agent.MaxConcurrentRuns, 10*time.Minute, log),
+		jobs:          make(chan Request, 64),
+		pending:       make(map[string]*pendingRun),
+		approvals:     approvals,
+		runners:       make(map[string]*adk.Runner),
 	}
 	if a.replyMode == "" {
 		a.replyMode = "broadcast"
@@ -202,17 +207,38 @@ func (a *Agent) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case req := <-a.jobs:
-			a.respond(ctx, req)
+			// 按会话投递：同会话串行、跨会话并行（长任务不再堵住别的通道）。
+			key := req.SessionKey
+			if key == "" {
+				key = a.sessionKey
+			}
+			if !a.pool.enqueue(ctx, key, func() { a.respond(ctx, req) }) {
+				a.log.Warn("agent session queue full, dropping request", "session", key, "player", req.Player)
+				_ = req.Session.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", a.target(req))
+			}
 		case <-decided:
-			a.drainOutcomes(ctx)
+			for _, outcome := range a.approvals.DrainDecided() {
+				outcome := outcome
+				key := a.pendingSessionKey(outcome.ApprovalID)
+				if key == "" {
+					key = "approval:" + outcome.ApprovalID
+				}
+				if !a.pool.enqueue(ctx, key, func() { a.resume(ctx, outcome) }) {
+					a.log.Warn("agent session queue full, dropping approval resume", "approvalId", outcome.ApprovalID)
+				}
+			}
 		}
 	}
 }
 
-func (a *Agent) drainOutcomes(ctx context.Context) {
-	for _, outcome := range a.approvals.DrainDecided() {
-		a.resume(ctx, outcome)
+// pendingSessionKey 查审批对应的会话（resume 内会删 pending，这里只读）。
+func (a *Agent) pendingSessionKey(approvalID string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if run, ok := a.pending[approvalID]; ok {
+		return run.sessionKey
 	}
+	return ""
 }
 
 func (a *Agent) target(req Request) string {
@@ -546,10 +572,20 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 	if err != nil {
 		return nil, 0, err
 	}
-	for _, m := range recent {
+	// 只有"最后一条用户消息"附图（视觉输入）：历史里的旧图不再重复喂，
+	// 避免每次 run 都上传一大堆 base64。
+	lastPlayer := -1
+	for i, m := range recent {
+		if m.AuthorKind == "player" {
+			lastPlayer = i
+		}
+	}
+	for i, m := range recent {
 		switch m.AuthorKind {
 		case "player":
-			msgs = append(msgs, schema.UserMessage(fmt.Sprintf("[%s] %s", m.AuthorName, m.Text)))
+			// 只认网页通道的附件标记（其它通道的文本不做标记解析，防注入）。
+			withVision := i == lastPlayer && m.Channel == "web"
+			msgs = append(msgs, a.userMessage(m.AuthorName, m.Text, withVision))
 		case "agent":
 			msgs = append(msgs, schema.AssistantMessage(m.Text, nil))
 		}

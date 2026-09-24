@@ -23,7 +23,7 @@ type Config struct {
 	Storage      Storage   `json:"storage"`
 	Tools        Tools     `json:"tools"`
 	Workspace    Workspace `json:"workspace"`
-	Agent        Agent      `json:"agent"`
+	Agent        Agent     `json:"agent"`
 }
 
 type Minecraft struct {
@@ -35,8 +35,8 @@ type Minecraft struct {
 // QQ 接官方 Bot（q.qq.com 注册，无封号风险）。
 // 留空 appId/appSecret 即禁用 QQ 通道，不影响现有 MC 链路。
 type QQ struct {
-	AppID   string `json:"appId"`
-	Secret  string `json:"appSecret"`
+	AppID  string `json:"appId"`
+	Secret string `json:"appSecret"`
 	// OpenAPI 基地址，默认 https://api.bot.qq.com；沙箱联调用得上时再改。
 	APIBase string `json:"apiBase"`
 	// 能用 workspace 写代码/执行代码的 QQ 身份（C2C 的 user_openid、群里的
@@ -228,6 +228,9 @@ type Agent struct {
 	// 后台任务：run 超过此秒数还没完（默认 90），先给 QQ 回一条"正在做"，
 	// 跑完再主动推结果。0=关闭后台任务（一直等到 RunTimeoutSec）。
 	BackgroundAfterSec int `json:"backgroundAfterSec"`
+	// 同时跑的任务数上限（默认 4）：同一会话严格串行，不同会话并行，
+	// 超出的会话排队。模型调用是网络 IO，4 并发对 2 核小机器足够。
+	MaxConcurrentRuns int `json:"maxConcurrentRuns"`
 }
 
 func DefaultAgent() Agent {
@@ -240,6 +243,7 @@ func DefaultAgent() Agent {
 		ReductionTokens:    24000,
 		ReductionKeep:      4,
 		BackgroundAfterSec: 90,
+		MaxConcurrentRuns:  4,
 	}
 }
 
@@ -373,6 +377,9 @@ func Load(path string) (Config, error) {
 	if cfg.Agent.BackgroundAfterSec < 0 {
 		cfg.Agent.BackgroundAfterSec = d.BackgroundAfterSec
 	}
+	if cfg.Agent.MaxConcurrentRuns <= 0 {
+		cfg.Agent.MaxConcurrentRuns = d.MaxConcurrentRuns
+	}
 	return cfg, nil
 }
 
@@ -443,6 +450,7 @@ func applyEnv(cfg *Config) {
 	setInt(&cfg.Agent.RunTimeoutSec, "MINEAGENT_RUN_TIMEOUT_SEC")
 	setInt(&cfg.Agent.HistoryLimit, "MINEAGENT_HISTORY_LIMIT")
 	setInt(&cfg.Agent.BackgroundAfterSec, "MINEAGENT_BACKGROUND_AFTER_SEC")
+	setInt(&cfg.Agent.MaxConcurrentRuns, "MINEAGENT_MAX_CONCURRENT_RUNS")
 	setInt(&cfg.Workspace.ExecTimeoutSec, "MINEAGENT_EXEC_TIMEOUT_SEC")
 	setInt(&cfg.WeCom.AgentID, "MINEAGENT_WECOM_AGENTID")
 	setInt(&cfg.WeCom.Port, "MINEAGENT_WECOM_PORT")

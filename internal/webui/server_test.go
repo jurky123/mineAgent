@@ -445,6 +445,51 @@ func TestWorkspaceBrowserAdminOnly(t *testing.T) {
 	}
 }
 
+func TestHistoryPagination(t *testing.T) {
+	ch, ts, _ := newTestChannel(t)
+	tok := loginTest(t, ts, "jzk")
+	for i := 0; i < 60; i++ {
+		if _, err := ch.store.AppendMessage(context.Background(), storage.Message{
+			SessionID: "web:c2c:jzk", Channel: "web", AuthorKind: "player", AuthorName: "jzk",
+			Text: fmt.Sprintf("m%d", i), CreatedAt: time.Now().UnixMilli(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var all struct {
+		Messages []WireMessage `json:"messages"`
+	}
+	if code := doJSON(t, "GET", ts.URL+"/api/history", tok, nil, &all); code != 200 {
+		t.Fatalf("history status=%d", code)
+	}
+	if len(all.Messages) != 60 {
+		t.Fatalf("messages = %d", len(all.Messages))
+	}
+	newest := all.Messages[len(all.Messages)-1].ID
+	var page struct {
+		Messages []WireMessage `json:"messages"`
+		HasMore  bool          `json:"hasMore"`
+	}
+	if code := doJSON(t, "GET", fmt.Sprintf("%s/api/history?before=%d", ts.URL, newest), tok, nil, &page); code != 200 {
+		t.Fatalf("page status=%d", code)
+	}
+	if len(page.Messages) != 50 || !page.HasMore {
+		t.Fatalf("page n=%d hasMore=%v", len(page.Messages), page.HasMore)
+	}
+	if page.Messages[len(page.Messages)-1].ID != newest-1 || page.Messages[0].ID != newest-50 {
+		t.Fatalf("page range = %d..%d (newest=%d)", page.Messages[0].ID, page.Messages[len(page.Messages)-1].ID, newest)
+	}
+	// 再往前一页应该正好把剩下的 9 条拿完
+	var page2 struct {
+		Messages []WireMessage `json:"messages"`
+		HasMore  bool          `json:"hasMore"`
+	}
+	_ = doJSON(t, "GET", fmt.Sprintf("%s/api/history?before=%d", ts.URL, page.Messages[0].ID), tok, nil, &page2)
+	if len(page2.Messages) != 9 || page2.HasMore {
+		t.Fatalf("page2 n=%d hasMore=%v", len(page2.Messages), page2.HasMore)
+	}
+}
+
 func TestFakeMarkerEscaped(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 	tok := loginTest(t, ts, "jzk")

@@ -231,16 +231,31 @@ func (c *Channel) handleMe(w http.ResponseWriter, _ *http.Request, name string) 
 	})
 }
 
+// handleHistory 拉历史消息：
+//   - 默认最近 200 条；
+//   - ?after=<id> 拉更新的（SSE 断线补漏）；
+//   - ?before=<id> 向上翻页，一次 50 条，附带 hasMore。
 func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name string) {
+	sessionKey := "web:c2c:" + name
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	var (
-		raw []storage.Message
-		err error
+		raw     []storage.Message
+		err     error
+		hasMore bool
 	)
-	if after > 0 {
-		raw, err = c.store.MessagesAfter(r.Context(), "web:c2c:"+name, after, 200)
-	} else {
-		raw, err = c.store.RecentMessages(r.Context(), "web:c2c:"+name, 200)
+	switch {
+	case after > 0:
+		raw, err = c.store.MessagesAfter(r.Context(), sessionKey, after, 200)
+	case before > 0:
+		const page = 50
+		raw, err = c.store.MessagesBetween(r.Context(), sessionKey, 0, before-1, page+1)
+		if len(raw) > page {
+			hasMore = true
+			raw = raw[len(raw)-page:]
+		}
+	default:
+		raw, err = c.store.RecentMessages(r.Context(), sessionKey, 200)
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -250,7 +265,7 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name str
 	for _, m := range raw {
 		msgs = append(msgs, ToWire(m))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs, "hasMore": hasMore})
 }
 
 // handleOptions 给 + 菜单：技能、可选模型、思考强度、当前偏好。

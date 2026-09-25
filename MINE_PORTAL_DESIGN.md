@@ -106,13 +106,13 @@ internal/
 │   └── ...
 ├── storage/                 ← 加表与方法（建议拆 storage_users.go / storage_games.go）
 ├── agent/ session/ tools/ … ← 不动
-static/                      ← 仍在 internal/webui/static（P2 可整体并入 internal/portal/static）
+internal/webui/static/       ← 前端资源当前位置（P2 可选整体挪到 internal/portal/static，URL 不变）
 ├── index.html               → 迁移为 chat/index.html（Agent 页）
-├── portal/index.html        门户首页
-├── account/index.html       我的
-├── leaderboard/index.html   排行榜
-├── games/index.html         游戏大厅
-├── games/<id>/index.html    单个游戏（薄壳）
+├── portal/index.html        门户首页（URL `/`）
+├── account/index.html       我的（URL `/account`）
+├── leaderboard/index.html   排行榜（URL `/leaderboard`）
+├── games/index.html         游戏大厅（URL `/games`）
+├── games/<id>/index.html    单个游戏薄壳（URL `/games/<id>`）
 ├── js/                      现有模块 + shell.js / portal.js / account.js / leaderboard.js / games/*.js
 └── css/                     现有 tokens/layout + portal.css / games.css
 ```
@@ -289,15 +289,18 @@ GET /api/portal/home
 ## 7. 页面与前端结构
 
 ### 7.1 页面路由（Go 侧映射，白名单，不做 SPA fallback）
-| URL | 文件 | 说明 |
+> 下表左列是 **URL 路径**（浏览器地址），右列才是**内嵌文件位置**；二者不是同一层概念。
+> 当前前端资源根目录是 `internal/webui/static/`（Go 里 `//go:embed static`）。
+
+| URL（浏览器地址） | 文件（仓库内路径，相对 `internal/webui/static/`） | 说明 |
 |---|---|---|
-| `/` | `static/portal/index.html` | 门户首页（未登录也可看，卡片点击需登录） |
+| `/` | `portal/index.html` | 门户首页（未登录也可看，卡片点击需登录） |
 | `/login` | 复用门户内登录弹层 | 也可独立页 |
-| `/agent` | `static/chat/index.html` | 现在的 ChatGPT 风格页（左栏会话 + 消息 + composer） |
-| `/games` | `static/games/index.html` | 游戏大厅（卡片 = `/api/games` 数据） |
-| `/games/<id>` | `static/games/<id>/index.html` | 游戏薄壳页（加载 `js/games/<id>.js`） |
-| `/leaderboard` | `static/leaderboard/index.html` | 各游戏榜 + Portal 总积分榜 |
-| `/account` | `static/account/index.html` | 资料、积分明细、游戏战绩、会话入口 |
+| `/agent` | `chat/index.html` | 现在的 ChatGPT 风格页（左栏会话 + 消息 + composer） |
+| `/games` | `games/index.html` | 游戏大厅（卡片 = `/api/games` 数据） |
+| `/games/<id>` | `games/<id>/index.html` | 游戏薄壳页（加载 `js/games/<id>.js`） |
+| `/leaderboard` | `leaderboard/index.html` | 各游戏榜 + Portal 总积分榜 |
+| `/account` | `account/index.html` | 资料、积分明细、游戏战绩、会话入口 |
 
 ### 7.2 Portal Shell（共享）
 - `static/js/shell.js`：顶栏（品牌 / 导航 / 账号菜单 / 主题切换）、登录弹层、登录态守卫。

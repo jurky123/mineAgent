@@ -34,7 +34,7 @@
 | 单进程 HTTP 服务（含静态页 + SSE） | `internal/webui/server.go` | Portal 与 Agent 同进程，同一端口 |
 | SQLite（WAL） | `internal/storage/storage.go` | 直接加表，不新建库 |
 | 名字登录 + token（JSON + cookie） | `webui.Channel.tokens/prefs`、`/api/login` | P0 抽象为账号层，P1 迁到 `auth_sessions` |
-| 会话隔离（按名字） | `web:c2c:<name>[:<conv>]` | P0/P1 原样保留；P2 再迁 `web:user:<id>` |
+| 会话隔离（按名字） | `web:c2c:<name>[:<conv>]` | ✅ 2026-09-25 已迁 `web:user:<ID>[:<conv>]`（§5） |
 | 会话列表/文件/偏好 | `web_conversations`、`workspace/web-files/<name>/`、`prefs.json` | 语义不变，只换主键口径 |
 | 前端模块化 + 分层 CSS | `static/js/*.js`、`static/css/*.css` | 复用 tokens/组件；新增门户与游戏页 |
 | 资源版本化 + 版本自检 | `/static/<ver>/...`、`__VER__`、`/api/version` | 门户/游戏页沿用，避免缓存串版本 |
@@ -125,7 +125,7 @@ internal/webui/static/       ← 前端资源当前位置（P2 可选整体挪�
 | `/api/history` 等一堆平铺 API | 新 `/api/agent/*` 同实现别名；旧路径保留 | P0 |
 | `webui.Channel.tokens`（JSON） | `account` 包 + `auth_sessions` 表（JSON 仅作过渡期回退） | P0→P1 |
 | 账号 = 名字字符串（会话主键） | `users.id`；名字只是 `username` 属性 | P1→P2 |
-| `web:c2c:<name>[:<conv>]` | `web:user:<id>[:<conv>]`（迁移脚本） | P2 |
+| `web:c2c:<name>[:<conv>]` | `web:user:<ID>[:<conv>]`（`--migrate-portal`） | ✅ 已上线 |
 | `workspace/web-files/<name>/` | `workspace/web-files/u<id>/`（迁移脚本） | P2 |
 | `internal/webui`（聊天 + 通道 + 页面） | `internal/web/agent`（纯机械改名） | P2 |
 
@@ -186,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_point_events_user ON point_events(user_id, create
 
 **与现有表的关系**
 - `web_conversations.account`（名字）在 P2 迁移后改为 `user_id INTEGER`（保留 `account` 列做过渡，读时优先 `user_id`）。
-- `messages.session_id` / `summaries.session_id` / `reminders.session_id` 的字串值在 P2 整体重命名（`web:c2c:<name>` → `web:user:<id>`），表结构不变。
+- `messages.session_id` / `summaries.session_id` / `reminders.session_id` / `tool_audit.session_id` 的字串值已整体重命名（`web:c2c:<name>` → `web:user:<ID>`，2026-09-25），表结构不变。
 - `identity_links` 完全不动（`/bind` 的 MC 身份绑定继续用名字维度）。
 
 **清理策略（可选，待定）**：`game_runs` 保留每人每游戏最近若干条；`auth_sessions` 过期行按天清理；`point_events` 永久保留（量小）。

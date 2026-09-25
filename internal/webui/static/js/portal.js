@@ -35,9 +35,10 @@ function heroCard(app) {
   card.appendChild(head);
 
   const last = h('div', 'hero-last');
-  if (c.lastTitle) {
+  const lastTitle = (c.lastTitle || '').trim();
+  if (lastTitle) {
     last.appendChild(h('div', 'list-sub', '继续上一次对话'));
-    last.appendChild(h('div', 'hero-conv', '“' + c.lastTitle + '”'));
+    last.appendChild(h('div', 'hero-conv', '“' + lastTitle + '”'));
     last.appendChild(h('div', 'list-sub', (fmtTime(c.lastUpdated) || '刚刚') + (c.count ? ' · 共 ' + c.count + ' 个会话' : '')));
   } else {
     last.appendChild(h('div', 'list-sub', '还没有对话'));

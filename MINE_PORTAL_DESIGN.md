@@ -363,12 +363,18 @@ func Apps() []App               // /api/portal/apps 的数据源
 - `/account` 页支持"区块插槽"：应用可导出 `AccountBlocks(user) []Block`（同样走注册表），
   例如游戏战绩、Agent 会话统计、MC 绑定状态。
 
-**4) API 命名空间约定**
+**4) 已落地的展示元数据（2026-09-25 UI 重做）**
+`App` 增加了 `Nav`（是否进顶栏）、`NavLabel`（顶栏显示名）、`HomeRole`
+（hero/status/content/feed/hidden）、`Priority`（排序）、`Span`（跨列）；
+前端首页按 role 摆放（Agent 大卡 / MC 状态卡 / 游戏区 / 动态 Feed），
+顶栏只渲染 `Nav=true` 的应用——避免"注册一个应用就进导航"。
+
+**5) API 命名空间约定**
 - 每个应用一个前缀：`/api/agent/*`、`/api/games/*`、`/api/<app>/*`；
   账号相关固定在 `/api/auth/*` 与 `/api/account/*`。
 - 中间件、错误体、限流、访问日志全部复用 Portal 层，应用不重复实现。
 
-**5) 预留但本期不做**
+**6) 预留但本期不做**
 - `static/<app>/` 的**外部/第三方页面挂载**（iframe 或 JS 挂件）——预留 `App.Embed = true` 时的
   `frame-ancestors` 与 CORS 策略位，具体实现放到目标页面确定后。
 - 应用级配置开关：`portal.apps.<id>.enabled`（先只支持全局 `portal.enabled`）。

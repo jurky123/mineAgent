@@ -401,6 +401,11 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		return "", ErrConvNotFound
 	}
 
+	// 首条消息自动命名（系统命令路径也要，否则会话列表/首页卡片没有标题）。
+	if isNew || convID == "" {
+		_ = c.store.SetConversationTitleIfEmptyFor(ctx, u.ID, name, convID, conversationTitle(text, files), nowMs)
+	}
+
 	sess, err := c.session(sessionKey)
 	if err != nil {
 		return convID, err
@@ -447,8 +452,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 	if err != nil {
 		return convID, err
 	}
-	// 首条消息自动命名 + 刷新会话时间；多标签页同步广播（带 conv）。
-	_ = c.store.SetConversationTitleIfEmptyFor(ctx, u.ID, name, convID, conversationTitle(text, files), nowMs)
+	// 刷新会话时间；多标签页同步广播（带 conv）。
 	_ = c.store.UpsertConversationFor(ctx, u.ID, name, convID, "", nowMs)
 	c.publish(name, convID, ToWire(stored))
 

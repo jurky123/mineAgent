@@ -23,6 +23,14 @@ type App struct {
 	AdminOnly bool
 	Enabled   bool
 	Card      CardFunc // 空 = 不展示卡片（只出现在导航）
+
+	// 展示元数据：决定首页怎么摆、顶栏是否出现（见 MINE_PORTAL_DESIGN.md §7.5）。
+	// HomeRole: hero（一级入口）/ status（状态）/ content（内容区）/ feed（动态流）/ hidden（不上面）。
+	Nav      bool
+	NavLabel string // 顶栏显示名（默认用 Name）
+	HomeRole string
+	Priority int // 越小越靠前
+	Span     int // 首页网格跨列（1/2，默认 1）
 }
 
 // Register 注册应用（按 ID 去重，后注册者覆盖）。

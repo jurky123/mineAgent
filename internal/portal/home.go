@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,10 +24,13 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 		Order     int    `json:"order"`
 		AdminOnly bool   `json:"adminOnly,omitempty"`
 		Enabled   bool   `json:"enabled"`
+		Nav       bool   `json:"nav,omitempty"`
+		NavLabel  string `json:"navLabel,omitempty"`
+		HomeRole  string `json:"homeRole,omitempty"`
 	}
 	out := make([]appWire, 0, len(s.apps))
 	for _, a := range s.apps {
-		out = append(out, appWire{a.ID, a.Name, a.Desc, a.Icon, a.Path, a.Order, a.AdminOnly, a.Enabled})
+		out = append(out, appWire{a.ID, a.Name, a.Desc, a.Icon, a.Path, a.Order, a.AdminOnly, a.Enabled, a.Nav, a.NavLabel, a.HomeRole})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"apps": out, "portal": s.PortalEnabled()})
 }
@@ -37,23 +41,23 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request, u *storage.U
 		ID       string `json:"id"`
 		Name     string `json:"name"`
 		Path     string `json:"path,omitempty"`
+		Role     string `json:"role"`
+		Priority int    `json:"priority"`
+		Span     int    `json:"span,omitempty"`
 		Card     any    `json:"card,omitempty"`
 		Error    string `json:"error,omitempty"`
-		Disabled bool   `json:"disabled,omitempty"`
 	}
 	apps := make([]appCard, 0, len(s.apps))
-	for _, a := range s.apps {
+	sorted := append([]App(nil), s.apps...)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Priority < sorted[j].Priority })
+	for _, a := range sorted {
 		if a.AdminOnly && (u == nil || !u.IsAdmin) {
 			continue
 		}
-		item := appCard{ID: a.ID, Name: a.Name, Path: a.Path}
 		if !a.Enabled {
-			// 未启用的应用以"开发中"占位卡展示（路线图），不暴露 Card。
-			item.Disabled = true
-			item.Path = ""
-			apps = append(apps, item)
-			continue
+			continue // 开发中的功能不出现在首页（避免"占位卡"）
 		}
+		item := appCard{ID: a.ID, Name: a.Name, Path: a.Path, Role: a.HomeRole, Priority: a.Priority, Span: a.Span}
 		if a.Card != nil {
 			ctx, cancel := withTimeout(r.Context(), 3*time.Second)
 			card, err := a.Card(ctx, u)
@@ -71,10 +75,9 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request, u *storage.U
 		"greeting": greeting(u.DisplayName),
 		"apps":     apps,
 		"account": map[string]any{
-			"id":     u.ID,
-			"name":   u.Username,
-			"admin":  u.IsAdmin,
-			"points": 0, // 预留：积分模型待游戏类型确定后实现
+			"id":    u.ID,
+			"name":  u.Username,
+			"admin": u.IsAdmin,
 		},
 	})
 }
@@ -93,6 +96,23 @@ func greeting(name string) string {
 	default:
 		return "晚上好，" + name
 	}
+}
+
+// handleAccountStats 账号页的"游戏"分区：按游戏聚合的战绩（没有记录就没有数据）。
+func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 GET"})
+		return
+	}
+	stats, err := s.store.GameStats(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	if stats == nil {
+		stats = []storage.GameStat{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"games": stats})
 }
 
 // handleAnnouncements 公告栏：GET 公开（未登录也能看），POST/DELETE 仅管理员。

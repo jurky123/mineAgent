@@ -175,3 +175,53 @@ func TestCheckmateAndStalemateFlags(t *testing.T) {
 		t.Fatalf("a8 应是杀: check=%v mate=%v", res.Check, res.Checkmate)
 	}
 }
+
+func TestSAN(t *testing.T) {
+	cases := []struct {
+		fen  string
+		move string
+		want string
+	}{
+		{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "e2e4", "e4"},
+		{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "g1f3", "Nf3"},
+		{"rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1", "e4e5", "e5"},
+		{"rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1", "e4c5", ""}, // 空着：非法不应命中
+		// 底线杀：Ra8#
+		{"6k1/5ppp/8/8/8/8/8/R6K w - - 0 1", "a1a8", "Ra8#"},
+		// 升变带将军：e8=Q+
+		{"6k1/4P3/8/8/8/8/8/K6R w - - 0 1", "e7e8q", "e8=Q+"},
+		// 易位
+		{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", "e1g1", "O-O"},
+		{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", "e1c1", "O-O-O"},
+		// 吃子（兵）
+		{"rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1", "e4d5", "exd5"},
+		// 消歧（同纵线用横线）：两个马都在 d 线，都能到 b4
+		{"8/8/8/3N4/8/3N4/8/K3k3 w - - 0 1", "d3b4", "N3b4"},
+		// 消歧（不同纵线用纵线）：b1/f3 两个马都能到 d2
+		{"7k/8/8/8/8/5N2/8/1N5K w - - 0 1", "b1d2", "Nbd2"},
+		{"7k/8/8/8/8/5N2/8/1N5K w - - 0 1", "f3d2", "Nfd2"},
+	}
+	for _, c := range cases {
+		b, err := ParseFEN(c.fen)
+		if err != nil {
+			t.Fatalf("FEN %q: %v", c.fen, err)
+		}
+		m, ok := ParseMove(c.move)
+		if !ok {
+			t.Fatalf("走法解析 %q", c.move)
+		}
+		res, err := b.Play(m.From, m.To, m.Promotion)
+		if err != nil {
+			if c.want == "" {
+				continue
+			}
+			t.Fatalf("%s 应合法: %v", c.move, err)
+		}
+		if c.want == "" {
+			continue
+		}
+		if res.SAN != c.want {
+			t.Errorf("SAN(%s) = %q，want %q", c.move, res.SAN, c.want)
+		}
+	}
+}

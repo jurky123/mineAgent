@@ -1,48 +1,36 @@
-// chess.js：国际象棋房间页（棋盘渲染 + 点击走子 + SSE 实时同步）。
-import { shell, boot, apiGet, apiPost, h } from './shell.js';
+// chess.js — 国际象棋：大厅（没房间）→ 房间（等待 / 对局 / 终局），
+// 服务端权威 + SSE 同步。棋盘用 SVG 棋子（/static/<ver>/img/pieces/*.svg）。
+import { shell, boot, apiGet, apiPost } from './shell.js';
+import { h, icon, toast, confirmDialog, copyText } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
+const VER = (document.querySelector('meta[name=mineagent-version]') || {}).content || '';
+const PIECE_SRC = (p) => '/static/' + VER + '/img/pieces/' + (p === p.toUpperCase() ? 'w' : 'b') + p.toUpperCase() + '.svg';
 
-// 统一用实心字形，颜色交给 CSS（白子白填充+黑描边，黑子黑填充+浅描边）。
-const GLYPH = {
-  K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟',
-};
-
-let state = { room: null, selected: null, lastSnapshotAt: 0 };
+let room = null;
+let selected = null;
 
 function squareName(sq) {
   return String.fromCharCode(97 + (sq % 8)) + String(1 + Math.floor(sq / 8));
 }
-
-function myColor() { return state.room ? state.room.you : ''; }
-
 function legalFrom(sq) {
   const name = squareName(sq);
-  return (state.room && state.room.legalMoves || []).filter((m) => m.slice(0, 2) === name);
+  return ((room && room.legalMoves) || []).filter((m) => m.slice(0, 2) === name);
 }
 
-function pieceClass(p) {
-  return p === p.toUpperCase() ? 'pw' : 'pb';
-}
-
+// ---------- 棋盘 ----------
 function renderBoard() {
-  const r = state.room;
   const board = document.getElementById('board');
-  const files = document.getElementById('files');
   board.innerHTML = '';
-  files.innerHTML = '';
-  if (!r) {
-    board.appendChild(h('div', 'empty board-empty', '还没有房间，先创建或加入一个'));
-    return;
-  }
-  const flip = r.you === 'black';
-  const pieces = r.pieces || '';
-  const last = r.lastMove || '';
-  const targets = state.selected != null ? legalFrom(state.selected).map((m) => m.slice(2, 4)) : [];
-  const kingSq = (() => {
-    if (!r.inCheck) return null;
-    const want = r.turn === 'white' ? 'K' : 'k';
+  if (!room) return;
+  const flip = room.you === 'black';
+  const pieces = room.pieces || '';
+  const last = room.lastMove || '';
+  const targets = selected != null ? legalFrom(selected).map((m) => m.slice(2, 4)) : [];
+  const checkSq = (() => {
+    if (!room.inCheck) return null;
+    const want = room.turn === 'white' ? 'K' : 'k';
     const i = pieces.indexOf(want);
     return i >= 0 ? i : null;
   })();
@@ -52,218 +40,270 @@ function renderBoard() {
       const rank = flip ? row : 7 - row;
       const file = flip ? 7 - col : col;
       const sq = rank * 8 + file;
+      const name = squareName(sq);
       const p = pieces[sq] && pieces[sq] !== '.' ? pieces[sq] : '';
-      const sqName = squareName(sq);
       const cell = h('div', 'sq ' + ((rank + file) % 2 ? 'dark' : 'light'));
-      cell.dataset.sq = sqName;
-      if (last.length >= 4 && (sqName === last.slice(0, 2) || sqName === last.slice(2, 4))) cell.classList.add('last');
-      if (targets.includes(sqName)) cell.classList.add('target');
-      if (state.selected === sq) cell.classList.add('sel');
-      if (kingSq === sq) cell.classList.add('check');
+      cell.dataset.sq = name;
+      if (last.length >= 4 && (name === last.slice(0, 2) || name === last.slice(2, 4))) cell.classList.add('last');
+      if (targets.includes(name)) cell.classList.add('target');
+      if (selected === sq) cell.classList.add('sel');
+      if (checkSq === sq) cell.classList.add('check');
+      // 边线坐标：左列显示横排号，底行显示纵线字母
+      if (col === 0) cell.appendChild(h('span', 'coord rank', String(rank + 1)));
+      if (row === 7) cell.appendChild(h('span', 'coord file', name[0]));
       if (p) {
-        const span = h('span', 'piece ' + pieceClass(p), GLYPH[p.toUpperCase()] || '?');
-        cell.appendChild(span);
+        const img = h('img', 'pc');
+        img.src = PIECE_SRC(p);
+        img.alt = p;
+        img.draggable = false;
+        cell.appendChild(img);
       }
       cell.onclick = () => onSquare(sq);
       board.appendChild(cell);
     }
   }
-  const letters = flip ? ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'] : ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-  for (const l of letters) files.appendChild(h('span', null, l));
 }
 
 function onSquare(sq) {
-  const r = state.room;
-  if (!r || r.status !== 'playing' || !r.legalMoves) return; // 不是你的回合
+  if (!room || room.status !== 'playing' || !room.legalMoves) return;
   const name = squareName(sq);
-  if (state.selected != null) {
-    const moves = legalFrom(state.selected);
-    const hit = moves.find((m) => m.slice(2, 4) === name);
+  if (selected != null) {
+    const hit = legalFrom(selected).find((m) => m.slice(2, 4) === name);
     if (hit) { sendMove(hit); return; }
   }
-  const p = (r.pieces || '')[sq];
-  const mine = r.you === 'white' ? (p && p === p.toUpperCase()) : (p && p !== p.toUpperCase() && p !== '.');
-  state.selected = mine ? sq : null;
+  const p = (room.pieces || '')[sq];
+  const mine = room.you === 'white' ? (p && p === p.toUpperCase()) : (p && p !== p.toUpperCase() && p !== '.');
+  selected = mine ? sq : null;
   renderBoard();
 }
 
 async function sendMove(move) {
-  const from = move.slice(0, 2), to = move.slice(2, 4);
-  const promo = move.length === 5 ? move[4] : '';
-  state.selected = null;
+  selected = null;
   try {
-    const res = await apiPost('/api/games/chess/move', { from, to, promotion: promo });
+    const res = await apiPost('/api/games/chess/move', { from: move.slice(0, 2), to: move.slice(2, 4), promotion: move[4] || '' });
     apply(res.room);
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
+    renderBoard();
   }
 }
 
-let toastTimer = null;
-function toast(msg) {
-  let el = document.getElementById('gtoast');
-  if (!el) {
-    el = h('div', 'gtoast');
-    el.id = 'gtoast';
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-  el.classList.add('on');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('on'), 2600);
-}
-
+// ---------- 对局信息 ----------
 function playerLine(color) {
-  const r = state.room;
-  const p = r.players && r.players[color];
-  const you = r.you === color;
-  const turn = r.turn === color && r.status === 'playing';
-  const name = p ? p.name : '等待加入';
+  const p = room.players && room.players[color];
+  const you = room.you === color;
+  const turn = room.turn === color && room.status === 'playing';
   const line = h('div', 'player-line' + (turn ? ' turn' : ''));
-  line.appendChild(h('span', 'dot' + (color === 'white' ? ' w' : ' b')));
-  line.appendChild(h('span', 'player-name', name + (you ? '（你）' : '')));
-  if (turn) line.appendChild(h('span', 'badge ok', '行棋中'));
-  if (r.status === 'finished' && r.result === color) line.appendChild(h('span', 'badge', '胜'));
+  line.appendChild(h('span', 'dot ' + color[0]));
+  line.appendChild(h('span', 'player-name', p ? p.name + (you ? '（你）' : '') : '等待加入…'));
+  if (turn && room.inCheck) line.appendChild(h('span', 'badge warn', '被将军'));
+  else if (turn && room.you) line.appendChild(h('span', 'badge brand', '你的回合'));
+  else if (turn && !room.you) line.appendChild(h('span', 'badge', '正在思考'));
+  if (room.status === 'finished' && room.result === color) line.appendChild(h('span', 'badge brand', '胜'));
   return line;
 }
 
-function renderPanels() {
-  const r = state.room;
+function renderInfo() {
   const top = document.getElementById('top-player');
   const bottom = document.getElementById('bottom-player');
   const status = document.getElementById('status');
-  top.innerHTML = '';
-  bottom.innerHTML = '';
-  if (!r) {
-    top.appendChild(h('div', 'player-line', '——'));
-    bottom.appendChild(h('div', 'player-line', '——'));
-    status.textContent = '还没有房间';
-    status.className = 'status-bar';
-    return;
-  }
-  const flip = r.you === 'black';
-  const topColor = flip ? 'white' : 'black';
-  const bottomColor = flip ? 'black' : 'white';
-  top.appendChild(playerLine(topColor));
-  bottom.appendChild(playerLine(bottomColor));
+  const actions = document.getElementById('actions');
+  top.innerHTML = ''; bottom.innerHTML = ''; status.innerHTML = ''; actions.innerHTML = '';
 
-  let text = '';
-  let cls = 'status-bar';
-  if (r.status === 'waiting') {
-    text = r.you
-      ? '等待对手加入…把房间码 ' + r.id + ' 发给朋友'
-      : '你是观战/等待状态';
-  } else if (r.status === 'playing') {
-    const mine = r.you && r.turn === r.you;
-    text = mine ? '轮到你走' : '等对手走棋…';
-    if (r.inCheck) text += '（被将军！）';
-    cls += mine ? ' active' : '';
+  const flip = room.you === 'black';
+  top.appendChild(playerLine(flip ? 'white' : 'black'));
+  bottom.appendChild(playerLine(flip ? 'black' : 'white'));
+
+  const mine = room.status === 'playing' && room.turn === room.you;
+  if (room.status === 'waiting') {
+    status.appendChild(h('span', null, '等待对手加入'));
+    const share = h('button', 'btn sm', '复制邀请链接');
+    share.onclick = () => copyText(shareLink(), '邀请链接已复制');
+    status.appendChild(share);
+  } else if (room.status === 'playing') {
+    status.className = 'status-bar' + (mine ? ' active' : '');
+    status.appendChild(h('span', null, mine ? '你的回合' : '等待对手走棋'));
+    if (room.inCheck) status.appendChild(h('span', 'badge warn', '被将军'));
   } else {
-    const reason = { checkmate: '将杀', stalemate: '逼和', resign: '认输', leave: '对手离开' }[r.reason] || r.reason;
-    if (r.result === 'draw') text = '和棋（' + reason + '）';
+    status.className = 'status-bar done';
+    const reason = { checkmate: '将杀', stalemate: '逼和', resign: '认输', leave: '对手离开' }[room.reason] || room.reason || '';
+    if (room.result === 'draw') status.appendChild(h('span', null, '和棋（' + reason + '）'));
     else {
-      const winner = r.result === 'white' ? '白方' : '黑方';
-      const youWin = r.you === r.result;
-      text = winner + '胜（' + reason + '）' + (youWin ? '，恭喜！' : '');
+      const win = room.you === room.result;
+      status.appendChild(h('span', null, (room.result === 'white' ? '白方' : '黑方') + '胜（' + reason + '）' + (win ? '，恭喜！' : '')));
     }
-    cls += ' done';
   }
-  status.textContent = text;
-  status.className = cls;
 
-  const info = document.getElementById('room-info');
-  info.innerHTML = '';
-  const link = location.origin + '/games/chess?room=' + r.id;
-  info.appendChild(h('div', 'room-code', '房间码 ' + r.id));
-  const copyBtn = h('button', 'btn ghost sm', '复制邀请链接');
-  copyBtn.onclick = () => {
-    navigator.clipboard.writeText(link).then(() => toast('已复制邀请链接'), () => toast(link));
-  };
-  info.appendChild(copyBtn);
-  info.appendChild(h('div', 'room-hint', '同一房间只允许两名玩家；刷新/断开重连不丢对局。'));
+  if (room.status === 'playing') {
+    const resign = h('button', 'btn danger sm', '认输');
+    resign.onclick = async () => {
+      const ok = await confirmDialog({ title: '确定认输？', body: '本局将判对手胜。', confirmText: '认输', danger: true });
+      if (!ok) return;
+      const res = await apiPost('/api/games/chess/resign');
+      if (res.room) apply(res.room);
+    };
+    actions.appendChild(resign);
+  }
+  if (room.status === 'waiting' || room.status === 'finished') {
+    if (room.status === 'finished') {
+      const again = h('button', 'btn primary cta', '再来一局');
+      again.onclick = async () => {
+        await apiPost('/api/games/chess/leave');
+        const res = await apiPost('/api/games/chess/rooms');
+        apply(res.room);
+      };
+      actions.appendChild(again);
+    }
+    const leave = h('button', 'btn sm', '离开房间');
+    leave.onclick = () => leaveRoom();
+    actions.appendChild(leave);
+  }
+}
 
-  const moves = document.getElementById('moves');
-  moves.innerHTML = '';
-  const list = r.moves || [];
-  if (!list.length) {
-    moves.appendChild(h('span', 'empty', '暂无'));
+function shareLink() {
+  return location.origin + '/games/chess?room=' + (room ? room.id : '');
+}
+
+function renderRoomInfo() {
+  const box = document.getElementById('room-info');
+  box.innerHTML = '';
+  if (!room) return;
+  const head = h('div', 'side-head', '房间');
+  box.appendChild(head);
+  const codeRow = h('div', 'code-row');
+  const chip = h('button', 'room-code', room.id);
+  chip.title = '点击复制房间码';
+  chip.onclick = () => copyText(room.id, '房间码已复制');
+  codeRow.appendChild(chip);
+  box.appendChild(codeRow);
+  const players = h('div', 'side-players');
+  for (const color of ['white', 'black']) {
+    const p = room.players && room.players[color];
+    const line = h('div', 'side-player');
+    line.appendChild(h('span', 'dot ' + color[0]));
+    line.appendChild(h('span', null, p ? p.name + (room.you === color ? '（你）' : '') : '等待加入…'));
+    if (room.you === color) line.appendChild(h('span', 'badge brand', '你'));
+    players.appendChild(line);
+  }
+  box.appendChild(players);
+  const copy = h('button', 'btn sm ghost', '复制邀请链接');
+  copy.onclick = () => copyText(shareLink(), '邀请链接已复制');
+  box.appendChild(copy);
+  box.appendChild(h('div', 'side-hint', '同一房间只允许两名玩家；刷新/断开重连不丢对局。'));
+}
+
+function renderMoves() {
+  const box = document.getElementById('moves');
+  box.innerHTML = '';
+  const list = (room && room.moves) || [];
+  if (!list.length) { box.appendChild(h('div', 'empty', '暂无')); return; }
+  const table = h('div', 'moves-grid');
+  for (let i = 0; i < list.length; i += 2) {
+    const no = i / 2 + 1;
+    table.appendChild(h('span', 'mv-no', no + '.'));
+    table.appendChild(h('span', 'mv' + (i === list.length - 1 ? ' last' : ''), list[i]));
+    table.appendChild(h('span', 'mv' + (i + 1 === list.length - 1 ? ' last' : ''), list[i + 1] || ''));
+  }
+  box.appendChild(table);
+  const last = table.querySelector('.mv.last');
+  if (last) last.scrollIntoView({ block: 'nearest' });
+}
+
+function paint() {
+  const chip = document.getElementById('room-chip');
+  if (room) {
+    chip.hidden = false;
+    chip.textContent = '房间 ' + room.id;
+    chip.onclick = () => copyText(room.id, '房间码已复制');
+    document.getElementById('lobby').hidden = true;
+    document.getElementById('room').hidden = false;
+    renderBoard();
+    renderInfo();
+    renderRoomInfo();
+    renderMoves();
   } else {
-    list.forEach((m, i) => {
-      const no = Math.floor(i / 2) + 1;
-      const tag = h('span', 'mv' + (i === list.length - 1 ? ' last' : ''));
-      tag.textContent = (i % 2 === 0 ? no + '. ' : '') + m;
-      moves.appendChild(tag);
-    });
-    moves.scrollTop = moves.scrollHeight;
+    chip.hidden = true;
+    document.getElementById('room').hidden = true;
+    document.getElementById('lobby').hidden = false;
+    renderLobby();
   }
-
-  document.getElementById('resign').hidden = r.status !== 'playing';
-  document.getElementById('leave').hidden = !(r.status === 'waiting' || r.status === 'finished');
-  document.getElementById('again').hidden = r.status !== 'finished';
 }
 
-function apply(room) {
-  state.room = room;
-  state.lastSnapshotAt = Date.now();
-  if (state.selected != null) state.selected = null;
-  renderBoard();
-  renderPanels();
+function apply(r) {
+  room = r;
+  selected = null;
+  paint();
 }
 
-// ---------- 无房间时的创建/加入面板 ----------
-function renderNoRoom() {
-  const status = document.getElementById('status');
-  status.innerHTML = '';
-  status.appendChild(h('span', null, '还没有房间：'));
-  const create = h('button', 'btn primary sm', '创建房间（执白）');
-  create.onclick = async () => {
+// ---------- 大厅 ----------
+function renderLobby() {
+  if (DEMO) return;
+  loadRooms();
+}
+
+async function loadRooms() {
+  const box = document.getElementById('rooms');
+  try {
+    const { rooms } = await apiGet('/api/games/chess/rooms');
+    box.innerHTML = '';
+    if (!rooms.length) { box.appendChild(h('div', 'empty', '还没有等待中的房间，创建一间等人来吧')); return; }
+    for (const r of rooms) {
+      const row = h('div', 'list-row');
+      const avatar = h('span', 'avatar', (r.host[0] || '?'));
+      row.appendChild(avatar);
+      const main = h('div', 'list-main');
+      main.appendChild(h('div', 'list-title', r.host + ' 的房间'));
+      main.appendChild(h('div', 'list-sub', '房间码 ' + r.id + ' · ' + fmtAgo(r.createdAt)));
+      row.appendChild(main);
+      const join = h('button', 'btn sm', '加入');
+      join.onclick = async () => {
+        try {
+          const res = await apiPost('/api/games/chess/rooms/join', { room: r.id });
+          apply(res.room);
+        } catch (e) { toast(e.message, { warn: true }); }
+      };
+      row.appendChild(join);
+      box.appendChild(row);
+    }
+  } catch (e) {
+    box.innerHTML = '';
+    box.appendChild(h('div', 'empty', '加载失败：' + e.message));
+  }
+}
+
+function fmtAgo(ms) {
+  if (!ms) return '刚刚';
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return '刚刚';
+  if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
+  return Math.floor(s / 3600) + ' 小时前';
+}
+
+async function createRoom() {
+  try {
     const res = await apiPost('/api/games/chess/rooms');
     apply(res.room);
-  };
-  status.appendChild(create);
-  const input = h('input', 'login-input inline');
-  input.id = 'joincode';
-  input.maxLength = 6;
-  input.placeholder = '输入房间码加入';
-  const join = h('button', 'btn sm', '加入');
-  const doJoin = async () => {
-    try {
-      const res = await apiPost('/api/games/chess/rooms/join', { room: input.value.trim().toUpperCase() });
-      apply(res.room);
-    } catch (e) { toast(e.message); }
-  };
-  join.onclick = doJoin;
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
-  status.appendChild(input);
-  status.appendChild(join);
+  } catch (e) { toast(e.message, { warn: true }); }
 }
 
-// URL 里带 ?room=XXX 时提示加入（方便分享链接）
-function pendingInvite() {
-  const code = (qs.get('room') || '').trim().toUpperCase();
-  return code && /^[A-Z0-9]{4,8}$/.test(code) ? code : '';
+async function joinRoom(code) {
+  code = (code || '').trim().toUpperCase();
+  if (!code) { toast('先填房间码', { warn: true }); return; }
+  try {
+    const res = await apiPost('/api/games/chess/rooms/join', { room: code });
+    apply(res.room);
+  } catch (e) { toast(e.message, { warn: true }); }
 }
 
-async function loadRoom() {
-  if (DEMO) {
-    apply(demoRoom());
-    return;
-  }
-  const invite = pendingInvite();
-  const { room } = await apiGet('/api/games/chess/room');
-  if (room) { apply(room); return; }
-  if (invite) {
-    try {
-      const res = await apiPost('/api/games/chess/rooms/join', { room: invite });
-      apply(res.room);
-      return;
-    } catch (e) {
-      toast('加入 ' + invite + ' 失败：' + e.message);
-    }
-  }
-  if (!state.room) renderNoRoom();
+async function leaveRoom() {
+  const ok = await confirmDialog({ title: '离开房间？', body: '对局中的离开会计为认输。', confirmText: '离开', danger: true });
+  if (!ok) return;
+  await apiPost('/api/games/chess/leave');
+  room = null; selected = null;
+  paint();
 }
 
+// ---------- SSE ----------
 function connectSSE() {
   if (DEMO) return;
   const es = new EventSource('/api/games/chess/events?token=' + encodeURIComponent(shell.token));
@@ -274,62 +314,56 @@ function connectSSE() {
     } catch (e) { /* 忽略坏帧 */ }
   });
   es.onerror = () => {
-    // 断开自动重连由 EventSource 负责；若 5 秒无消息再补拉一次状态。
     setTimeout(async () => {
-      if (Date.now() - state.lastSnapshotAt > 5000) {
-        try {
-          const { room } = await apiGet('/api/games/chess/room');
-          if (room) apply(room);
-        } catch (e) { /* 未登录等 */ }
-      }
-    }, 5200);
+      try {
+        const { room: r } = await apiGet('/api/games/chess/room');
+        if (r) apply(r);
+      } catch (e) { /* 未登录 */ }
+    }, 5000);
   };
 }
 
+// ---------- demo ----------
 function demoRoom() {
-  const rows = [
-    'rnbqkbnr',
-    'pppppppp',
-    '........',
-    '........',
-    '....P...',
-    '........',
-    'PPPP.PPP',
-    'RNBQKBNR',
-  ];
+  const rows = ['rnbqkbnr', 'pppppppp', '........', '........', '....P...', '........', 'PPPP.PPP', 'RNBQKBNR'];
   return {
     id: 'AB3K9Q', status: 'playing', result: '', reason: '', turn: 'white', inCheck: false,
     pieces: rows.join(''), lastMove: 'e2e4', you: 'white',
     players: { white: { id: 1, name: 'jzk' }, black: { id: 2, name: '朋友' } },
-    legalMoves: ['e1e2', 'g1f3', 'f1c4', 'd2d4', 'e4e5'],
+    legalMoves: ['g1f3', 'f1c4', 'd2d4', 'e4e5', 'b1c3'],
     moves: ['e2e4'],
   };
 }
 
-document.getElementById('resign').onclick = async () => {
-  if (!confirm('确定认输？')) return;
-  try {
-    const res = await apiPost('/api/games/chess/resign');
-    if (res.room) apply(res.room); else location.href = '/games';
-  } catch (e) { toast(e.message); }
-};
-document.getElementById('leave').onclick = async () => {
-  await apiPost('/api/games/chess/leave');
-  state.room = null;
-  state.selected = null;
-  location.href = '/games';
-};
-document.getElementById('again').onclick = async () => {
-  await apiPost('/api/games/chess/leave');
-  const res = await apiPost('/api/games/chess/rooms');
-  apply(res.room);
-};
-
 (async () => {
-  await boot({ active: '/games', requireLogin: !DEMO });
-  if (!DEMO && !shell.user) return;
-  renderBoard();
-  renderPanels();
-  await loadRoom();
+  document.getElementById('room-chip').hidden = true;
+  if (DEMO) {
+    shell.user = { id: 1, name: 'jzk', admin: true };
+    apply(demoRoom());
+    return;
+  }
+  await boot({ active: '/games', requireLogin: true });
+  if (!shell.user) return;
+
+  document.getElementById('create').onclick = createRoom;
+  document.getElementById('refresh').onclick = loadRooms;
+  document.getElementById('join').onclick = () => joinRoom(document.getElementById('code').value);
+  document.getElementById('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(e.target.value); });
+
+  const invite = (qs.get('room') || '').trim().toUpperCase();
+  const { room: current } = await apiGet('/api/games/chess/room');
+  if (current) { apply(current); }
+  else if (invite) {
+    try {
+      const res = await apiPost('/api/games/chess/rooms/join', { room: invite });
+      apply(res.room);
+      history.replaceState(null, '', '/games/chess');
+    } catch (e) {
+      toast('加入 ' + invite + ' 失败：' + e.message, { warn: true });
+      paint();
+    }
+  } else {
+    paint();
+  }
   connectSSE();
 })();

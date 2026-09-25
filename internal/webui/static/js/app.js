@@ -5,7 +5,7 @@ import { S, saveAuth, clearAuth } from './state.js';
 import { api, logoutRequest, setUnauthorizedHandler } from './api.js';
 import { initTheme, openAppearance } from './theme.js';
 import { initWorkspace, openWorkspace } from './workspace.js';
-import { initConversations, refresh as refreshConversations } from './conversations.js';
+import * as conversations from './conversations.js';
 import * as chat from './chat.js';
 import * as composer from './composer.js';
 
@@ -78,7 +78,7 @@ async function startChat() {
   $('myrole').className = 'badge' + (S.admin ? ' admin' : '');
   $('menu-ws').hidden = !S.admin;
   chat.clearMessages();
-  await refreshConversations();
+  await conversations.refresh();
   await chat.loadHistory();
   chat.connectSSE();
   composer.loadOptions().catch(() => {});
@@ -143,7 +143,7 @@ function boot() {
     return;
   }
   initWorkspace();
-  initConversations();
+  conversations.initConversations();
   setUnauthorizedHandler(() => logout(true));
 
   $('enter').onclick = () => doLogin($('name').value.trim());
@@ -177,10 +177,25 @@ function boot() {
     api('/api/me').then((res) => {
       S.admin = !!res.admin; S.me = res.name;
       saveAuth();
-      startChat();
+      startChat().then(applyURLTarget);
     }).catch(() => logout(true));
   } else {
     logout(true);
+  }
+}
+
+// URL 直达：/agent?new=1 开新对话；/agent?conv=<id> 打开指定会话（Portal 首页卡片用）。
+async function applyURLTarget() {
+  const q = new URLSearchParams(location.search);
+  const wantConv = q.get('conv');
+  const wantNew = q.has('new');
+  if (wantNew) {
+    conversations.newChat();
+  } else if (wantConv && S.conversations.some((c) => c.conv === wantConv)) {
+    await conversations.switchTo(wantConv);
+  }
+  if (wantNew || wantConv) {
+    history.replaceState(null, '', location.pathname);
   }
 }
 

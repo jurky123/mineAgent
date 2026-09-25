@@ -112,7 +112,7 @@ export function renderList() {
   $('header-title').textContent = S.conv === null ? '新聊天' : ((active && active.title) || 'MineAgent');
 }
 
-async function switchTo(conv) {
+export async function switchTo(conv) {
   setConv(conv);
   S.unread.delete(conv);
   renderList();

@@ -262,7 +262,7 @@ func (m *Manager) Move(userID int64, from, to int, promo byte) error {
 	if err != nil {
 		return err
 	}
-	r.Moves = append(r.Moves, res.Move.String())
+	r.Moves = append(r.Moves, res.SAN)
 	r.Last = res.Move.String()
 	r.Updated = time.Now()
 	if res.Checkmate {

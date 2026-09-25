@@ -466,11 +466,85 @@ func (b *Board) LegalMoves() []Move {
 // MoveResult 是执行走法后的结果说明。
 type MoveResult struct {
 	Move       Move
+	SAN        string // 标准代数记谱（e4 / Nf3 / O-O / exd5 / e8=Q+ / Qh4#）
 	Check      bool
 	Checkmate  bool
 	Stalemate  bool
 	Promotion  byte
 	CapturedPI byte
+}
+
+// SAN 生成标准代数记谱（要在 apply 之前算，基于走子前的局面）。
+func (b *Board) SAN(m Move) string {
+	p := b.Squares[m.From]
+	pt := p | 0x20
+	target := Algebraic(m.To)
+	if pt == 'k' && abs(m.To-m.From) == 2 {
+		if m.To%8 == 6 {
+			return "O-O"
+		}
+		return "O-O-O"
+	}
+	var sb strings.Builder
+	capture := b.Squares[m.To] != 0
+	switch pt {
+	case 'p':
+		if capture {
+			sb.WriteByte(byte('a' + m.From%8))
+			sb.WriteByte('x')
+		}
+		sb.WriteString(target)
+		if m.Promotion != 0 {
+			sb.WriteString("=")
+			sb.WriteString(strings.ToUpper(string(m.Promotion)))
+		}
+	default:
+		sb.WriteString(strings.ToUpper(string(pt)))
+		// 同类型棋子能走到同一格时，需要消歧（优先用纵线，其次横线，都不行用完整坐标）
+		sameFile, sameRank := false, false
+		ambiguous := false
+		for _, other := range b.LegalMoves() {
+			if other.From == m.From || other.To != m.To {
+				continue
+			}
+			if (b.Squares[other.From] | 0x20) != pt {
+				continue
+			}
+			ambiguous = true
+			if other.From%8 == m.From%8 {
+				sameFile = true
+			}
+			if other.From/8 == m.From/8 {
+				sameRank = true
+			}
+		}
+		if ambiguous {
+			if !sameFile {
+				sb.WriteByte(byte('a' + m.From%8))
+			} else if !sameRank {
+				sb.WriteByte(byte('1' + m.From/8))
+			} else {
+				sb.WriteString(Algebraic(m.From))
+			}
+		}
+		if capture {
+			sb.WriteByte('x')
+		}
+		sb.WriteString(target)
+	}
+	// 还原局面算将杀/将军后缀
+	nb := b.Clone()
+	nb.apply(m)
+	opp := nb.Turn
+	inCheck := nb.InCheck(opp)
+	hasMove := len(nb.LegalMoves()) > 0
+	switch {
+	case inCheck && !hasMove:
+		sb.WriteByte('#')
+	case inCheck:
+		sb.WriteByte('+')
+	}
+	return sb.String()
 }
 
 // Play 校验并执行一步；非法返回 error。
@@ -483,7 +557,8 @@ func (b *Board) Play(from, to int, promotion byte) (MoveResult, error) {
 			continue
 		}
 		captured := b.Squares[m.To]
-		res := MoveResult{Move: m, Promotion: m.Promotion, CapturedPI: captured}
+		san := b.SAN(m)
+		res := MoveResult{Move: m, SAN: san, Promotion: m.Promotion, CapturedPI: captured}
 		b.apply(m)
 		opp := b.Turn
 		res.Check = b.InCheck(opp)

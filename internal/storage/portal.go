@@ -383,6 +383,50 @@ func (s *Store) ListGameRuns(ctx context.Context, userID int64, gameID string, l
 	return out, rows.Err()
 }
 
+// GameStat 是按游戏聚合的战绩（账号页/大厅展示）。
+type GameStat struct {
+	GameID string `json:"gameId"`
+	Total  int    `json:"total"`
+	Wins   int    `json:"wins"`
+	Losses int    `json:"losses"`
+	Draws  int    `json:"draws"`
+}
+
+// GameStats 聚合某用户的全部对局记录（没有记录时返回空切片）。
+func (s *Store) GameStats(ctx context.Context, userID int64) ([]GameStat, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT game_id, result, COUNT(*) FROM game_runs WHERE user_id=? GROUP BY game_id, result`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	idx := map[string]int{}
+	var out []GameStat
+	for rows.Next() {
+		var gameID, result string
+		var n int
+		if err := rows.Scan(&gameID, &result, &n); err != nil {
+			return nil, err
+		}
+		i, ok := idx[gameID]
+		if !ok {
+			i = len(out)
+			idx[gameID] = i
+			out = append(out, GameStat{GameID: gameID})
+		}
+		out[i].Total += n
+		switch result {
+		case "win":
+			out[i].Wins += n
+		case "lose":
+			out[i].Losses += n
+		case "draw":
+			out[i].Draws += n
+		}
+	}
+	return out, rows.Err()
+}
+
 // ---------- announcements ----------
 
 func (s *Store) AddAnnouncement(ctx context.Context, text, author string, now int64) (*Announcement, error) {

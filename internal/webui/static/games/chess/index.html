@@ -6,45 +6,78 @@
 <meta name="mineagent-version" content="__VER__">
 <title>国际象棋 · Mine</title>
 <link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/ds.css">
 <link rel="stylesheet" href="/static/__VER__/css/portal.css">
 <link rel="stylesheet" href="/static/__VER__/css/games.css">
 </head>
-<body class="portal">
+<body>
 <div id="shell-top"></div>
 
 <main class="wrap chess-wrap">
-  <section class="chess-layout">
-    <div class="board-col">
-      <div class="player-bar" id="top-player"></div>
-      <div class="board-holder">
-        <div class="board" id="board"></div>
-        <div class="board-files" id="files"></div>
-      </div>
-      <div class="player-bar" id="bottom-player"></div>
+  <nav class="crumb">
+    <a class="crumb-link" href="/games">
+      <svg viewBox="0 0 24 24" class="i sm" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+      游戏大厅
+    </a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-title">国际象棋</span>
+    <span class="spacer"></span>
+    <button class="room-chip" id="room-chip" hidden></button>
+  </nav>
 
-      <div class="status-bar" id="status">加载中…</div>
-
-      <div class="chess-actions">
-        <button class="btn" id="resign" hidden>认输</button>
-        <button class="btn" id="leave" hidden>离开房间</button>
-        <button class="btn primary" id="again" hidden>再来一局</button>
-        <a class="btn ghost" href="/games">返回大厅</a>
+  <!-- 状态一：大厅（没在房间里） -->
+  <div id="lobby" hidden>
+    <div class="lobby-hero">
+      <img class="lobby-piece" alt="" src="/static/__VER__/img/pieces/wN.svg">
+      <div>
+        <div class="lobby-title">在线对弈</div>
+        <div class="lobby-sub">房间制双人对战 · 服务端裁判 · 刷新不丢对局</div>
       </div>
     </div>
 
-    <aside class="chess-side">
-      <div class="card">
-        <div class="card-head"><h3 class="card-title">房间</h3></div>
-        <div class="card-body" id="room-info">
-          <div class="empty">正在加载…</div>
+    <div class="lobby-grid">
+      <article class="card lobby-card">
+        <div class="lobby-card-title">创建一个新房间</div>
+        <div class="lobby-card-sub">创建后把房间码或邀请链接发给朋友</div>
+        <button class="btn primary cta" id="create">创建房间</button>
+      </article>
+      <article class="card lobby-card">
+        <div class="lobby-card-title">加入朋友的房间</div>
+        <div class="lobby-card-sub">输入 6 位房间码</div>
+        <div class="join-row">
+          <input class="input code-input" id="code" maxlength="6" placeholder="AB3K9Q" autocapitalize="characters" spellcheck="false">
+          <button class="btn cta" id="join">加入</button>
         </div>
+      </article>
+    </div>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">开放房间</h2>
+        <div class="spacer"></div>
+        <button class="btn sm ghost" id="refresh">刷新</button>
       </div>
-      <div class="card">
-        <div class="card-head"><h3 class="card-title">着法</h3></div>
-        <div class="card-body"><div class="moves" id="moves"><span class="empty">暂无</span></div></div>
+      <div class="card" id="rooms"></div>
+    </section>
+  </div>
+
+  <!-- 状态二：房间里（等待 / 对局 / 终局） -->
+  <div id="room" class="room-layout" hidden>
+    <div class="board-col">
+      <div class="player-bar" id="top-player"></div>
+      <div class="board" id="board"></div>
+      <div class="player-bar" id="bottom-player"></div>
+      <div class="status-bar" id="status">…</div>
+      <div class="chess-actions" id="actions"></div>
+    </div>
+    <aside class="chess-side">
+      <div class="card side-card" id="room-info"></div>
+      <div class="card side-card">
+        <div class="side-head">着法</div>
+        <div class="moves-table" id="moves"><div class="empty">暂无</div></div>
       </div>
     </aside>
-  </section>
+  </div>
 </main>
 
 <script type="module" src="/static/__VER__/js/chess.js"></script>

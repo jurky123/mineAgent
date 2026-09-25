@@ -1,8 +1,12 @@
-// shell.js：门户各页共用的顶栏 / 登录 / 账号菜单 / 主题。
-// 页面结构：<div id="shell-top"></div> + 自己的内容 + 调 shell.boot(active)。
+// shell.js — 门户各页共用的顶栏 / 登录态 / 账户菜单 / 主题 / API 封装。
+// 页面约定：<div id="shell-top"></div> + 自己的内容 + 调 shell.boot(active)。
+// 未登录时渲染整页登录态（不是弹窗），登录后才进入门户。
+
+import { h, icon, toast } from './ds.js';
 
 const TOKEN_KEY = 'mineagent.token';
 const NAME_KEY = 'mineagent.name';
+const LAST_KEY = 'mineagent.lastName';
 
 export const shell = {
   token: localStorage.getItem(TOKEN_KEY) || '',
@@ -10,36 +14,15 @@ export const shell = {
   apps: [],
 };
 
-function h(tag, cls, text) {
-  const el = document.createElement(tag);
-  if (cls) el.className = cls;
-  if (text != null) el.textContent = text;
-  return el;
-}
-
-function svgIcon(name) {
-  const paths = {
-    sun: 'M12 4V2m0 20v-2m8-8h2M2 12h2m13.66-5.66 1.42-1.42M4.92 19.08l1.42-1.42m0-11.32L4.92 4.92m14.16 14.16-1.42-1.42M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
-    moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z',
-    user: 'M20 21a8 8 0 1 0-16 0m8-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
-    out: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9',
-    chat: 'M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z',
-  };
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('class', 'i');
-  const p = document.createElementNS(NS, 'path');
-  p.setAttribute('d', paths[name] || paths.user);
-  svg.appendChild(p);
-  return svg;
-}
-
-// ---------- 主题（和聊天页共用 mineagent.theme 键） ----------
-const MODES = ['light', 'dark', 'system'];
+// ---------- 主题（浅色 / 深色 / 跟随系统；和 Agent 页共用 mineagent.theme） ----------
+const MODES = [
+  { id: 'system', label: '跟随系统', icon: 'monitor' },
+  { id: 'light', label: '浅色', icon: 'sun' },
+  { id: 'dark', label: '深色', icon: 'moon' },
+];
 const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
-function themeMode() { return localStorage.getItem('mineagent.theme') || 'system'; }
+export function themeMode() { return localStorage.getItem('mineagent.theme') || 'system'; }
 
 export function applyTheme() {
   const m = themeMode();
@@ -48,10 +31,20 @@ export function applyTheme() {
   document.documentElement.dataset.mode = m;
 }
 
-function cycleTheme() {
-  const i = MODES.indexOf(themeMode());
-  localStorage.setItem('mineagent.theme', MODES[(i + 1) % MODES.length]);
+export function setTheme(mode) {
+  localStorage.setItem('mineagent.theme', mode);
   applyTheme();
+}
+
+export function fmtTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (d.getTime() >= startOfToday) return '今天 ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  if (d.getTime() >= startOfToday - 86400000) return '昨天 ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日';
 }
 
 // ---------- API ----------
@@ -62,7 +55,7 @@ export async function api(path, opts) {
   const res = await fetch(path, opts);
   let body = null;
   try { body = await res.json(); } catch (e) { /* 空响应 */ }
-  if (res.status === 401 && !opts.noAuthRedirect) {
+  if (res.status === 401) {
     clearAuth();
     throw Object.assign(new Error('未登录'), { unauthorized: true });
   }
@@ -81,11 +74,12 @@ function saveAuth(user, token) {
   if (shell.token) localStorage.setItem(TOKEN_KEY, shell.token);
   if (user) {
     localStorage.setItem(NAME_KEY, user.name);
+    localStorage.setItem(LAST_KEY, user.name);
     localStorage.setItem('mineagent.admin', user.admin ? '1' : '0');
   }
 }
 
-function clearAuth() {
+export function clearAuth() {
   shell.user = null;
   shell.token = '';
   localStorage.removeItem(TOKEN_KEY);
@@ -99,61 +93,100 @@ export async function logout() {
   location.href = '/';
 }
 
-// ---------- 登录弹层 ----------
-let loginModal = null;
+// ---------- 整页登录态 ----------
+async function doLogin(name) {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+  saveAuth({ id: body.id, name: body.name, admin: !!body.admin }, body.token);
+  return shell.user;
+}
 
-function showLogin() {
+function loginView() {
   return new Promise((resolve) => {
-    if (!loginModal) {
-      loginModal = h('div', 'login-mask');
-      const box = h('div', 'login-box');
-      box.appendChild(h('h2', null, '进入 Mine'));
-      box.appendChild(h('p', 'login-hint', '输入一个名字（不需要密码，首次输入即注册）'));
-      const input = h('input', 'login-input');
-      input.id = 'login-name';
-      input.type = 'text';
-      input.maxLength = 24;
-      input.placeholder = '你的名字';
-      input.autocomplete = 'username';
-      const err = h('div', 'login-err');
-      const btn = h('button', 'btn primary login-btn', '进入');
-      const submit = async () => {
-        const name = input.value.trim();
-        if (!name) { err.textContent = '先填个名字'; return; }
-        btn.disabled = true; err.textContent = '';
-        try {
-          const res = await fetch('/api/auth/login', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name }),
-          });
-          const body = await res.json().catch(() => null);
-          if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-          saveAuth({ id: body.id, name: body.name, admin: !!body.admin }, body.token);
-          loginModal.remove(); loginModal = null;
-          resolve(shell.user);
-        } catch (e) {
-          err.textContent = e.message;
-        } finally {
-          btn.disabled = false;
+    const view = h('div', 'login-view');
+    const box = h('div', 'login-box');
+    box.appendChild(h('div', 'login-mark'));
+    box.appendChild(h('h1', 'login-title', 'Mine'));
+
+    const lastName = (localStorage.getItem(LAST_KEY) || '').trim();
+    const err = h('div', 'field-err');
+
+    const submit = async (name) => {
+      err.textContent = '';
+      if (!name) { err.textContent = '先填个名字'; return; }
+      try {
+        const user = await doLogin(name);
+        view.remove();
+        resolve(user);
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    };
+
+    const render = (showLast) => {
+      box.innerHTML = '';
+      box.appendChild(h('div', 'login-mark'));
+      box.appendChild(h('h1', 'login-title', 'Mine'));
+      if (showLast && lastName) {
+        box.appendChild(h('p', 'login-sub', '欢迎回来'));
+        const cont = h('button', 'btn primary cta login-go', '以 ' + lastName + ' 继续');
+        cont.onclick = () => submit(lastName);
+        box.appendChild(cont);
+        const other = h('button', 'btn ghost sm login-other', '使用其他名字');
+        other.onclick = () => render(false);
+        box.appendChild(other);
+      } else {
+        const frag = paintForm('', submit);
+        if (lastName) {
+          const back = h('button', 'btn ghost sm login-other', '← 用上次的名字');
+          back.onclick = () => render(true);
+          frag.appendChild(back);
         }
-      };
-      btn.onclick = submit;
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-      box.appendChild(input); box.appendChild(err); box.appendChild(btn);
-      loginModal.appendChild(box);
-      document.body.appendChild(loginModal);
-    }
-    const first = loginModal.querySelector('input');
-    if (first) first.focus();
+        box.appendChild(frag);
+      }
+      box.appendChild(err);
+      box.appendChild(h('p', 'login-hint', '暂时不需要密码 · 输入名字即可进入'));
+      const input = box.querySelector('input');
+      if (input) input.focus();
+    };
+    render(true);
+    view.appendChild(box);
+    document.body.appendChild(view);
   });
 }
 
+function paintForm(value, submit) {
+  const frag = document.createDocumentFragment();
+  frag.appendChild(h('p', 'login-sub', '欢迎来到我们的空间'));
+  const field = h('div', 'field');
+  const input = h('input', 'input login-input');
+  input.id = 'login-name';
+  input.maxLength = 24;
+  input.placeholder = '你的名字';
+  input.value = value || '';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  field.appendChild(input);
+  frag.appendChild(field);
+  const go = h('button', 'btn primary cta login-go', '继续');
+  const run = () => submit(input.value.trim());
+  go.onclick = run;
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
+  frag.appendChild(go);
+  return frag;
+}
+
 // ---------- 顶栏 ----------
-function renderTop(active) {
+function paintTop(active) {
   const host = document.getElementById('shell-top');
   if (!host) return;
   host.innerHTML = '';
   const bar = h('header', 'topbar');
+
   const brand = h('a', 'brand');
   brand.href = '/';
   brand.appendChild(h('span', 'brand-dot'));
@@ -161,68 +194,99 @@ function renderTop(active) {
   bar.appendChild(brand);
 
   const nav = h('nav', 'nav');
-  for (const app of shell.apps) {
-    if (!app.enabled || !app.path) continue;
-    const a = h('a', 'nav-item' + (app.path === active ? ' on' : ''), app.name);
-    a.href = app.path;
+  const mk = (label, path) => {
+    const a = h('a', 'nav-item' + (path === active ? ' on' : ''), label);
+    a.href = path;
     nav.appendChild(a);
+  };
+  mk('首页', '/');
+  for (const app of shell.apps) {
+    if (app.nav && app.path) mk(app.navLabel || app.name, app.path);
   }
   bar.appendChild(nav);
   bar.appendChild(h('div', 'spacer'));
 
+  // 主题选择器（明确列出三个选项，不再循环切换）
+  const themeWrap = h('div', 'pop-wrap');
   const themeBtn = h('button', 'icon-btn');
-  themeBtn.title = '切换主题';
-  themeBtn.appendChild(svgIcon(themeMode() === 'dark' ? 'moon' : 'sun'));
-  themeBtn.onclick = () => { cycleTheme(); renderTop(active); };
-  bar.appendChild(themeBtn);
+  themeBtn.title = '外观';
+  themeBtn.appendChild(icon('sun'));
+  const themePop = h('div', 'pop');
+  themePop.appendChild(h('div', 'pop-head', '外观'));
+  const paintTheme = () => {
+    themePop.querySelectorAll('.pop-item').forEach((el) => {
+      el.classList.toggle('on', el.dataset.mode === themeMode());
+    });
+  };
+  for (const m of MODES) {
+    const item = h('button', 'pop-item');
+    item.dataset.mode = m.id;
+    item.appendChild(icon(m.icon));
+    item.appendChild(h('span', null, m.label));
+    item.appendChild(icon('check', 'sm check'));
+    item.onclick = () => { setTheme(m.id); paintTheme(); };
+    themePop.appendChild(item);
+  }
+  paintTheme();
+  themeBtn.onclick = (e) => { e.stopPropagation(); closePops(themePop); themePop.classList.toggle('on'); };
+  themePop.onclick = (e) => e.stopPropagation();
+  themeWrap.appendChild(themeBtn);
+  themeWrap.appendChild(themePop);
+  bar.appendChild(themeWrap);
 
-  const accBtn = h('button', 'icon-btn account-btn');
+  // 账户菜单
+  const accWrap = h('div', 'pop-wrap');
+  const accBtn = h('button', 'icon-btn');
   accBtn.title = shell.user ? shell.user.name : '登录';
-  if (shell.user) accBtn.appendChild(h('span', 'avatar', shell.user.name.slice(0, 1)));
-  else accBtn.appendChild(svgIcon('user'));
-  bar.appendChild(accBtn);
-
-  const menu = h('div', 'account-menu');
+  if (shell.user) accBtn.appendChild(h('span', 'avatar', (shell.user.name[0] || '?')));
+  else accBtn.appendChild(icon('user'));
+  const accPop = h('div', 'pop');
   if (shell.user) {
-    const head = h('div', 'account-head');
-    head.appendChild(h('div', 'account-name', shell.user.name));
-    head.appendChild(h('div', 'account-id', 'ID ' + shell.user.id + (shell.user.admin ? ' · 管理员' : '')));
-    menu.appendChild(head);
-    const mk = (label, icon, fn) => {
-      const b = h('button', 'menu-item');
-      b.appendChild(svgIcon(icon));
+    const head = h('div', 'pop-head');
+    head.appendChild(h('div', 'pop-name', shell.user.name));
+    head.appendChild(h('div', 'pop-title', 'ID ' + shell.user.id + (shell.user.admin ? ' · 管理员' : '')));
+    accPop.appendChild(head);
+    const item = (label, ic, fn, cls) => {
+      const b = h('button', 'pop-item' + (cls ? ' ' + cls : ''));
+      b.appendChild(icon(ic));
       b.appendChild(h('span', null, label));
       b.onclick = fn;
-      menu.appendChild(b);
+      accPop.appendChild(b);
     };
-    mk('我的账号', 'user', () => { location.href = '/account'; });
-    mk('Agent 对话', 'chat', () => { location.href = '/agent'; });
-    mk('退出登录', 'out', () => logout());
+    item('我的账号', 'user', () => { location.href = '/account'; });
+    item('退出登录', 'logout', () => logout(), 'danger-item');
   } else {
-    const b = h('button', 'menu-item');
-    b.appendChild(svgIcon('user'));
+    const b = h('button', 'pop-item');
+    b.appendChild(icon('user'));
     b.appendChild(h('span', null, '登录'));
-    b.onclick = () => showLogin();
-    menu.appendChild(b);
+    b.onclick = () => location.reload();
+    accPop.appendChild(b);
   }
-  accBtn.onclick = (e) => { e.stopPropagation(); menu.classList.toggle('on'); };
-  menu.onclick = (e) => e.stopPropagation();
-  document.addEventListener('click', () => menu.classList.remove('on'));
+  accBtn.onclick = (e) => { e.stopPropagation(); closePops(accPop); accPop.classList.toggle('on'); };
+  accPop.onclick = (e) => e.stopPropagation();
+  accWrap.appendChild(accBtn);
+  accWrap.appendChild(accPop);
+  bar.appendChild(accWrap);
 
-  const holder = h('div', 'account-wrap');
-  holder.appendChild(accBtn);
-  holder.appendChild(menu);
-  bar.appendChild(holder);
   host.appendChild(bar);
+  document.addEventListener('click', () => closePops());
+}
+
+function closePops(except) {
+  document.querySelectorAll('.pop.on').forEach((el) => { if (el !== except) el.classList.remove('on'); });
 }
 
 // ---------- boot ----------
-// active: 当前导航高亮；requireLogin=false 时未登录也渲染（如 ?ui=1 演示）。
+// active: 顶部导航高亮；requireLogin=false 时未登录也继续（?ui=1 演示模式）。
 export async function boot({ active = '', requireLogin = true } = {}) {
   applyTheme();
   mql.addEventListener('change', () => { if (themeMode() === 'system') applyTheme(); });
+  document.body.classList.add('ds');
 
-  try { shell.apps = (await apiGet('/api/portal/apps')).apps || []; } catch (e) { /* 顶栏无导航 */ }
+  const loadApps = async () => {
+    try { shell.apps = (await apiGet('/api/portal/apps')).apps || []; } catch (e) { /* 忽略 */ }
+  };
+  await loadApps();
 
   try {
     const me = await apiGet('/api/auth/me');
@@ -230,15 +294,12 @@ export async function boot({ active = '', requireLogin = true } = {}) {
   } catch (e) {
     shell.user = null;
   }
-  renderTop(active);
+  paintTop(active);
+
   if (!shell.user && requireLogin) {
-    const user = await showLogin();
-    try { shell.apps = (await apiGet('/api/portal/apps')).apps || []; } catch (e) {}
-    renderTop(active);
-    return user;
+    await loginView();
+    await loadApps();
+    paintTop(active);
   }
-  if (shell.user) renderTop(active);
   return shell.user;
 }
-
-export { h, svgIcon, showLogin };

@@ -1,126 +1,73 @@
-// games.js：小游戏大厅（游戏列表 / 创建或加入国际象棋房间 / 最近战绩）。
-import { shell, boot, apiGet, apiPost, h } from './shell.js';
+// games.js — 游戏目录：只负责「发现游戏」，具体房间/对局在各自的游戏页里。
+import { shell, boot, apiGet } from './shell.js';
+import { h, icon } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
 
-function fmtTime(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  const pad = (n) => String(n).padStart(2, '0');
-  return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-}
-
-function renderGames(list) {
-  const host = document.getElementById('games');
-  host.innerHTML = '';
-  for (const g of list) {
-    const el = h('article', 'card' + (g.enabled && g.path ? ' clickable' : ' disabled'));
-    const head = h('div', 'card-head');
-    head.appendChild(h('h3', 'card-title', (g.icon ? g.icon + ' ' : '') + g.name));
-    if (!g.enabled) head.appendChild(h('span', 'badge', '开发中'));
-    el.appendChild(head);
-    el.appendChild(h('div', 'card-body', g.desc || ''));
-    if (g.enabled && g.path) el.onclick = () => { location.href = g.path; };
-    host.appendChild(el);
+// 每个游戏卡片的"额外状态"数据源（有就展示，没有就只显示简介）
+async function chessStatus() {
+  const [rooms, runs] = await Promise.all([
+    apiGet('/api/games/chess/rooms').catch(() => ({ rooms: [] })),
+    apiGet('/api/games/chess/runs?limit=50').catch(() => ({ runs: [] })),
+  ]);
+  let wins = 0, losses = 0, draws = 0;
+  for (const r of runs.runs || []) {
+    if (r.result === 'win') wins++;
+    else if (r.result === 'lose') losses++;
+    else draws++;
   }
+  return { openRooms: (rooms.rooms || []).length, wins, losses, draws, total: (runs.runs || []).length };
 }
 
-async function renderRooms() {
-  const host = document.getElementById('rooms');
-  try {
-    const { rooms } = await apiGet('/api/games/chess/rooms');
-    host.innerHTML = '';
-    if (!rooms.length) {
-      host.appendChild(h('div', 'empty', '还没有等待中的房间，创建一间等人来吧'));
-      return;
-    }
-    for (const r of rooms) {
-      const row = h('div', 'room-row');
-      const main = h('div', 'room-main');
-      main.appendChild(h('div', 'room-name', r.host + ' 的房间'));
-      main.appendChild(h('div', 'room-meta', '房间码 ' + r.id + ' · ' + fmtTime(r.createdAt)));
-      row.appendChild(main);
-      const btn = h('button', 'btn sm', '加入');
-      btn.onclick = () => join(r.id);
-      row.appendChild(btn);
-      host.appendChild(row);
-    }
-  } catch (e) {
-    host.innerHTML = '';
-    host.appendChild(h('div', 'empty', '加载失败：' + e.message));
+function catalogCard(game, status) {
+  const card = h('article', 'card catalog-card');
+  const head = h('div', 'catalog-head');
+  const ic = h('span', 'game-icon');
+  ic.appendChild(icon('chess', 'lg'));
+  head.appendChild(ic);
+  const t = h('div');
+  t.appendChild(h('div', 'catalog-title', game.name));
+  t.appendChild(h('div', 'game-desc', game.desc || ''));
+  head.appendChild(t);
+  card.appendChild(head);
+
+  const bits = [];
+  if (status) {
+    if (status.openRooms) bits.push(status.openRooms + ' 个开放房间');
+    if (status.total) bits.push('最近 ' + status.wins + ' 胜 ' + status.losses + ' 负' + (status.draws ? ' ' + status.draws + ' 和' : ''));
   }
-}
+  card.appendChild(h('div', 'game-stats', bits.length ? bits.join(' · ') : '还没有对局记录'));
 
-async function renderRuns() {
-  const host = document.getElementById('runs');
-  if (DEMO) {
-    host.innerHTML = '';
-    host.appendChild(h('div', 'todo-line', '还没下过棋，去开一局吧'));
-    return;
-  }
-  try {
-    const { runs } = await apiGet('/api/games/chess/runs?limit=10');
-    host.innerHTML = '';
-    if (!runs || !runs.length) {
-      host.appendChild(h('div', 'empty', '还没有对局记录，创建房间下一局吧'));
-      return;
-    }
-    for (const r of runs) {
-      let meta = {};
-      try { meta = JSON.parse(r.metadata || '{}'); } catch (e) {}
-      const row = h('div', 'run-row');
-      const tag = h('span', 'result ' + r.result, r.result === 'win' ? '胜' : r.result === 'lose' ? '负' : '和');
-      row.appendChild(tag);
-      row.appendChild(h('span', 'run-meta',
-        (meta.color === 'white' ? '执白' : '执黑') +
-        (meta.opponent ? ' vs ' + meta.opponent : '') +
-        ' · ' + (meta.moves || 0) + ' 回合'));
-      const reason = { checkmate: '将杀', resign: '认输', stalemate: '逼和', leave: '离开' }[meta.reason] || meta.reason || '';
-      row.appendChild(h('span', 'run-time', reason + ' · ' + fmtTime(r.createdAt)));
-      host.appendChild(row);
-    }
-  } catch (e) {
-    host.innerHTML = '';
-    host.appendChild(h('div', 'empty', '加载失败：' + e.message));
-  }
-}
-
-async function create() {
-  try {
-    await apiPost('/api/games/chess/rooms');
-    location.href = '/games/chess';
-  } catch (e) { alert('创建失败：' + e.message); }
-}
-
-async function join(code) {
-  code = (code || '').trim().toUpperCase();
-  if (!code) { alert('先填房间码'); return; }
-  try {
-    await apiPost('/api/games/chess/rooms/join', { room: code });
-    location.href = '/games/chess';
-  } catch (e) { alert('加入失败：' + e.message); }
+  const actions = h('div', 'catalog-actions');
+  const start = h('a', 'btn primary cta', status && status.openRooms ? '去加入' : '开始');
+  start.href = game.path;
+  actions.appendChild(start);
+  card.appendChild(actions);
+  return card;
 }
 
 (async () => {
-  await boot({ active: '/games', requireLogin: !DEMO });
   if (DEMO) {
-    renderGames([{ id: 'chess', name: '国际象棋', icon: '♞', desc: '在线房间对战 · 服务端裁判', enabled: true, path: '/games/chess' }]);
-    document.getElementById('rooms').innerHTML = '';
-    document.getElementById('rooms').appendChild(h('div', 'empty', '（演示）jzk 的房间 · 房间码 AB3K9Q'));
-    renderRuns();
+    shell.user = { id: 1, name: 'jzk', admin: true };
+    document.getElementById('catalog').appendChild(
+      catalogCard({ id: 'chess', name: '国际象棋', desc: '经典双人对战 · 在线房间', path: '/games/chess' },
+        { openRooms: 2, wins: 3, losses: 1, draws: 0, total: 4 }));
     return;
   }
+  await boot({ active: '/games' });
+  if (!shell.user) return;
+  const host = document.getElementById('catalog');
   try {
     const { games } = await apiGet('/api/games');
-    renderGames(games || []);
+    const list = (games || []).filter((g) => g.enabled);
+    if (!list.length) { host.appendChild(h('div', 'card', '暂时还没有可玩的游戏')); return; }
+    for (const g of list) {
+      let status = null;
+      if (g.id === 'chess') status = await chessStatus();
+      host.appendChild(catalogCard(g, status));
+    }
   } catch (e) {
-    document.getElementById('games').appendChild(h('div', 'card', '加载失败：' + e.message));
+    host.appendChild(h('div', 'card', '加载失败：' + e.message));
   }
-  await renderRooms();
-  await renderRuns();
-  document.getElementById('create').onclick = create;
-  document.getElementById('refresh').onclick = renderRooms;
-  document.getElementById('join').onclick = () => join(document.getElementById('code').value);
-  document.getElementById('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(e.target.value); });
 })();

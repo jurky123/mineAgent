@@ -1,163 +1,293 @@
-// portal.js：门户首页 —— 欢迎语 + 应用卡片（公告栏 / Agent / MC 状态 / 占位）。
-import { shell, boot, apiGet, apiPost, h } from './shell.js';
+// portal.js —— 首页：Agent 一级入口 + MC 状态 + 游戏 + 最新动态（Bento 布局）。
+import { shell, boot, apiGet, fmtTime } from './shell.js';
+import { h, icon, toast, openDialog, confirmDialog } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
-const PAGE_THEME = qs.get('theme');
-if (PAGE_THEME === 'dark' || PAGE_THEME === 'light') {
-  localStorage.setItem('mineagent.theme', PAGE_THEME);
+const FORCE_THEME = qs.get('theme');
+if (FORCE_THEME === 'dark' || FORCE_THEME === 'light') localStorage.setItem('mineagent.theme', FORCE_THEME);
+
+const home = () => document.getElementById('home');
+
+function skeleton() {
+  const wrap = h('div', 'home-top');
+  const a = h('div', 'card hero-card');
+  a.appendChild(h('div', 'skeleton', ' '));
+  const b = h('div', 'card status-card');
+  b.appendChild(h('div', 'skeleton', ' '));
+  wrap.appendChild(a);
+  wrap.appendChild(b);
+  home().appendChild(wrap);
 }
 
-function fmtTime(ms) {
-  if (!ms) return '';
-  const d = new Date(ms);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  const pad = (n) => String(n).padStart(2, '0');
-  if (sameDay) return '今天 ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-  return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-}
+// ---------- Agent 主卡 ----------
+function heroCard(app) {
+  const c = app.card || {};
+  const card = h('article', 'card hero-card');
+  const head = h('div', 'hero-head');
+  const ic = h('span', 'hero-icon');
+  ic.appendChild(icon('sparkle', 'lg'));
+  head.appendChild(ic);
+  const headText = h('div');
+  headText.appendChild(h('div', 'hero-title', c.title || 'MineAgent'));
+  headText.appendChild(h('div', 'hero-sub', c.subtitle || ''));
+  head.appendChild(headText);
+  card.appendChild(head);
 
-function renderStat(card) {
-  const body = h('div', 'card-body');
-  if (card.items && card.items.length) {
-    const grid = h('div', 'stat-grid');
-    for (const it of card.items) {
-      const cell = h('div', 'stat-cell');
-      cell.appendChild(h('div', 'stat-label', it.label));
-      cell.appendChild(h('div', 'stat-value', String(it.value)));
-      grid.appendChild(cell);
-    }
-    body.appendChild(grid);
+  const last = h('div', 'hero-last');
+  if (c.lastTitle) {
+    last.appendChild(h('div', 'list-sub', '继续上一次对话'));
+    last.appendChild(h('div', 'hero-conv', '“' + c.lastTitle + '”'));
+    last.appendChild(h('div', 'list-sub', (fmtTime(c.lastUpdated) || '刚刚') + (c.count ? ' · 共 ' + c.count + ' 个会话' : '')));
   } else {
-    const big = h('div', 'stat-big');
-    big.appendChild(h('span', 'stat-num', String(card.value ?? '—')));
-    if (card.hint) big.appendChild(h('span', 'stat-hint', card.hint));
-    body.appendChild(big);
+    last.appendChild(h('div', 'list-sub', '还没有对话'));
+    last.appendChild(h('div', 'hero-conv', '问我任何事：写代码、查资料、控制服务器'));
   }
-  return body;
+  card.appendChild(last);
+
+  const actions = h('div', 'hero-actions');
+  const newBtn = h('a', 'btn primary cta', '新对话');
+  newBtn.href = c.newPath || '/agent?new=1';
+  actions.appendChild(newBtn);
+  const cont = h('a', 'btn', '继续');
+  cont.href = c.continuePath || '/agent';
+  actions.appendChild(cont);
+  card.appendChild(actions);
+  return card;
 }
 
-function renderList(card, app) {
-  const body = h('div', 'card-body');
-  const items = card.items || [];
-  if (!items.length) {
-    body.appendChild(h('div', 'empty', card.empty || '暂无内容'));
-    return body;
-  }
-  const ul = h('ul', 'ann-list');
-  for (const it of items) {
-    const li = h('li', 'ann-item');
-    const main = h('div', 'ann-main');
-    main.appendChild(h('div', 'ann-text', it.text));
-    main.appendChild(h('div', 'ann-meta', (it.author ? it.author + ' · ' : '') + fmtTime(it.createdAt)));
-    li.appendChild(main);
-    if (card.canEdit) {
-      const del = h('button', 'icon-btn sm ann-del');
-      del.textContent = '×';
-      del.title = '删除公告';
-      del.onclick = async () => {
-        if (!confirm('删除这条公告？')) return;
-        await fetch('/api/portal/announcements?id=' + it.id, {
-          method: 'DELETE',
-          headers: { Authorization: 'Bearer ' + shell.token },
-        });
-        refresh();
-      };
-      li.appendChild(del);
-    }
-    ul.appendChild(li);
-  }
-  body.appendChild(ul);
-  if (card.canEdit) {
-    const btn = h('button', 'btn ghost sm', '+ 发布公告');
-    btn.onclick = async () => {
-      const text = prompt('公告内容（最多 500 字）：');
-      if (!text || !text.trim()) return;
-      const res = await fetch('/api/portal/announcements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + shell.token },
-        body: JSON.stringify({ text: text.trim() }),
-      });
-      if (!res.ok) {
-        const b = await res.json().catch(() => null);
-        alert((b && b.error) || '发布失败');
-        return;
-      }
-      refresh();
-    };
-    body.appendChild(btn);
-  }
-  return body;
-}
+// ---------- MC 状态卡 ----------
+function statusCard(app) {
+  const c = app.card || {};
+  const card = h('article', 'card status-card');
+  const head = h('div', 'status-head');
+  const dot = h('span', 'status-dot' + (app.error ? ' off' : ' on'));
+  head.appendChild(dot);
+  head.appendChild(h('span', null, 'Minecraft'));
+  card.appendChild(head);
 
-function renderLink(card, app) {
-  const body = h('div', 'card-body');
-  body.appendChild(h('div', 'link-desc', card.hint || app.desc || ''));
-  const btn = h('span', 'link-go', '进入 →');
-  body.appendChild(btn);
-  return body;
-}
-
-function cardEl(app) {
-  const card = app.card || {};
-  const el = h('article', 'card' + (app.path ? ' clickable' : '') + (app.disabled ? ' disabled' : ''));
-  const head = h('div', 'card-head');
-  head.appendChild(h('h3', 'card-title', card.title || app.name));
-  if (app.disabled) head.appendChild(h('span', 'badge', '开发中'));
-  el.appendChild(head);
-  if (app.disabled) {
-    el.appendChild(h('div', 'card-body', '这个功能还在开发中，先占个位置。'));
-    return el;
-  }
-  const type = card.type || (app.path ? 'link' : 'text');
   if (app.error) {
-    el.appendChild(h('div', 'card-error', app.error));
-  } else if (type === 'stat') {
-    el.appendChild(renderStat(card));
-  } else if (type === 'list') {
-    el.appendChild(renderList(card, app));
-  } else if (type === 'link') {
-    el.appendChild(renderLink(card, app));
+    card.appendChild(h('div', 'status-empty', '服务器状态暂时拿不到'));
+    return card;
+  }
+  if (!c.online) {
+    card.appendChild(h('div', 'status-count', '离线'));
+    card.appendChild(h('div', 'status-sub', '服务器现在没开'));
+    return card;
+  }
+  const players = c.players || [];
+  card.appendChild(h('div', 'status-count',
+    players.length ? players.length + ' 人正在游戏' : '现在没人，服务器开着'));
+  if (players.length) {
+    const chips = h('div', 'player-chips');
+    for (const name of players.slice(0, 8)) chips.appendChild(h('span', 'player-chip', name));
+    if (players.length > 8) chips.appendChild(h('span', 'player-chip', '+' + (players.length - 8)));
+    card.appendChild(chips);
+  }
+  const bits = [];
+  if (c.tps) bits.push('TPS ' + Number(c.tps).toFixed(2));
+  if (c.weather) bits.push(c.weather);
+  if (c.period) bits.push(c.period);
+  if (bits.length) card.appendChild(h('div', 'status-sub', bits.join(' · ')));
+
+  if (c.details && c.details.length) {
+    const details = h('div', 'status-details');
+    details.hidden = true;
+    for (const d of c.details) {
+      const row = h('div', 'row');
+      row.appendChild(h('span', null, d.label));
+      row.appendChild(h('b', null, String(d.value)));
+      details.appendChild(row);
+    }
+    card.appendChild(details);
+    const toggle = h('button', 'btn ghost sm', '查看详情');
+    toggle.onclick = () => {
+      details.hidden = !details.hidden;
+      toggle.textContent = details.hidden ? '查看详情' : '收起';
+    };
+    card.appendChild(toggle);
+  }
+  return card;
+}
+
+// ---------- 游戏卡 ----------
+function gameCard(app) {
+  const c = app.card || {};
+  const card = h('article', 'card game-card');
+  const head = h('div', 'catalog-head');
+  const ic = h('span', 'game-icon');
+  ic.appendChild(icon('chess', 'lg'));
+  head.appendChild(ic);
+  const t = h('div');
+  t.appendChild(h('div', 'game-title', c.name || app.name));
+  const openRooms = c.openRooms || 0;
+  t.appendChild(h('div', 'game-desc', openRooms ? openRooms + ' 个开放房间' : '经典双人对战'));
+  head.appendChild(t);
+  card.appendChild(head);
+  const stats = [];
+  if (c.wins) stats.push(c.wins + ' 胜');
+  if (c.losses) stats.push(c.losses + ' 负');
+  if (c.draws) stats.push(c.draws + ' 和');
+  card.appendChild(h('div', 'game-stats', stats.length ? '最近战绩：' + stats.join(' · ') : '还没有对局记录'));
+  const start = h('a', 'btn primary cta', openRooms ? '去加入' : '开始');
+  start.href = c.path || app.path || '/games/chess';
+  card.appendChild(start);
+  return card;
+}
+
+// ---------- 最新动态 ----------
+function feedSection(app) {
+  const c = app.card || {};
+  const sec = h('section', 'section');
+  const head = h('div', 'section-head');
+  head.appendChild(h('h2', 'section-title', c.title || '最新动态'));
+  head.appendChild(h('div', 'spacer'));
+  if (c.canEdit) {
+    const publish = h('button', 'btn sm', '发布动态');
+    publish.onclick = () => publishDialog();
+    head.appendChild(publish);
+  }
+  sec.appendChild(head);
+
+  const list = h('div', 'card feed');
+  const items = c.items || [];
+  if (!items.length) {
+    list.appendChild(h('div', 'empty', c.empty || '还没有动态'));
   } else {
-    el.appendChild(h('div', 'card-body', card.text || app.desc || ''));
+    for (const it of items) {
+      const row = h('div', 'feed-row');
+      row.appendChild(h('span', 'feed-dot'));
+      const main = h('div', 'feed-main');
+      main.appendChild(h('div', 'feed-text', it.text));
+      main.appendChild(h('div', 'feed-meta', (it.author ? it.author + ' · ' : '') + fmtTime(it.createdAt)));
+      row.appendChild(main);
+      if (c.canEdit) {
+        const del = h('button', 'icon-btn sm feed-del');
+        del.title = '删除';
+        del.appendChild(icon('x', 'sm'));
+        del.onclick = async () => {
+          const ok = await confirmDialog({
+            title: '删除这条动态？', body: '删除后无法恢复。', confirmText: '删除', danger: true,
+          });
+          if (!ok) return;
+          const res = await fetch('/api/portal/announcements?id=' + it.id, {
+            method: 'DELETE', headers: { Authorization: 'Bearer ' + shell.token },
+          });
+          if (!res.ok) { toast('删除失败', { warn: true }); return; }
+          toast('已删除');
+          refresh();
+        };
+        row.appendChild(del);
+      }
+      list.appendChild(row);
+    }
   }
-  if (app.path) {
-    el.addEventListener('click', (e) => {
-      if (e.target.closest('button, a')) return;
-      location.href = app.path;
-    });
+  sec.appendChild(list);
+  return sec;
+}
+
+async function publishDialog() {
+  const field = h('div', 'field');
+  const ta = h('textarea', 'textarea');
+  ta.placeholder = '写点什么…（最多 500 字）';
+  ta.maxLength = 500;
+  field.appendChild(ta);
+  const err = h('div', 'field-err');
+  field.appendChild(err);
+  openDialog({
+    title: '发布动态',
+    body: field,
+    actions: [
+      { label: '取消' },
+      {
+        label: '发布', primary: true, keepOpen: true,
+        onClick: async (close) => {
+          const text = ta.value.trim();
+          if (!text) { err.textContent = '内容不能为空'; ta.focus(); return false; }
+          try {
+            const res = await fetch('/api/portal/announcements', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + shell.token },
+              body: JSON.stringify({ text }),
+            });
+            if (!res.ok) {
+              const b = await res.json().catch(() => null);
+              throw new Error((b && b.error) || 'HTTP ' + res.status);
+            }
+            toast('已发布');
+            close();
+            refresh();
+          } catch (e) {
+            err.textContent = e.message;
+          }
+        },
+      },
+    ],
+  });
+}
+
+// ---------- 渲染 ----------
+function paint(data) {
+  document.getElementById('greeting').textContent = data.greeting || '你好';
+  const acc = data.account || {};
+  document.getElementById('greeting-sub').textContent = '今天想做点什么？';
+  const host = home();
+  host.innerHTML = '';
+
+  const apps = data.apps || [];
+  const hero = apps.find((a) => a.role === 'hero');
+  const status = apps.find((a) => a.role === 'status');
+  const content = apps.filter((a) => a.role === 'content' || a.role === 'app');
+  const feed = apps.filter((a) => a.role === 'feed');
+
+  if (hero || status) {
+    const top = h('div', 'home-top');
+    if (hero) top.appendChild(heroCard(hero));
+    if (status) top.appendChild(statusCard(status));
+    host.appendChild(top);
   }
-  return el;
+  if (content.length) {
+    const sec = h('section', 'section');
+    const head = h('div', 'section-head');
+    head.appendChild(h('h2', 'section-title', '游戏'));
+    host.appendChild(sec);
+    sec.appendChild(head);
+    const grid = h('div', 'game-grid');
+    for (const app of content) grid.appendChild(gameCard(app));
+    sec.appendChild(grid);
+  }
+  for (const app of feed) host.appendChild(feedSection(app));
+  if (!hero && !status && !content.length && !feed.length) {
+    host.appendChild(h('div', 'card', '门户暂无内容'));
+  }
 }
 
 function demoData() {
   return {
     greeting: '下午好，jzk',
-    apps: [
-      { id: 'announcements', name: '公告栏', card: { type: 'list', title: '公告栏', canEdit: true, items: [
-        { id: 2, text: '门户上线试运行：登录、公告、服务器状态已可用，游戏平台开发中。', author: 'jzk', createdAt: Date.now() - 3600e3 },
-        { id: 1, text: '欢迎来到 Mine。', author: 'jzk', createdAt: Date.now() - 86400e3 },
-      ] } },
-      { id: 'agent', name: 'Agent 对话', path: '/agent', card: { type: 'stat', title: 'Agent 对话', value: 12, hint: '个会话' } },
-      { id: 'minecraft', name: 'Minecraft 服务器', card: { type: 'stat', title: 'Minecraft 服务器', items: [
-        { label: '在线', value: '2 / 20' }, { label: 'TPS', value: '19.98' },
-        { label: '内存', value: '1234 / 4096 MB' }, { label: '版本', value: '1.21.8' },
-      ], hint: '数据来自 Paper 服务器' } },
-      { id: 'games', name: '小游戏', path: '/games', card: { type: 'link', title: '小游戏', hint: '2048 / 贪吃蛇 / 记忆翻牌' } },
-    ],
     account: { id: 1, name: 'jzk', admin: true },
+    apps: [
+      { id: 'agent', name: 'MineAgent', path: '/agent', role: 'hero', card: {
+        type: 'hero', title: 'MineAgent', subtitle: '写代码、查资料、收发文件、控制服务器',
+        lastTitle: '帮我 review 一下 chess 的房间逻辑', lastUpdated: Date.now() - 7200e3, count: 12,
+        newPath: '/agent?new=1', continuePath: '/agent',
+      } },
+      { id: 'minecraft', name: 'Minecraft', role: 'status', card: {
+        type: 'status', online: true, count: 3, max: 20, players: ['Steve', 'Alex', 'jzk'],
+        tps: 19.98, weather: '晴天', period: '白天',
+        details: [{ label: '内存', value: '1234 / 4096 MB' }, { label: '版本', value: '26.2' }, { label: 'TPS 5m/15m', value: '19.99 / 20.00' }],
+      } },
+      { id: 'games', name: '游戏', path: '/games', role: 'content', card: {
+        type: 'game', game: 'chess', name: '国际象棋', path: '/games/chess', openRooms: 2, wins: 3, losses: 1, draws: 0,
+      } },
+      { id: 'announcements', name: '最新动态', role: 'feed', card: {
+        type: 'feed', title: '最新动态', canEdit: true, items: [
+          { id: 2, text: '门户改版：首页变成个人 Hub，动态流取代了公告卡片。', author: 'jzk', createdAt: Date.now() - 3600e3 },
+          { id: 1, text: '国际象棋在线房间已开放，和朋友开一局吧。', author: 'jzk', createdAt: Date.now() - 86400e3 },
+        ],
+      } },
+    ],
   };
-}
-
-function paint(data) {
-  document.getElementById('greeting').textContent = data.greeting || '你好';
-  const admin = data.account && data.account.admin;
-  document.getElementById('hero-sub').textContent =
-    (admin ? '管理员' : '欢迎回来') + ' · 一切从简，先上线再打磨';
-  const host = document.getElementById('cards');
-  host.innerHTML = '';
-  for (const app of data.apps) host.appendChild(cardEl(app));
 }
 
 async function refresh() {
@@ -166,13 +296,14 @@ async function refresh() {
     paint(await apiGet('/api/portal/home'));
   } catch (e) {
     if (e.unauthorized) { location.reload(); return; }
-    document.getElementById('cards').innerHTML = '';
-    document.getElementById('cards').appendChild(h('div', 'card', '加载失败：' + e.message));
+    home().innerHTML = '';
+    home().appendChild(h('div', 'card', '加载失败：' + e.message));
   }
 }
 
 (async () => {
-  document.getElementById('foot-ver').textContent = 'v' + (document.querySelector('meta[name=mineagent-version]')?.content || '');
+  if (!DEMO) skeleton();
   await boot({ active: '/', requireLogin: !DEMO });
+  if (!DEMO && !shell.user) return;
   await refresh();
 })();

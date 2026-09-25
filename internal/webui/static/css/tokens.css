@@ -45,6 +45,23 @@
   --radius-lg: 18px;
   --radius-composer: 26px;
   --col: 48rem;
+
+  /* ---- Portal 设计系统（Agent 聊天页继续用上面的 token，互不影响） ---- */
+  --page: #f7f7f8;
+  --surface-muted: #f3f4f6;
+  --border-strong: #dadade;
+  --text-secondary: #6b6b70;
+  --text-tertiary: #9a9aa0;
+  --brand: #0a84ff;
+  --brand-hover: #0077e6;
+  --brand-soft: rgba(10, 132, 255, .09);
+  --radius-control: 10px;
+  --radius-cta: 12px;
+  --radius-card: 16px;
+  --radius-popover: 14px;
+  --radius-large: 22px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-raised: 0 12px 32px rgba(16, 24, 40, .10);
   color-scheme: light;
 }
 
@@ -77,6 +94,16 @@ html[data-theme="dark"] {
   --accent: var(--interactive);
   --accent-contrast: #0d0d0d;
   --shadow-popover: 0 8px 28px rgba(0, 0, 0, .5);
+  --page: #131316;
+  --surface-muted: #1c1c20;
+  --border-strong: #3b3b41;
+  --text-secondary: #a3a3ab;
+  --text-tertiary: #707078;
+  --brand: #0a84ff;
+  --brand-hover: #2f97ff;
+  --brand-soft: rgba(10, 132, 255, .16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-raised: 0 12px 32px rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
 

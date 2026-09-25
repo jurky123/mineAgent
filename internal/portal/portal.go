@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/logout", s.web.HandleLogout)
 	mux.HandleFunc("/api/auth/me", s.web.HandleMe)
 	mux.HandleFunc("/api/account/sessions", s.requireUser(s.handleSessions))
+	mux.HandleFunc("/api/account/stats", s.requireUser(s.handleAccountStats))
 	mux.HandleFunc("/api/account/sessions/revoke", s.requireUser(s.handleSessionsRevoke))
 
 	// Portal API

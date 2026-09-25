@@ -1,0 +1,5 @@
+棋盘棋子素材：Cburnett chess pieces
+作者：Cburnett（2005-2006）
+来源：https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces
+许可：CC BY-SA 3.0（https://creativecommons.org/licenses/by-sa/3.0/）
+说明：按原样使用（未修改），仅重命名为 wK/bQ 这类内部文件名。

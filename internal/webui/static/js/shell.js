@@ -110,6 +110,7 @@ function showLogin() {
       box.appendChild(h('h2', null, '进入 Mine'));
       box.appendChild(h('p', 'login-hint', '输入一个名字（不需要密码，首次输入即注册）'));
       const input = h('input', 'login-input');
+      input.id = 'login-name';
       input.type = 'text';
       input.maxLength = 24;
       input.placeholder = '你的名字';

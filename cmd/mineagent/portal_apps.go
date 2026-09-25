@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"mineagent/internal/games"
 	"mineagent/internal/portal"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -12,7 +13,7 @@ import (
 
 // registerPortalApps 往门户里注册应用/卡片。
 // 新增门户功能 = 在这里加一条（或注册新应用），不改门户骨架。
-func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gateway) {
+func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gateway, gamesMgr *games.Manager) {
 	p.Register(
 		portal.App{
 			ID: "announcements", Name: "公告栏", Icon: "📢", Order: 0, Enabled: true,
@@ -53,8 +54,19 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 			Card: mcStatusCard(gw),
 		},
 		portal.App{
-			ID: "games", Name: "小游戏", Desc: "游戏平台开发中", Icon: "🎮",
-			Path: "/games", Order: 30, Enabled: false,
+			ID: "games", Name: "小游戏", Desc: "国际象棋 · 在线房间对战", Icon: "🎮",
+			Path: "/games", Order: 30, Enabled: true,
+			Card: func(ctx context.Context, u *storage.User) (any, error) {
+				open := gamesMgr.OpenRooms()
+				items := []map[string]any{
+					{"label": "国际象棋", "value": "在线对战"},
+					{"label": "开放房间", "value": fmt.Sprintf("%d", len(open))},
+				}
+				return map[string]any{
+					"type": "stat", "title": "小游戏", "items": items,
+					"hint": "带你朋友来开一局", "path": "/games",
+				}, nil
+			},
 		},
 	)
 }

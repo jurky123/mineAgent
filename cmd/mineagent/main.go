@@ -22,6 +22,7 @@ import (
 	"mineagent/internal/aibot"
 	"mineagent/internal/channels/minecraft"
 	"mineagent/internal/config"
+	"mineagent/internal/games"
 	"mineagent/internal/portal"
 	"mineagent/internal/protocol"
 	"mineagent/internal/qq"
@@ -277,7 +278,9 @@ func main() {
 			WithMCStatus(mcStatusFn)
 
 		portalSrv = portal.New(log, cfg, store, acct, webCh)
-		registerPortalApps(portalSrv, store, gw)
+		gamesMgr := games.NewManager(log, store)
+		portalSrv.WithGames(games.NewAPI(log, gamesMgr, acct, portalSrv.Auth()).Handler())
+		registerPortalApps(portalSrv, store, gw, gamesMgr)
 		go func() {
 			if err := portalSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("web ui stopped", "err", err)

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mineagent-version" content="__VER__">
+<title>小游戏 · Mine</title>
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/games.css">
+</head>
+<body class="portal">
+<div id="shell-top"></div>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>小游戏</h1>
+    <p class="sub">和门户上的朋友在线开一局（服务端裁判，刷新不丢对局）</p>
+  </section>
+
+  <section class="cards" id="games"></section>
+
+  <section class="card" id="chess-panel">
+    <div class="card-head"><h3 class="card-title">国际象棋 · 房间</h3></div>
+    <div class="card-body">
+      <div class="room-actions">
+        <button class="btn primary" id="create">创建房间</button>
+        <span class="sep">或</span>
+        <input class="login-input inline" id="code" maxlength="6" placeholder="输入 6 位房间码">
+        <button class="btn" id="join">加入</button>
+      </div>
+      <div class="open-rooms">
+        <div class="open-head">
+          <span>等待加入的房间</span>
+          <button class="btn ghost sm" id="refresh">刷新</button>
+        </div>
+        <div id="rooms" class="room-list"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="runs-card">
+    <div class="card-head"><h3 class="card-title">我的最近战绩</h3></div>
+    <div class="card-body" id="runs"><div class="empty">加载中…</div></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <a href="/">← 回门户</a>
+  <span class="dot">·</span>
+  <a href="/agent">Agent 对话</a>
+</footer>
+
+<script type="module" src="/static/__VER__/js/games.js"></script>
+</body>
+</html>

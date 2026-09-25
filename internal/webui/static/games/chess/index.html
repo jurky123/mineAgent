@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mineagent-version" content="__VER__">
+<title>国际象棋 · Mine</title>
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/games.css">
+</head>
+<body class="portal">
+<div id="shell-top"></div>
+
+<main class="wrap chess-wrap">
+  <section class="chess-layout">
+    <div class="board-col">
+      <div class="player-bar" id="top-player"></div>
+      <div class="board-holder">
+        <div class="board" id="board"></div>
+        <div class="board-files" id="files"></div>
+      </div>
+      <div class="player-bar" id="bottom-player"></div>
+
+      <div class="status-bar" id="status">加载中…</div>
+
+      <div class="chess-actions">
+        <button class="btn" id="resign" hidden>认输</button>
+        <button class="btn" id="leave" hidden>离开房间</button>
+        <button class="btn primary" id="again" hidden>再来一局</button>
+        <a class="btn ghost" href="/games">返回大厅</a>
+      </div>
+    </div>
+
+    <aside class="chess-side">
+      <div class="card">
+        <div class="card-head"><h3 class="card-title">房间</h3></div>
+        <div class="card-body" id="room-info">
+          <div class="empty">正在加载…</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3 class="card-title">着法</h3></div>
+        <div class="card-body"><div class="moves" id="moves"><span class="empty">暂无</span></div></div>
+      </div>
+    </aside>
+  </section>
+</main>
+
+<script type="module" src="/static/__VER__/js/chess.js"></script>
+</body>
+</html>

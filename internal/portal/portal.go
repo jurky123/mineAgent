@@ -14,6 +14,7 @@ import (
 
 	"mineagent/internal/account"
 	"mineagent/internal/config"
+	"mineagent/internal/games"
 	"mineagent/internal/storage"
 	"mineagent/internal/webui"
 )
@@ -25,6 +26,7 @@ type Server struct {
 	acct  *account.Service
 	web   *webui.Channel
 	apps  []App
+	games http.Handler // 小游戏 API（main 注入，见 WithGames）
 }
 
 func New(log *slog.Logger, cfg config.Config, store *storage.Store, acct *account.Service, web *webui.Channel) *Server {
@@ -35,6 +37,15 @@ func New(log *slog.Logger, cfg config.Config, store *storage.Store, acct *accoun
 func (s *Server) PortalEnabled() bool {
 	return s.cfg.Portal == nil || *s.cfg.Portal
 }
+
+// WithGames 挂上小游戏 API（internal/games 的 Handler）。
+func (s *Server) WithGames(h http.Handler) *Server {
+	s.games = h
+	return s
+}
+
+// Auth 把门户的鉴权中间件暴露给 games 包（它要包自己的路由）。
+func (s *Server) Auth() games.Authed { return s.requireUser }
 
 // Start 起 HTTP 服务（阻塞，调用方 go）。
 func (s *Server) Start() error {
@@ -59,6 +70,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/portal/home", s.requireUser(s.handleHome))
 	mux.HandleFunc("/api/portal/announcements", s.handleAnnouncements) // GET 公开；POST/DELETE 管理员
 
+	if s.games != nil {
+		mux.Handle("/api/games", s.games)
+		mux.Handle("/api/games/", s.games)
+	}
 	mux.Handle("/api/", api)
 	mux.Handle("/static/", api)
 	mux.HandleFunc("/", s.handlePage)
@@ -70,6 +85,7 @@ var pages = map[string]string{
 	"/":        "portal/index.html",
 	"/agent":   "chat/index.html",
 	"/account": "account/index.html",
+	"/games":   "games/index.html",
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
@@ -106,16 +122,13 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// gamePageExists 游戏页是否存在（注册表启用 + 内嵌页存在）。
 func (s *Server) gamePageExists(id string) bool {
-	for _, a := range s.apps {
-		if a.ID == id && a.Enabled {
-			if _, err := webui.RenderPage("games/" + id + "/index.html"); err == nil {
-				return true
-			}
-			return false
-		}
+	if !games.Enabled(id) {
+		return false
 	}
-	return false
+	_, err := webui.RenderPage("games/" + id + "/index.html")
+	return err == nil
 }
 
 // render 渲染内嵌页面（注入版本号，禁缓存）。

@@ -70,6 +70,17 @@ CREATE TABLE IF NOT EXISTS announcements (
 	created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS game_runs (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id     INTEGER NOT NULL,
+	game_id     TEXT NOT NULL,
+	result      TEXT NOT NULL DEFAULT '',
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	metadata    TEXT NOT NULL DEFAULT '',
+	created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_game_runs_user ON game_runs(user_id, game_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS portal_meta (
 	key   TEXT PRIMARY KEY,
 	value TEXT NOT NULL
@@ -321,6 +332,53 @@ func (s *Store) ListAuthSessions(ctx context.Context, userID int64) ([]AuthSessi
 			return nil, err
 		}
 		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// GameRun 是一局游戏的原始记录（积分/排行榜模型未定，先只留档）。
+type GameRun struct {
+	ID         int64  `json:"id"`
+	UserID     int64  `json:"userId"`
+	GameID     string `json:"gameId"`
+	Result     string `json:"result"` // win/lose/draw + 原因在 metadata
+	DurationMS int64  `json:"durationMs"`
+	Metadata   string `json:"metadata,omitempty"`
+	CreatedAt  int64  `json:"createdAt"`
+}
+
+// AddGameRun 落一条对局记录。
+func (s *Store) AddGameRun(ctx context.Context, r GameRun) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO game_runs(user_id, game_id, result, duration_ms, metadata, created_at)
+		 VALUES(?, ?, ?, ?, ?, ?)`,
+		r.UserID, r.GameID, r.Result, r.DurationMS, r.Metadata, r.CreatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListGameRuns 某用户的最近战绩（账号页/大厅展示用）。
+func (s *Store) ListGameRuns(ctx context.Context, userID int64, gameID string, limit int) ([]GameRun, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, user_id, game_id, result, duration_ms, metadata, created_at FROM game_runs
+		 WHERE user_id=? AND (?='' OR game_id=?) ORDER BY id DESC LIMIT ?`,
+		userID, gameID, gameID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GameRun
+	for rows.Next() {
+		var r GameRun
+		if err := rows.Scan(&r.ID, &r.UserID, &r.GameID, &r.Result, &r.DurationMS, &r.Metadata, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }

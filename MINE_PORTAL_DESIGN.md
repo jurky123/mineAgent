@@ -382,6 +382,13 @@ func Apps() []App               // /api/portal/apps 的数据源
 > 确定后再定**（届时另出设计，文档 §8.3 只列选项，不做承诺）。
 
 ### 8.1 游戏注册表（Go，代码定义，不做后台管理）
+
+> **实施偏差（2026-09-25）**：首个游戏是**在线对战的国际象棋**（用户选择），
+> 所以最终是"服务端权威 + 房间"而不是本节的纯前端模块；注册表在
+> `internal/games/games.go`（ID/名称/路径/启用/人数），前端模块契约（`mount/api.finish`）
+> 这一层**没有实现**（不需要：规则和状态都在服务端）。下面的示例保留作将来
+> "纯前端小游戏（如 2048/贪吃蛇）"接入时的参考。
+
 ```go
 // internal/games/registry.go —— 平台唯一需要"定"的东西就是这层契约
 type Game struct {
@@ -498,7 +505,8 @@ export default {
 1. `/` 直接变门户（聊天移 `/agent`），带 `web.portal=false` 回滚开关 —— **是**。
 2. 账号**不加密码**，`users.pin_hash` 只预留不校验 —— **是**。
 3. `user_id` 迁移**本期做** —— **已完成**（`--migrate-portal`，先备份、幂等）。
-4. 门户首批挂：**公告栏 + MC 状态卡** —— **已上线**；游戏平台先占位（`enabled:false`）。
+4. 门户首批挂：**公告栏 + MC 状态卡** —— **已上线**。
+4.1 小游戏首个做**国际象棋**，且是**在线房间对战**（用户拍板），实现走"最简可用"路线 —— **已上线**（§14 P2）。
 5. 积分/排行榜/反作弊：**待游戏类型确定后再定**（§8.3 只列选项）。
 
 ## 14. 实施记录
@@ -509,8 +517,8 @@ export default {
 | P0 会话键迁移 | ✅ 2026-09-25 | `web:c2c:<名字>` → `web:user:<ID>`（messages/summaries/reminders/tool_audit/sessions/conversations）、`web-files/<名字>` → `web-files/u<ID>`、`--migrate-portal`（VACUUM INTO 备份 + 幂等） |
 | P1 门户壳 | ✅ 2026-09-25 | `internal/portal`（页面白名单路由、App 注册表、`/api/portal/apps`+`/home` 聚合、`/api/auth/*`、`/api/account/sessions`）、`static/{portal,account}/` + `shell.js`/`portal.js`/`account.js`/`portal.css` |
 | P1 公告栏 + MC 卡 | ✅ 2026-09-25 | `announcements` 表 + 管理员发布/删除；MC 状态卡经网关 `minecraft_server_status` |
-| P2 Games 骨架 + 2048 | ⏳ 待做 | 见 §8（规则层仍待游戏类型确定） |
-| P3 规则层 | ⏳ 待定 | 积分/排行榜/反作弊（§8.3） |
+| P2 Games 骨架 + 首个游戏 | ✅ 2026-09-25 | **首个游戏改为国际象棋（用户拍板）**：`internal/games`（注册表 + 内存房间 + SSE + `/api/games/chess/*`）、`internal/games/chess` 服务端权威规则引擎（走子/将杀/逼和/易位/升变；v1 不含吃过路兵）、`/games` 大厅 + `/games/chess` 棋盘页、`game_runs` 原始记录 |
+| P3 规则层 | ⏳ 待定 | 积分/排行榜/反作弊（§8.3）；chess 特殊规则补全（吃过路兵/50 回合/三次重复）可随时做 |
 | P4 可选 | ⏳ 待定 | PIN、深链接、MC 信息卡、嵌入挂件、更多应用 |
 
 **实施中的偏差（与设计稿不同之处，以代码为准）**：

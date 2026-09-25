@@ -40,6 +40,10 @@ function heroCard(app) {
     last.appendChild(h('div', 'list-sub', '继续上一次对话'));
     last.appendChild(h('div', 'hero-conv', '“' + lastTitle + '”'));
     last.appendChild(h('div', 'list-sub', (fmtTime(c.lastUpdated) || '刚刚') + (c.count ? ' · 共 ' + c.count + ' 个会话' : '')));
+  } else if (c.count) {
+    last.appendChild(h('div', 'list-sub', '继续上一次对话'));
+    last.appendChild(h('div', 'hero-conv', '（未命名会话）'));
+    last.appendChild(h('div', 'list-sub', (fmtTime(c.lastUpdated) || '刚刚') + ' · 共 ' + c.count + ' 个会话'));
   } else {
     last.appendChild(h('div', 'list-sub', '还没有对话'));
     last.appendChild(h('div', 'hero-conv', '问我任何事：写代码、查资料、控制服务器'));

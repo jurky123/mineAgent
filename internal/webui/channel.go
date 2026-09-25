@@ -412,8 +412,19 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 	}
 
 	// 系统命令硬编码直回（与其它通道一致），不进 agent 队列。
+	// 先把用户这条命令入库/广播，聊天里才能看到自己发了什么。
 	if text != "" {
 		if cmd, arg := tools.MatchSystemCommand(text); cmd != "" {
+			if stored, err := sess.Ingest(ctx, storage.Message{
+				Channel:    "web",
+				AuthorKind: "player",
+				AuthorID:   sessionKey,
+				AuthorName: name,
+				Text:       text,
+				Target:     target,
+			}); err == nil {
+				c.publish(name, convID, ToWire(stored))
+			}
 			reply := tools.ExecSystemCommand(tools.SysCtx{
 				Ctx:       ctx,
 				Store:     c.store,

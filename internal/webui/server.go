@@ -30,13 +30,19 @@ var staticRoot, _ = fs.Sub(staticFS, "static")
 
 // Serve 起 HTTP 服务：静态页 + JSON API + SSE。调用方 go 它。
 func (c *Channel) Serve() error {
+	return c.ServeOn(c.cfg.Listen, c.handler())
+}
+
+// ServeOn 用外部组装好的 handler 起服务（Portal 组合页面 + API 时用）。
+// http.Server 仍由本通道持有，/status 的 WebStatus 才能报告监听与连接数。
+func (c *Channel) ServeOn(addr string, h http.Handler) error {
 	srv := &http.Server{
-		Addr:              c.cfg.Listen,
-		Handler:           c.handler(),
+		Addr:              addr,
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	c.srv = srv
-	c.log.Info("web ui listening", "addr", c.cfg.Listen, "users", len(c.cfg.Users), "admins", len(c.cfg.AdminUsers))
+	c.log.Info("web ui listening", "addr", addr, "users", len(c.cfg.Users), "admins", len(c.cfg.AdminUsers))
 	err := srv.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -44,10 +50,9 @@ func (c *Channel) Serve() error {
 	return err
 }
 
-// handler 组装路由（测试用 httptest 直接挂它）。
-func (c *Channel) handler() http.Handler {
+// API 是网页通道的全部 /api/* 与静态资源路由（Portal 组合页面路由用）。
+func (c *Channel) API() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", c.handleIndex)
 	mux.HandleFunc("/api/login", c.handleLogin)
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -72,6 +77,14 @@ func (c *Channel) handler() http.Handler {
 	mux.HandleFunc("/api/conversations/rename", c.withAuth(c.handleConversationRename))
 	mux.Handle("/static/", noCache(http.HandlerFunc(c.handleStatic)))
 	return c.cors(mux)
+}
+
+// handler 组装路由（测试用 httptest 直接挂它；生产由 portal 组合页面路由）。
+func (c *Channel) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", http.HandlerFunc(c.handleIndex))
+	mux.Handle("/api/", c.API())
+	return mux
 }
 
 // cors 给未来"嵌到别的网页"留口子：允许跨域带 Authorization（无 Cookie 凭证）。
@@ -118,19 +131,41 @@ func (c *Channel) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	b, err := fs.ReadFile(staticRoot, "index.html")
+	b, err := RenderPage("chat/index.html")
 	if err != nil {
 		http.Error(w, "index missing", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// 版本号注入 + 禁缓存（含中间代理）
-	b = []byte(strings.ReplaceAll(string(b), "__VER__", url.PathEscape(version.Version)))
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	_, _ = w.Write(b)
+}
+
+// RenderPage 读内嵌静态页并注入版本号（__VER__）；Portal 页面壳复用。
+func RenderPage(name string) ([]byte, error) {
+	b, err := fs.ReadFile(staticRoot, name)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(strings.ReplaceAll(string(b), "__VER__", url.PathEscape(version.Version))), nil
+}
+
+// Static 返回内嵌静态资源子树（Portal 挂 /static/ 用）。
+func Static() fs.FS { return staticRoot }
+
+// HandleLogin / HandleLogout 供 Portal 的 /api/auth/* 别名复用。
+func (c *Channel) HandleLogin(w http.ResponseWriter, r *http.Request)  { c.handleLogin(w, r) }
+func (c *Channel) HandleLogout(w http.ResponseWriter, r *http.Request) { c.handleLogout(w, r) }
+func (c *Channel) HandleMe(w http.ResponseWriter, r *http.Request) {
+	u, tok := c.auth(r)
+	if u == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
+		return
+	}
+	SetAuthCookie(w, r, tok)
+	c.handleMe(w, r, u)
 }
 
 // handleStatic 静态资源：支持 /static/<version>/... 与 /static/... 两种路径。
@@ -178,19 +213,19 @@ func tokenOf(r *http.Request) string {
 	return ""
 }
 
-// auth 校验请求令牌（header/query/cookie 任一来源），返回账号名与令牌。
-func (c *Channel) auth(r *http.Request) (name, tok string) {
+// auth 校验请求令牌（header/query/cookie 任一来源），返回用户与令牌。
+func (c *Channel) auth(r *http.Request) (u *storage.User, tok string) {
 	tok = tokenOf(r)
 	if tok == "" {
-		return "", ""
+		return nil, ""
 	}
-	return c.nameByToken(tok), tok
+	return c.acct.Current(r.Context(), tok), tok
 }
 
-// setAuthCookie 补种登录 cookie：老会话的页面只用 Bearer 调 /api/me，
+// SetAuthCookie 补种登录 cookie：老会话的页面只用 Bearer 调 /api/me，
 // 从不经过 /api/login，若只在登录时种 cookie，附件（<img>/下载链接）
 // 就会一直 401。所以任何一次已认证请求都顺手把 cookie 补上。
-func (c *Channel) setAuthCookie(w http.ResponseWriter, r *http.Request, tok string) {
+func SetAuthCookie(w http.ResponseWriter, r *http.Request, tok string) {
 	if tok == "" {
 		return
 	}
@@ -203,16 +238,19 @@ func (c *Channel) setAuthCookie(w http.ResponseWriter, r *http.Request, tok stri
 	})
 }
 
-// withAuth 用令牌换账号名放 context，失败 401；顺带补种 cookie。
-func (c *Channel) withAuth(next func(w http.ResponseWriter, r *http.Request, name string)) http.HandlerFunc {
+// TokenOf 从 Authorization: Bearer / ?token= / 登录 cookie 取令牌（Portal 复用）。
+func TokenOf(r *http.Request) string { return tokenOf(r) }
+
+// withAuth 用令牌换用户，失败 401；顺带补种 cookie。
+func (c *Channel) withAuth(next func(w http.ResponseWriter, r *http.Request, u *storage.User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		name, tok := c.auth(r)
-		if name == "" {
+		u, tok := c.auth(r)
+		if u == nil {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录或令牌已失效，请重新进入"})
 			return
 		}
-		c.setAuthCookie(w, r, tok)
-		next(w, r, name)
+		SetAuthCookie(w, r, tok)
+		next(w, r, u)
 	}
 }
 
@@ -234,23 +272,15 @@ func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "名字不合法：1-24 个字符，字母/数字/中文/_-，字母数字开头，别带空格和符号"})
 		return
 	}
-	if len(c.cfg.Users) > 0 {
-		ok := false
-		for _, u := range c.cfg.Users {
-			if u == name {
-				ok = true
-				break
-			}
-		}
-		if !ok {
-			c.log.Warn("web login rejected", "name", name, "reason", "not in allow list", "remote", r.RemoteAddr)
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个名字不在允许名单里"})
-			return
-		}
+	if !c.acct.LoginAllowed(name) {
+		c.log.Warn("web login rejected", "name", name, "reason", "not in allow list", "remote", r.RemoteAddr)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个名字不在允许名单里"})
+		return
 	}
-	tok, err := c.login(name)
+	u, tok, err := c.acct.Login(r.Context(), name, r.UserAgent(), r.RemoteAddr)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成登录令牌失败"})
+		c.log.Error("web login failed", "name", name, "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "登录失败，请稍后再试"})
 		return
 	}
 	// cookie 供 <img>/<a download> 等无法带 Authorization 的请求鉴权。
@@ -258,11 +288,12 @@ func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Name: "mineagent_token", Value: tok, Path: "/", MaxAge: 30 * 24 * 3600,
 		SameSite: http.SameSiteLaxMode, HttpOnly: true,
 	})
-	c.log.Info("web login", "name", name, "admin", IsAdminName(name, c.cfg.AdminUsers))
+	c.log.Info("web login", "name", name, "uid", u.ID, "admin", u.IsAdmin)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":  name,
+		"name":  u.Username,
+		"id":    u.ID,
 		"token": tok,
-		"admin": IsAdminName(name, c.cfg.AdminUsers),
+		"admin": u.IsAdmin,
 	})
 }
 
@@ -272,15 +303,19 @@ func (c *Channel) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
 	}
-	c.logout(tokenOf(r))
+	if err := c.acct.Logout(r.Context(), tokenOf(r)); err != nil {
+		c.log.Warn("web logout", "err", err)
+	}
 	http.SetCookie(w, &http.Cookie{Name: "mineagent_token", Value: "", Path: "/", MaxAge: -1})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (c *Channel) handleMe(w http.ResponseWriter, _ *http.Request, name string) {
+func (c *Channel) handleMe(w http.ResponseWriter, _ *http.Request, u *storage.User) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"name":  name,
-		"admin": IsAdminName(name, c.cfg.AdminUsers),
+		"name":   u.Username,
+		"id":     u.ID,
+		"admin":  u.IsAdmin,
+		"points": 0, // 预留：积分模型待游戏类型确定后实现
 	})
 }
 
@@ -288,13 +323,13 @@ func (c *Channel) handleMe(w http.ResponseWriter, _ *http.Request, name string) 
 //   - 默认最近 200 条；
 //   - ?after=<id> 拉更新的（SSE 断线补漏）；
 //   - ?before=<id> 向上翻页，一次 50 条，附带 hasMore。
-func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	conv := strings.TrimSpace(r.URL.Query().Get("conv"))
 	if !ValidConv(conv) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
 		return
 	}
-	sessionKey := webSessionKey(name, conv)
+	sessionKey := webSessionKey(u.ID, conv)
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	var (
@@ -331,18 +366,19 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, name str
 }
 
 // handleOptions 给 + 菜单：技能、可选模型、思考强度、当前偏好。
-func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	catalog := c.modelCatalog(r.Context())
 	byID := make(map[string]ModelOption, len(catalog))
 	for _, m := range catalog {
 		byID[m.ID] = m
 	}
-	prefs := c.prefsOf(name)
+	prefs := c.prefsOf(u.Username)
 	// 偏好里的模型已不在目录（网关/配置变了）→ 回退默认。
-	if prefs.Model != "" {
+	// 目录为空（离线/拉不到列表）时不动偏好，否则会把用户的设置误清掉。
+	if prefs.Model != "" && len(catalog) > 0 {
 		if _, ok := byID[prefs.Model]; !ok {
 			prefs.Model = ""
-			c.setPrefs(name, prefs)
+			c.setPrefs(u.Username, prefs)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -352,12 +388,12 @@ func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, name str
 		"model":        prefs.Model,
 		"effort":       prefs.Effort,
 		"defaultModel": c.model,
-		"admin":        IsAdminName(name, c.cfg.AdminUsers),
+		"admin":        u.IsAdmin,
 	})
 }
 
 // handlePrefs 保存 + 菜单选择（模型/思考强度）。
-func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
@@ -370,27 +406,28 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, name strin
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
 		return
 	}
-	prefs := c.prefsOf(name)
+	prefs := c.prefsOf(u.Username)
 	if req.Model != nil {
 		m := strings.TrimSpace(*req.Model)
 		if m != "" {
+			catalog := c.modelCatalog(r.Context())
 			var found *ModelOption
-			for _, opt := range c.modelCatalog(r.Context()) {
-				if opt.ID == m {
-					o := opt
-					found = &o
+			for i := range catalog {
+				if catalog[i].ID == m {
+					found = &catalog[i]
 					break
 				}
 			}
-			if found == nil {
+			// 目录为空（离线/网关拉不到列表）时不拦：拦了会让用户无法保存偏好。
+			if found == nil && len(catalog) > 0 {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "模型不在可选列表里"})
 				return
 			}
-			if found.Unavailable {
+			if found != nil && found.Unavailable {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型网关当前不可用（503），换一个试试"})
 				return
 			}
-			if found.NeedsKey {
+			if found != nil && found.NeedsKey {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型提供商还没配 apiKey（config.json 的 model.providers）"})
 				return
 			}
@@ -405,14 +442,14 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, name strin
 		}
 		prefs.Effort = e
 	}
-	c.setPrefs(name, prefs)
-	c.log.Info("web prefs", "name", name, "model", prefs.Model, "effort", prefs.Effort)
+	c.setPrefs(u.Username, prefs)
+	c.log.Info("web prefs", "name", u.Username, "model", prefs.Model, "effort", prefs.Effort)
 	writeJSON(w, http.StatusOK, map[string]any{"model": prefs.Model, "effort": prefs.Effort})
 }
 
 // handleWorkspaceList 列目录（仅管理员，和 workspace_* 工具同一口径）。
-func (c *Channel) handleWorkspaceList(w http.ResponseWriter, r *http.Request, name string) {
-	if !IsAdminName(name, c.cfg.AdminUsers) {
+func (c *Channel) handleWorkspaceList(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if !u.IsAdmin {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "只有管理员能浏览 workspace（web.adminUsers）"})
 		return
 	}
@@ -457,8 +494,8 @@ func (c *Channel) handleWorkspaceList(w http.ResponseWriter, r *http.Request, na
 }
 
 // handleWorkspaceFile 下载/预览 workspace 内文件（仅管理员）。
-func (c *Channel) handleWorkspaceFile(w http.ResponseWriter, r *http.Request, name string) {
-	if !IsAdminName(name, c.cfg.AdminUsers) {
+func (c *Channel) handleWorkspaceFile(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if !u.IsAdmin {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "只有管理员能访问 workspace（web.adminUsers）"})
 		return
 	}
@@ -493,7 +530,7 @@ func containsStr(list []string, s string) bool {
 }
 
 // handleClear 清空当前账号会话（前端"新会话"），并广播 cleared 让其他标签页同步。
-func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
@@ -506,17 +543,17 @@ func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, name strin
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
 		return
 	}
-	if err := c.store.ClearSession(r.Context(), webSessionKey(name, req.Conv)); err != nil {
+	if err := c.store.ClearSession(r.Context(), webSessionKey(u.ID, req.Conv)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	c.log.Info("web session cleared", "name", name, "conv", req.Conv)
-	c.publishRaw(name, map[string]any{"type": "cleared", "conv": req.Conv})
+	c.log.Info("web session cleared", "name", u.Username, "conv", req.Conv)
+	c.publishRaw(u.Username, map[string]any{"type": "cleared", "conv": req.Conv})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleUsage 查模型 key 的额度（网关 /usage，60s 缓存）。
-func (c *Channel) handleUsage(w http.ResponseWriter, r *http.Request, _ string) {
+func (c *Channel) handleUsage(w http.ResponseWriter, r *http.Request, _ *storage.User) {
 	report, err := c.usage.Fetch(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -527,13 +564,13 @@ func (c *Channel) handleUsage(w http.ResponseWriter, r *http.Request, _ string) 
 
 // handleConversations 会话列表：纯读，不改库（GET 不产生任何副作用）。
 // 旧版单会话（只有 messages、没有会话行）在这里合成一项返回，不在读路径写库。
-func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET"})
 		return
 	}
 	ctx := r.Context()
-	list, err := c.store.ListConversations(ctx, name)
+	list, err := c.store.ListConversationsByUser(ctx, u.ID, u.Username)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -546,7 +583,7 @@ func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, na
 		}
 	}
 	if !hasLegacy {
-		if raw, at, ok, err := c.store.ConversationPreview(ctx, webSessionKey(name, "")); err == nil && ok {
+		if raw, at, ok, err := c.store.ConversationPreview(ctx, webSessionKey(u.ID, "")); err == nil && ok {
 			clean, _ := ParseFileMarkers(raw)
 			title := strings.TrimSpace(clean)
 			if r := []rune(title); len(r) > 24 {
@@ -555,7 +592,7 @@ func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, na
 			if title == "" {
 				title = "默认会话"
 			}
-			list = append(list, storage.Conversation{Account: name, Conv: "", Title: title, CreatedAt: at, UpdatedAt: at})
+			list = append(list, storage.Conversation{Account: u.Username, Conv: "", Title: title, CreatedAt: at, UpdatedAt: at})
 		}
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].UpdatedAt > list[j].UpdatedAt })
@@ -563,7 +600,7 @@ func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, na
 }
 
 // handleConversationDelete 删除会话（含消息与摘要）。
-func (c *Channel) handleConversationDelete(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleConversationDelete(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
@@ -575,21 +612,21 @@ func (c *Channel) handleConversationDelete(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
 		return
 	}
-	if err := c.store.ClearSession(r.Context(), webSessionKey(name, req.Conv)); err != nil {
+	if err := c.store.ClearSession(r.Context(), webSessionKey(u.ID, req.Conv)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := c.store.DeleteConversation(r.Context(), name, req.Conv); err != nil {
+	if err := c.store.DeleteConversationFor(r.Context(), u.ID, u.Username, req.Conv); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	c.log.Info("web conversation deleted", "name", name, "conv", req.Conv)
-	c.publishRaw(name, map[string]any{"type": "conversations"})
+	c.log.Info("web conversation deleted", "name", u.Username, "conv", req.Conv)
+	c.publishRaw(u.Username, map[string]any{"type": "conversations"})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleConversationRename 重命名会话。
-func (c *Channel) handleConversationRename(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleConversationRename(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
@@ -606,7 +643,7 @@ func (c *Channel) handleConversationRename(w http.ResponseWriter, r *http.Reques
 	if r := []rune(title); len(r) > 60 {
 		title = string(r[:60])
 	}
-	if err := c.store.UpsertConversation(r.Context(), name, req.Conv, title, time.Now().UnixMilli()); err != nil {
+	if err := c.store.UpsertConversationFor(r.Context(), u.ID, u.Username, req.Conv, title, time.Now().UnixMilli()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -623,12 +660,12 @@ func randomConv() (string, error) {
 }
 
 func (c *Channel) handleEvents(w http.ResponseWriter, r *http.Request) {
-	name, tok := c.auth(r)
-	if name == "" {
+	u, tok := c.auth(r)
+	if u == nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 		return
 	}
-	c.setAuthCookie(w, r, tok)
+	SetAuthCookie(w, r, tok)
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "流式响应不可用"})
@@ -641,8 +678,8 @@ func (c *Channel) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	ch := make(chan []byte, 32)
-	c.subscribe(name, ch)
-	defer c.unsubscribe(name, ch)
+	c.subscribe(u.Username, ch)
+	defer c.unsubscribe(u.Username, ch)
 
 	fmt.Fprintf(w, "event: hello\ndata: {\"ok\":true}\n\n")
 	flusher.Flush()
@@ -664,7 +701,7 @@ func (c *Channel) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // handleUpload 收一个文件：原始 body + ?name=<文件名>，存到
 // workspace/web-files/<账号>/<毫秒时间戳>_<安全名>，返回可供 /api/send 引用的上传结果。
-func (c *Channel) handleUpload(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleUpload(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
@@ -678,7 +715,7 @@ func (c *Channel) handleUpload(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 	display := SafeUploadName(r.URL.Query().Get("name"))
-	relDir := "web-files/" + name
+	relDir := "web-files/" + storage.UserFileDir(u.ID)
 	dir := filepath.Join(c.workspaceRoot, filepath.FromSlash(relDir))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "创建上传目录失败"})
@@ -723,12 +760,12 @@ func (c *Channel) handleUpload(w http.ResponseWriter, r *http.Request, name stri
 		Mime: mimeType,
 		Size: n,
 	}
-	c.log.Info("web upload", "user", name, "file", display, "bytes", n, "mime", mimeType)
+	c.log.Info("web upload", "user", u.Username, "uid", u.ID, "file", display, "bytes", n, "mime", mimeType)
 	writeJSON(w, http.StatusOK, file)
 }
 
 // handleSend 收一条消息：text + 已上传文件的引用，转给 HandleUserMessage。
-func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string) {
+func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return
@@ -749,7 +786,7 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		return
 	}
 	// 文件引用只能是自己上传目录里的（防引用别人/别的目录）。
-	ownPrefix := "web-files/" + name + "/"
+	ownPrefix := "web-files/" + storage.UserFileDir(u.ID) + "/"
 	files := make([]UploadedFile, 0, len(req.Files))
 	for _, f := range req.Files {
 		if !SafeWorkspaceRel(f.Path) || !strings.HasPrefix(f.Path, ownPrefix) {
@@ -763,7 +800,7 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 		}
 		files = append(files, f)
 	}
-	convID, err := c.HandleUserMessage(r.Context(), name, req.Conv, req.Text, files)
+	convID, err := c.HandleUserMessage(r.Context(), u, req.Conv, req.Text, files)
 	if err != nil {
 		if errors.Is(err, ErrConvNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
@@ -781,14 +818,14 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, name string
 //
 // 只允许取自己会话的消息；用户上传还必须落在自己的 web-files/<账号>/ 下。
 func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
-	name, tok := c.auth(r)
-	if name == "" {
+	u, tok := c.auth(r)
+	if u == nil {
 		c.log.Info("msgfile rejected", "m", r.URL.Query().Get("m"), "hasToken", r.URL.Query().Get("token") != "",
 			"hasCookie", hasAuthCookie(r), "ua", short(r.UserAgent(), 60), "remote", r.RemoteAddr)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "未登录"})
 		return
 	}
-	c.setAuthCookie(w, r, tok)
+	SetAuthCookie(w, r, tok)
 	id, err := strconv.ParseInt(r.URL.Query().Get("m"), 10, 64)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数非法"})
@@ -800,7 +837,7 @@ func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "消息不存在"})
 		return
 	}
-	if !sessionBelongsTo(msg.SessionID, name) {
+	if !sessionBelongsTo(msg.SessionID, u.ID) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "不是你的消息"})
 		return
 	}
@@ -810,8 +847,9 @@ func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 用户上传的消息（无 file: Target）必须在自己账号目录内。
+	ownPrefix := "web-files/" + storage.UserFileDir(u.ID) + "/"
 	if !strings.HasPrefix(msg.Target, storage.KindFile) {
-		if !strings.HasPrefix(rel, "web-files/"+name+"/") {
+		if !strings.HasPrefix(rel, ownPrefix) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "附件不属于你"})
 			return
 		}
@@ -831,7 +869,7 @@ func (c *Channel) handleMsgFile(w http.ResponseWriter, r *http.Request) {
 		disp = "inline"
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename*=UTF-8''%s", disp, urlEscape(fileName)))
-	c.log.Info("msgfile served", "m", msg.ID, "name", short(name, 24), "file", short(rel, 60))
+	c.log.Info("msgfile served", "m", msg.ID, "name", short(u.Username, 24), "file", short(rel, 60))
 	http.ServeFile(w, r, full)
 }
 
@@ -854,14 +892,6 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-func randomToken() (string, error) {
-	b := make([]byte, 24)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 func urlEscape(s string) string {

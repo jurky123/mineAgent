@@ -10,16 +10,19 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 
+	"mineagent/internal/account"
 	"mineagent/internal/agent"
 	"mineagent/internal/aibot"
 	"mineagent/internal/channels/minecraft"
 	"mineagent/internal/config"
+	"mineagent/internal/portal"
 	"mineagent/internal/protocol"
 	"mineagent/internal/qq"
 	"mineagent/internal/reminder"
@@ -37,6 +40,7 @@ func main() {
 	configPath := flag.String("config", "config.json", "path to config file")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	wechatLogin := flag.Bool("wechat-login", false, "扫码登录个人微信 ClawBot（登录后退出）")
+	migratePortal := flag.Bool("migrate-portal", false, "把旧版 web:c2c:<名字> 数据迁到 Portal user_id 体系（先备份，幂等）")
 	flag.Parse()
 
 	if *showVersion {
@@ -81,6 +85,15 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Portal 数据迁移：离线跑（先停 mineagent.service），先备份后改键。
+	if *migratePortal {
+		if err := runPortalMigration(ctx, log, cfg, store); err != nil {
+			log.Error("portal migration failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if n, err := store.ClearCheckpoints(ctx); err != nil {
 		log.Warn("clear stale checkpoints failed", "err", err)
@@ -249,17 +262,30 @@ func main() {
 	// 腾讯云控制台放行端口）。账号只用一个名字区分（无密码），
 	// 支持收发图片/文件，会话隔离 web:c2c:<名字>，页面允许 iframe 嵌入。
 	var webCh *webui.Channel
+	var portalSrv *portal.Server
 	if cfg.Web.Listen != "" {
-		webCh = webui.NewChannel(log, cfg, hub, store, ag,
+		acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
+		// 旧版 tokens.json 惰性导入：老浏览器不用重新登录（幂等，可回滚）。
+		dataDir := cfg.Web.DataDir
+		if dataDir == "" {
+			dataDir = "data/webui"
+		}
+		acct.ImportLegacyTokens(ctx, filepath.Join(dataDir, "tokens.json"))
+
+		webCh = webui.NewChannel(log, cfg, acct, hub, store, ag,
 			wrapWebTools(webBaseTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
+
+		portalSrv = portal.New(log, cfg, store, acct, webCh)
+		registerPortalApps(portalSrv, store, gw)
 		go func() {
-			if err := webCh.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			if err := portalSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("web ui stopped", "err", err)
 			}
 		}()
-		defer webCh.Stop()
-		log.Info("webui channel enabled", "listen", cfg.Web.Listen, "url", "http://<公网IP>:"+webPort(cfg.Web.Listen))
+		defer portalSrv.Stop()
+		log.Info("web ui enabled", "listen", cfg.Web.Listen, "portal", portalSrv.PortalEnabled(),
+			"url", "http://<公网IP>:"+webPort(cfg.Web.Listen))
 	} else {
 		log.Info("webui channel disabled (web.listen empty)")
 	}

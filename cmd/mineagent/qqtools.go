@@ -73,7 +73,7 @@ func (g *qqToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 				return errorJSON("发送目标为空，已取消"), nil
 			}
 			if err := g.sendQQ(ctx, target, text); err != nil {
-				return errorJSON("发送失败："+err.Error()), nil
+				return errorJSON("发送失败：" + err.Error()), nil
 			}
 			ok, _ := json.Marshal(map[string]string{"ok": "true", "message": "已发送"})
 			return string(ok), nil

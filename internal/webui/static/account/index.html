@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mineagent-version" content="__VER__">
+<title>我的 · Mine</title>
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+</head>
+<body class="portal">
+<div id="shell-top"></div>
+
+<main class="wrap narrow">
+  <section class="hero">
+    <h1>我的账号</h1>
+    <p class="sub">名字即账号，无需密码；换设备输入同一个名字即可。</p>
+  </section>
+
+  <section class="card" id="profile">
+    <div class="card-head"><h3 class="card-title">资料</h3></div>
+    <div class="card-body" id="profile-body">加载中…</div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h3 class="card-title">登录设备</h3>
+      <button class="btn ghost sm" id="revoke-others">退出其他设备</button>
+    </div>
+    <div class="card-body" id="sessions">加载中…</div>
+  </section>
+
+  <section class="card muted">
+    <div class="card-head"><h3 class="card-title">即将上线</h3></div>
+    <div class="card-body">
+      <div class="todo-line">PIN 码（可选，防止别人冒用名字）</div>
+      <div class="todo-line">游戏战绩与积分（游戏平台开发中）</div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <a href="/">← 回门户</a>
+  <span class="dot">·</span>
+  <a href="/agent">Agent 对话</a>
+</footer>
+
+<script type="module" src="/static/__VER__/js/account.js"></script>
+</body>
+</html>

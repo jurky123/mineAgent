@@ -23,6 +23,8 @@
 .login-btn:hover { filter: brightness(.92); }
 .login-btn:disabled { opacity: .5; }
 .login-err { color: var(--danger); font-size: 13px; min-height: 19px; margin-top: 8px; }
+.login-home { display: inline-block; margin-top: 10px; color: var(--text-3); font-size: 13px; text-decoration: none; }
+.login-home:hover { color: var(--interactive); }
 
 /* ---------- 侧栏 ---------- */
 #app { display: none; height: 100%; }

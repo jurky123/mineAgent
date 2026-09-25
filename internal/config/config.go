@@ -145,6 +145,8 @@ type Web struct {
 	MinIntervalMS int `json:"minIntervalMs"`
 	// 登录令牌/运行时数据目录，默认 data/webui。
 	DataDir string `json:"dataDir"`
+	// Portal 开关：nil/true = `/` 是门户（聊天在 /agent）；false 回滚成 `/` 即聊天页。
+	Portal *bool `json:"portal"`
 	// 快捷指令（+ 菜单的"技能"）：点一下把 prompt 填进输入框。
 	// 留空用内置默认（见 DefaultSkills）。
 	Skills []Skill `json:"skills"`

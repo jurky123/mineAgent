@@ -22,9 +22,9 @@ import (
 //   - wecom_markdown/wecom_image：工具返回 __wecom_send 指令后，gate 走 sender 发出。
 //   - 只读工具：直接透传。
 type wecomToolGate struct {
-	inner tool.BaseTool
-	ws    *tools.Workspace
-	store *storage.Store
+	inner    tool.BaseTool
+	ws       *tools.Workspace
+	store    *storage.Store
 	sender   func(ctx context.Context, sess *session.Session, target, text string) error
 	sessions func(ctx context.Context, sessionKey string) (*session.Session, error)
 }
@@ -62,7 +62,7 @@ func (g *wecomToolGate) InvokableRun(ctx context.Context, argsJSON string, opts 
 				return errorJSON("发送目标为空，已取消"), nil
 			}
 			if err := g.sendWeCom(ctx, target, text); err != nil {
-				return errorJSON("发送失败："+err.Error()), nil
+				return errorJSON("发送失败：" + err.Error()), nil
 			}
 			ok, _ := json.Marshal(map[string]string{"ok": "true", "message": "已发送"})
 			return string(ok), nil

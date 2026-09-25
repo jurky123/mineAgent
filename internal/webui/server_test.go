@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"mineagent/internal/account"
 	"mineagent/internal/agent"
 	"mineagent/internal/config"
 	"mineagent/internal/session"
@@ -50,7 +51,8 @@ func newTestChannel(t *testing.T) (*Channel, *httptest.Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ch := NewChannel(log, cfg, hub, store, ag, nil).WithMCStatus(nil)
+	acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
+	ch := NewChannel(log, cfg, acct, hub, store, ag, nil).WithMCStatus(nil)
 	ts := httptest.NewServer(ch.handler())
 	t.Cleanup(ts.Close)
 	return ch, ts, ws
@@ -157,7 +159,7 @@ func TestUploadSendHistoryDownload(t *testing.T) {
 	if res.StatusCode != 200 || up.Name != "报告.txt" || up.Size != 10 {
 		t.Fatalf("upload status=%d up=%+v", res.StatusCode, up)
 	}
-	if !strings.HasPrefix(up.Path, "web-files/jzk/") {
+	if !strings.HasPrefix(up.Path, "web-files/u1/") {
 		t.Fatalf("upload path=%q", up.Path)
 	}
 	if _, err := os.Stat(filepath.Join(ws, filepath.FromSlash(up.Path))); err != nil {
@@ -371,10 +373,14 @@ func TestOptionsAndPrefs(t *testing.T) {
 	tok := loginTest(t, ts, "jzk")
 
 	var opts struct {
-		Skills  []map[string]any `json:"skills"`
-		Models  []string         `json:"models"`
-		Efforts []string         `json:"efforts"`
-		Admin   bool             `json:"admin"`
+		Skills []map[string]any `json:"skills"`
+		Models []struct {
+			ID          string `json:"id"`
+			NeedsKey    bool   `json:"needsKey"`
+			Unavailable bool   `json:"unavailable"`
+		} `json:"models"`
+		Efforts []string `json:"efforts"`
+		Admin   bool     `json:"admin"`
 	}
 	if code := doJSON(t, "GET", ts.URL+"/api/options", tok, nil, &opts); code != 200 {
 		t.Fatalf("options status=%d", code)
@@ -383,17 +389,31 @@ func TestOptionsAndPrefs(t *testing.T) {
 		t.Fatalf("options = %+v", opts)
 	}
 
-	// 有效偏好
+	// 有效偏好（模型目录可能为空——无网关/离线；挑一个可用模型做断言）
+	model := "some-model"
+	for _, m := range opts.Models {
+		if !m.NeedsKey && !m.Unavailable {
+			model = m.ID
+			break
+		}
+	}
 	if code := doJSON(t, "POST", ts.URL+"/api/prefs", tok,
-		map[string]any{"model": "some-model", "effort": "low"}, nil); code != 200 {
+		map[string]any{"model": model, "effort": "low"}, nil); code != 200 {
 		t.Fatalf("prefs status=%d", code)
+	}
+	if len(opts.Models) > 0 {
+		// 目录存在时，不在目录里的模型必须被拒
+		if code := doJSON(t, "POST", ts.URL+"/api/prefs", tok,
+			map[string]any{"model": "definitely-not-a-model"}, nil); code != 400 {
+			t.Fatalf("非法模型 status=%d，应 400", code)
+		}
 	}
 	var opts2 struct {
 		Model  string `json:"model"`
 		Effort string `json:"effort"`
 	}
 	_ = doJSON(t, "GET", ts.URL+"/api/options", tok, nil, &opts2)
-	if opts2.Model != "some-model" || opts2.Effort != "low" {
+	if opts2.Model != model || opts2.Effort != "low" {
 		t.Fatalf("options after prefs = %+v", opts2)
 	}
 	// 非法强度
@@ -451,7 +471,7 @@ func TestHistoryPagination(t *testing.T) {
 	tok := loginTest(t, ts, "jzk")
 	for i := 0; i < 60; i++ {
 		if _, err := ch.store.AppendMessage(context.Background(), storage.Message{
-			SessionID: "web:c2c:jzk", Channel: "web", AuthorKind: "player", AuthorName: "jzk",
+			SessionID: webSessionKey(1, ""), Channel: "web", AuthorKind: "player", AuthorName: "jzk",
 			Text: fmt.Sprintf("m%d", i), CreatedAt: time.Now().UnixMilli(),
 		}); err != nil {
 			t.Fatal(err)
@@ -594,7 +614,7 @@ func TestConversationsGetIsPureRead(t *testing.T) {
 	tok := loginTest(t, ts, "jzk")
 	// 旧格式：只有消息，没有会话行
 	if _, err := ch.store.AppendMessage(context.Background(), storage.Message{
-		SessionID: "web:c2c:jzk", Channel: "web", AuthorKind: "player", AuthorName: "jzk",
+		SessionID: webSessionKey(1, ""), Channel: "web", AuthorKind: "player", AuthorName: "jzk",
 		Text: "旧会话的第一条", CreatedAt: time.Now().UnixMilli() - 1000,
 	}); err != nil {
 		t.Fatal(err)
@@ -616,7 +636,7 @@ func TestConversationsGetIsPureRead(t *testing.T) {
 			t.Fatalf("GET 不是纯读: %+v", again.Conversations)
 		}
 	}
-	if rows, err := ch.store.ListConversations(context.Background(), "jzk"); err != nil || len(rows) != 0 {
+	if rows, err := ch.store.ListConversationsByUser(context.Background(), 1, "jzk"); err != nil || len(rows) != 0 {
 		t.Fatalf("GET 往库里写了会话行: %+v err=%v", rows, err)
 	}
 }

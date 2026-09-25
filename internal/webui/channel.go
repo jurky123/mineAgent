@@ -7,14 +7,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 
+	"mineagent/internal/account"
 	"mineagent/internal/agent"
 	"mineagent/internal/config"
 	"mineagent/internal/session"
@@ -25,16 +26,17 @@ import (
 
 // Channel 是网页通道：浏览器 -> 会话隔离 -> agent -> SSE 推回网页。
 //
-// 会话隔离：每个账号一个会话 web:c2c:<名字>（名字即账号，暂无密码）。
+// 会话隔离：每个账号一个会话 web:user:<用户ID>（用户ID 来自 account 包，
+// 名字只是登录名，见 MINE_PORTAL_DESIGN.md §5）。
 // 与 qq:/wecom:/minecraft- 会话天然隔离；同一会话多标签页共享消息（SSE 广播）。
 //
 // 收发文件：
-//   - 用户上传：POST /api/upload 存到 workspace/web-files/<名字>/ 下，
+//   - 用户上传：POST /api/upload 存到 workspace/web-files/u<用户ID>/ 下，
 //     消息文本里带 [[file:...]] 标记（agent 可见路径，前端显示卡片）。
 //   - agent 发文件：web_file 工具（tools.WebSend）+ webToolGate，
 //     消息 Target 前缀 file:，网页端内联图片/下载链接。
 //
-// 安全：账号无密码（按需求"暂时只用一个名字区分"），
+// 安全：账号登录/令牌由 internal/account 统一负责（无密码，名字即账号），
 // web.users 可配白名单；workspace/审批权限只给 web.adminUsers。
 type Channel struct {
 	log *slog.Logger
@@ -47,6 +49,7 @@ type Channel struct {
 
 	hub      *session.Hub
 	store    *storage.Store
+	acct     *account.Service
 	ag       *agent.Agent
 	webTools []tool.BaseTool
 
@@ -62,12 +65,8 @@ type Channel struct {
 	mu       sync.Mutex
 	sessions map[string]*session.Session
 	lastSend map[string]time.Time
-	// subs: 账号名 -> SSE 订阅者集合。
+	// subs: 账号名 -> SSE 订阅者集合（用户名唯一且不变，用它做订阅键最省事）。
 	subs map[string]map[chan []byte]struct{}
-	// tokens: 账号名 -> 登录令牌列表（同一账号多设备并存，最多 5 个，最旧的淘汰；
-	// 持久化到 tokensPath，重启不掉线）。
-	tokens     map[string][]string
-	tokensPath string
 	// prefs: 账号名 -> 模型/思考强度偏好（+ 菜单里改），持久化。
 	prefs     map[string]accountPrefs
 	prefsPath string
@@ -75,7 +74,7 @@ type Channel struct {
 	running map[string]runState
 }
 
-func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
+func NewChannel(log *slog.Logger, cfg config.Config, acct *account.Service, hub *session.Hub, store *storage.Store,
 	ag *agent.Agent, webTools []tool.BaseTool) *Channel {
 	dataDir := cfg.Web.DataDir
 	if dataDir == "" {
@@ -93,19 +92,17 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		modelBaseURL:   cfg.Model.BaseURL,
 		hub:            hub,
 		store:          store,
+		acct:           acct,
 		ag:             ag,
 		webTools:       webTools,
 		sessions:       make(map[string]*session.Session),
 		lastSend:       make(map[string]time.Time),
 		subs:           make(map[string]map[chan []byte]struct{}),
-		tokens:         make(map[string][]string),
-		tokensPath:     filepath.Join(dataDir, "tokens.json"),
 		prefs:          make(map[string]accountPrefs),
 		prefsPath:      filepath.Join(dataDir, "prefs.json"),
 		running:        make(map[string]runState),
 	}
 	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, dataDir, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
-	c.loadTokens()
 	c.loadPrefs()
 	return c
 }
@@ -155,7 +152,7 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 		c.log.Warn("web send with bad target", "target", msg.Target)
 		return nil
 	}
-	conv := convOfSession(msg.SessionID, name)
+	conv := convOfSession(msg.SessionID)
 	c.clearRunning(msg.SessionID)
 	// 用 ToWire 而不是手拼：文件/图片消息（Target 前缀 file:）必须带上 files，
 	// 否则网页端只有刷新走 history 才能看到附件（线上踩过）。
@@ -238,26 +235,31 @@ type runState struct {
 // ErrConvNotFound 会话不存在（发送时给 404 而不是限流 429）。
 var ErrConvNotFound = errors.New("会话不存在")
 
-// webSessionKey 账号 + 会话短 id -> 会话 key（conv 为空是默认会话）。
-func webSessionKey(name, conv string) string {
+// webSessionKey 用户ID + 会话短 id -> 会话 key（conv 为空是默认会话）。
+func webSessionKey(userID int64, conv string) string {
+	base := "web:user:" + strconv.FormatInt(userID, 10)
 	if conv == "" {
-		return "web:c2c:" + name
+		return base
 	}
-	return "web:c2c:" + name + ":" + conv
+	return base + ":" + conv
 }
 
-// convOfSession 从会话 key 反解会话短 id（不是本账号的返回 ""）。
-func convOfSession(sessionID, name string) string {
-	rest := strings.TrimPrefix(sessionID, "web:c2c:"+name)
-	if rest == sessionID {
-		return ""
+// convOfSession 从会话 key 反解会话短 id；兼容迁移前的 web:c2c:<名字> 形式。
+func convOfSession(sessionID string) string {
+	for _, prefix := range []string{"web:user:", "web:c2c:"} {
+		if rest, ok := strings.CutPrefix(sessionID, prefix); ok {
+			if i := strings.Index(rest, ":"); i >= 0 {
+				return rest[i+1:]
+			}
+			return ""
+		}
 	}
-	return strings.TrimPrefix(rest, ":")
+	return ""
 }
 
-// sessionBelongsTo 判断会话 key 是否属于该账号（默认会话或带 conv 的）。
-func sessionBelongsTo(sessionID, name string) bool {
-	prefix := "web:c2c:" + name
+// sessionBelongsTo 判断会话 key 是否属于该用户（默认会话或带 conv 的）。
+func sessionBelongsTo(sessionID string, userID int64) bool {
+	prefix := "web:user:" + strconv.FormatInt(userID, 10)
 	if !strings.HasPrefix(sessionID, prefix) {
 		return false
 	}
@@ -354,13 +356,14 @@ func (c *Channel) session(key string) (*session.Session, error) {
 //   - "id" = 已存在会话，不存在返回 ErrConvNotFound。
 //
 // files 是本次上传的文件。返回该消息所属的会话 id。
-func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *string, text string, files []UploadedFile) (string, error) {
+func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *string, text string, files []UploadedFile) (string, error) {
+	name := u.Username
 	convID := ""
 	isNew := conv == nil
 	if !isNew {
 		convID = *conv
 	}
-	sessionKey := webSessionKey(name, convID)
+	sessionKey := webSessionKey(u.ID, convID)
 	target := "c2c:" + name
 	nowMs := time.Now().UnixMilli()
 
@@ -385,14 +388,14 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *stri
 			return "", fmt.Errorf("生成会话失败")
 		}
 		convID = id
-		sessionKey = webSessionKey(name, convID)
-		if err := c.store.UpsertConversation(ctx, name, convID, "", nowMs); err != nil {
+		sessionKey = webSessionKey(u.ID, convID)
+		if err := c.store.UpsertConversationFor(ctx, u.ID, name, convID, "", nowMs); err != nil {
 			return "", err
 		}
-		c.log.Info("web conversation created", "name", name, "conv", convID)
+		c.log.Info("web conversation created", "user", name, "uid", u.ID, "conv", convID)
 	} else if convID == "" {
-		_ = c.store.UpsertConversation(ctx, name, "", "", nowMs)
-	} else if existing, err := c.store.Conversation(ctx, name, convID); err != nil {
+		_ = c.store.UpsertConversationFor(ctx, u.ID, name, "", "", nowMs)
+	} else if existing, err := c.store.ConversationFor(ctx, u.ID, name, convID); err != nil {
 		return "", err
 	} else if existing == nil {
 		return "", ErrConvNotFound
@@ -411,7 +414,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *stri
 				Store:     c.store,
 				SessionID: sessionKey,
 				Channel:   "web",
-				IsAdmin:   IsAdminName(name, c.cfg.AdminUsers),
+				IsAdmin:   c.acct.IsAdminName(name),
 				Model:     c.model,
 				Usage:     c.usage.Text,
 				MCStatus:  c.mcStatus,
@@ -445,8 +448,8 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *stri
 		return convID, err
 	}
 	// 首条消息自动命名 + 刷新会话时间；多标签页同步广播（带 conv）。
-	_ = c.store.SetConversationTitleIfEmpty(ctx, name, convID, conversationTitle(text, files), nowMs)
-	_ = c.store.UpsertConversation(ctx, name, convID, "", nowMs)
+	_ = c.store.SetConversationTitleIfEmptyFor(ctx, u.ID, name, convID, conversationTitle(text, files), nowMs)
+	_ = c.store.UpsertConversationFor(ctx, u.ID, name, convID, "", nowMs)
 	c.publish(name, convID, ToWire(stored))
 
 	now := time.Now().UnixMilli()
@@ -486,116 +489,6 @@ func (c *Channel) HandleUserMessage(ctx context.Context, name string, conv *stri
 	c.lastSend[sessionKey] = time.Now()
 	c.mu.Unlock()
 	return convID, nil
-}
-
-// loadTokens / saveTokens：登录令牌落盘（0600），支持进程重启后浏览器不掉线。
-// 新格式 name -> [token...]；兼容旧的 name -> token 单值格式。
-func (c *Channel) loadTokens() {
-	b, err := os.ReadFile(c.tokensPath)
-	if err != nil {
-		return
-	}
-	var m map[string][]string
-	if err := json.Unmarshal(b, &m); err != nil {
-		var old map[string]string
-		if json.Unmarshal(b, &old) != nil {
-			return
-		}
-		m = make(map[string][]string, len(old))
-		for k, v := range old {
-			m[k] = []string{v}
-		}
-	}
-	for k, list := range m {
-		if !ValidAccountName(k) {
-			continue
-		}
-		for _, v := range list {
-			if v != "" {
-				c.tokens[k] = append(c.tokens[k], v)
-			}
-		}
-	}
-}
-
-func (c *Channel) saveTokens() {
-	c.mu.Lock()
-	m := make(map[string][]string, len(c.tokens))
-	for k, v := range c.tokens {
-		m[k] = append([]string(nil), v...)
-	}
-	c.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(c.tokensPath), 0o700); err != nil {
-		c.log.Warn("web tokens mkdir", "err", err)
-		return
-	}
-	b, _ := json.Marshal(m)
-	tmp := c.tokensPath + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		c.log.Warn("web tokens write", "err", err)
-		return
-	}
-	if err := os.Rename(tmp, c.tokensPath); err != nil {
-		c.log.Warn("web tokens rename", "err", err)
-	}
-}
-
-// login 给账号发一个新令牌：多设备/多浏览器可并存（各自保留），
-// 每个名字最多 5 个令牌，最旧的淘汰（防令牌文件无限膨胀）。
-func (c *Channel) login(name string) (string, error) {
-	tok, err := randomToken()
-	if err != nil {
-		return "", err
-	}
-	c.mu.Lock()
-	list := append(c.tokens[name], tok)
-	if len(list) > 5 {
-		list = list[len(list)-5:]
-	}
-	c.tokens[name] = list
-	c.mu.Unlock()
-	c.saveTokens()
-	return tok, nil
-}
-
-// logout 注销单个令牌（前端"退出登录"），并持久化。
-func (c *Channel) logout(tok string) {
-	if tok == "" {
-		return
-	}
-	c.mu.Lock()
-	for name, list := range c.tokens {
-		out := list[:0]
-		for _, t := range list {
-			if t != tok {
-				out = append(out, t)
-			}
-		}
-		if len(out) == 0 {
-			delete(c.tokens, name)
-		} else {
-			c.tokens[name] = out
-		}
-	}
-	c.mu.Unlock()
-	c.saveTokens()
-}
-
-// nameByToken 反查令牌归属；不带令牌/令牌过期返回 ""。
-func (c *Channel) nameByToken(tok string) string {
-	if tok == "" {
-		return ""
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for name, list := range c.tokens {
-		for _, t := range list {
-			if t == tok {
-				return name
-			}
-		}
-	}
-	return ""
 }
 
 func splitTarget(target string) (kind, id, rest string) {

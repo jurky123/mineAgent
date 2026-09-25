@@ -136,12 +136,51 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 （应用消息有频控：单成员 30 条/分钟，`minIntervalMs` 默认 1.5s 防抖），
 不受公众号"48 小时客服消息窗口"限制。
 
-## 网页入口（web）
+## 网页入口 / Mine 门户（web）
 
-浏览器直接聊，支持**多会话**和收发**文件/图片**：拖拽、粘贴或点 ＋ 上传文件
-（图片先在浏览器端压缩到 1600px/JPEG，带上传进度），agent 用 `web_file` 把
-workspace 里的文件/图片发回来。图片点击进查看器（缩放/拖动/多图切换/下载），
-文件按类型显示角标卡片、点击或悬停下载，下载文件名保留原始名。
+浏览器打开 `http://<公网IP>:8766/` 就是 **Mine 门户**（默认）：
+
+| 页面 | 说明 |
+|---|---|
+| `/` | 门户首页：欢迎语 + 应用卡片（公告栏、Agent 会话数、MC 服务器状态、游戏占位） |
+| `/agent` | Agent 聊天页（原完整功能：多会话/文件收发/模型切换，见下） |
+| `/account` | 我的账号：资料、登录设备（可踢其它设备）、退出登录 |
+| `/games` | 小游戏平台：开发中（先在门户占位） |
+
+`web.portal=false` 可一键回滚成"`/` 就是聊天页"的旧版单页模式。
+
+### 账号体系（名字即账号）
+
+- 没有密码：输入名字即登录，首次输入自动注册（`web.users` 非空时只允许名单内名字）。
+  知道名字就能进，所以**别把管理员名字设成别人能猜到的**。
+- 数据在 SQLite 的 `users` / `auth_sessions` 表：token 只存 sha256，有效期 30 天，
+  单账号最多 5 台设备（第 6 次登录淘汰最旧的）；登录时同时种 HttpOnly cookie，
+  附件 URL（`<img>`/下载链接）靠它鉴权。
+- 管理员权限**只看** `config.web.adminUsers`（`users.is_admin` 只是镜像，登录时同步）。
+- 升级说明：旧版 `data/webui/tokens.json` 启动时惰性导入（**旧浏览器不用重新登录**，
+  文件保留可回滚）；会话键已从 `web:c2c:<名字>` 迁到 `web:user:<用户ID>`，
+  老数据用 `./bin/mineagent --config config.json --migrate-portal` 迁移
+  （先自动备份数据库，幂等可重跑；会上传目录 `web-files/<名字>` 一并改成 `web-files/u<ID>`）。
+
+### 门户扩展点（加功能不用改骨架）
+
+新增门户功能 = 在 `cmd/mineagent/portal_apps.go` 里 `portal.Register` 一个应用
+（`internal/portal/apps.go` 的 `App`：ID/名称/路径/排序/是否管理员可见/`Card` 函数），
+门户首页会自动出现导航与卡片；卡片数据由 `GET /api/portal/home` 服务端逐个聚合，
+单个应用失败只显示"暂不可用"，不拖垮整页。卡片类型：`stat`（数值/键值对）、
+`list`（列表，如公告栏）、`link`、`text`；`enabled:false` 的应用显示"开发中"占位。
+
+- **公告栏**：管理员可在门户卡片上直接发布/删除（`GET /api/portal/announcements`
+  公开读，`POST`/`DELETE` 仅管理员）
+- **MC 状态卡**：经网关调 `minecraft_server_status`，显示在线/TPS/内存/版本
+- **Agent 卡片**：显示会话数，点击进 `/agent`
+
+### 聊天页（`/agent`）
+
+支持**多会话**和收发**文件/图片**：拖拽、粘贴或点 ＋ 上传文件（图片先在浏览器端
+压缩到 1600px/JPEG，带上传进度），agent 用 `web_file` 把 workspace 里的文件/图片
+发回来。图片点击进查看器（缩放/拖动/多图切换/下载），文件按类型显示角标卡片、
+点击或悬停下载，下载文件名保留原始名。
 
 会话生命周期是 ChatGPT 那套语义：点「新聊天」只进入**前端草稿态**（不建库、
 重复点无副作用、侧栏不出现），发出**第一条消息时才由 `/api/send` 原子创建**会话，
@@ -165,28 +204,31 @@ workspace 里的文件/图片发回来。图片点击进查看器（缩放/拖�
 可「载入更早消息」；模型/思考切换、上传失败等用 toast 提示；SSE 断线时顶部重连提示；
 消息悬停可复制（代码块单独可复制）；侧栏桌面端可收起（记忆在本地）。
 
-调样式的时候可以用**渲染调试模式**：`/?ui=1` 不连后端、用假数据渲染完整界面，
-可选 `&panel=intel|appearance|confirm|rename`、`&theme=dark`、`&empty=1`、`&sidebar=0`，
-配合无头浏览器截图做视觉对比（本机开发就是 `chrome-headless-shell --screenshot` 截的）。
+调样式的时候可以用**渲染调试模式**：`/?ui=1` 不连后端、用假数据渲染完整界面
+（门户/账号页同样支持），可选 `&panel=intel|appearance|confirm|rename`、`&theme=dark`、
+`&empty=1`、`&sidebar=0`，配合无头浏览器截图做视觉对比。
 
-会话按名字隔离
-（`web:c2c:<名字>`），同一账号多个标签页共享消息（SSE 实时推送），
-界面为 ChatGPT 风格（侧栏 + 新会话 + 消息复制 + 代码块复制 + 断线补拉）。
+### 配置与接口
 
 1. `config.json` 里 `web.listen` 默认 `0.0.0.0:8766`（空字符串=禁用网页入口）；
    公网访问要在腾讯云控制台放行 TCP 8766（ufw 未启用）
-2. 浏览器打开 `http://<公网IP>:8766/`，输入名字进入（**暂无密码**，
-   所以强烈建议把 `web.users` 配成允许的名字白名单）
+2. 浏览器打开 `http://<公网IP>:8766/` 输入名字进入
 3. 想用 workspace 写代码/跑代码，把名字填进 `web.adminUsers`（`/myid` 可看自己身份）
 
-接口一览（后续嵌入其它网页可用）：
+接口一览（`/api/auth/*`、`/api/portal/*` 是门户新路径；旧路径保留为别名）：
 
 | 接口 | 说明 |
 |---|---|
-| `POST /api/login` `{"name":"..."}` | 换登录令牌（`users` 白名单非空时校验） |
-| `GET /api/history?after=<id>` | 历史消息（含附件引用） |
+| `POST /api/auth/login` `{"name":"..."}` | 登录/注册（旧路径 `/api/login` 同样可用） |
+| `GET /api/auth/me` | 当前用户（旧路径 `/api/me`） |
+| `POST /api/auth/logout` | 注销当前 token（旧路径 `/api/logout`） |
+| `GET /api/account/sessions` | 已登录设备列表 |
+| `POST /api/account/sessions/revoke` `{id}` 或 `{others:true}` | 踢设备 |
+| `GET /api/portal/apps` | 应用注册表（导航数据源） |
+| `GET /api/portal/home` | 首页聚合（欢迎语 + 各应用卡片） |
+| `GET/POST/DELETE /api/portal/announcements` | 公告栏（读公开，写仅管理员） |
+| `GET /api/history?conv=&after=<id>` | 历史消息（含附件引用） |
 | `POST /api/clear` | 清空当前会话（前端"新会话"），并广播其它标签页 |
-| `POST /api/logout` | 注销当前登录令牌（前端"退出登录"） |
 | `GET /api/options` | 技能 / 可选模型 / 思考强度 / 当前偏好 |
 | `GET /api/conversations` | 会话列表（纯读；旧单会话会合成返回） |
 | `POST /api/conversations/delete`、`/rename` | 删除 / 重命名会话 |
@@ -201,11 +243,7 @@ workspace 里的文件/图片发回来。图片点击进查看器（缩放/拖�
 
 嵌入说明：页面允许 iframe（`frame-ancestors *`），API 支持跨域带
 `Authorization: Bearer <token>`（无 Cookie），`web.allowedOrigins` 可收紧来源。
-上传文件存在 `workspace/web-files/<名字>/` 下，单文件默认 20MB（`web.maxUploadMB`），
-登录令牌存 `data/webui/tokens.json`（重启不掉线）。登录时同时种 HttpOnly cookie，
-附件 URL（`<img>`/下载链接）靠它鉴权，不用把 token 拼在地址里；`/api/logout` 会注销
-当前令牌。
-注意：账号只有名字没有密码，等于"知道名字就能进"，别把管理员名字设成别人能猜到的。
+上传文件存在 `workspace/web-files/u<用户ID>/` 下，单文件默认 20MB（`web.maxUploadMB`）。
 
 ## 微信的其它路线（备查）
 

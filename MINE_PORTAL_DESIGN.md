@@ -1,6 +1,6 @@
 # MINE_PORTAL_DESIGN.md — Mine Portal 设计文档（v1）
 
-> 状态：设计稿（待评审，未实施）
+> 状态：**P0/P1 已实施并上线（2026-09-25，commit f8df1f5）**；P2+ 待做（见 §14 实施记录）
 > 目标读者：实现这个仓库的 coding agent / 后续维护者
 > 范围：把现有 MineAgent WebUI（单页 = 聊天）升级为 **Mine Portal**：账号 + Agent + 小游戏 + 排行榜。
 > 约束：**轻量化**——单 Go 进程 + 单 SQLite + Vanilla ES Modules，不引入 Web 框架 / Redis / 微服务 / 构建步骤。
@@ -493,16 +493,32 @@ export default {
 
 ---
 
-## 13. 待确认（开工前拍板）
-1. `/` 直接变门户（聊天移 `/agent`），带 `portal.enabled` 回滚开关 —— 可以吗？
-2. 账号**不加密码**（任何人输名字即可登录）接受吗？`users.pin_hash` 字段预留先不做校验。
-3. P2 的 `user_id` 迁移（会话键/文件目录改写，需一次停机 + 备份）**列入本期还是往后放**？
-   （不迁移也能跑，只是内部键仍是名字，将来改名/多应用仍可正常工作。）
-4. 门户首批要预留的"应用"除了 Agent / Games，还想先挂哪些？（如：额度卡、MC 状态卡、文件柜…）
-   新增应用按 §7.5 注册即可，不用改前端。
+## 13. 已拍板（2026-09-25）
 
-> 已定：目录划分（§3）、账号从 Agent 抽离（§2/§5）、门户扩展点机制（§7.5）、
-> 游戏先做骨架（§8）；积分/排行榜/反作弊**待游戏类型确定后再定**。
+1. `/` 直接变门户（聊天移 `/agent`），带 `web.portal=false` 回滚开关 —— **是**。
+2. 账号**不加密码**，`users.pin_hash` 只预留不校验 —— **是**。
+3. `user_id` 迁移**本期做** —— **已完成**（`--migrate-portal`，先备份、幂等）。
+4. 门户首批挂：**公告栏 + MC 状态卡** —— **已上线**；游戏平台先占位（`enabled:false`）。
+5. 积分/排行榜/反作弊：**待游戏类型确定后再定**（§8.3 只列选项）。
+
+## 14. 实施记录
+
+| 阶段 | 状态 | 落地 |
+|---|---|---|
+| P0 账号基座 | ✅ 2026-09-25 | `internal/account`（users/auth_sessions，token 存 sha256，30 天/5 设备）、旧 `tokens.json` 惰性导入 |
+| P0 会话键迁移 | ✅ 2026-09-25 | `web:c2c:<名字>` → `web:user:<ID>`（messages/summaries/reminders/tool_audit/sessions/conversations）、`web-files/<名字>` → `web-files/u<ID>`、`--migrate-portal`（VACUUM INTO 备份 + 幂等） |
+| P1 门户壳 | ✅ 2026-09-25 | `internal/portal`（页面白名单路由、App 注册表、`/api/portal/apps`+`/home` 聚合、`/api/auth/*`、`/api/account/sessions`）、`static/{portal,account}/` + `shell.js`/`portal.js`/`account.js`/`portal.css` |
+| P1 公告栏 + MC 卡 | ✅ 2026-09-25 | `announcements` 表 + 管理员发布/删除；MC 状态卡经网关 `minecraft_server_status` |
+| P2 Games 骨架 + 2048 | ⏳ 待做 | 见 §8（规则层仍待游戏类型确定） |
+| P3 规则层 | ⏳ 待定 | 积分/排行榜/反作弊（§8.3） |
+| P4 可选 | ⏳ 待定 | PIN、深链接、MC 信息卡、嵌入挂件、更多应用 |
+
+**实施中的偏差（与设计稿不同之处，以代码为准）**：
+- 会话键用 `web:user:<用户ID>`（不是 `web:<user_id>`），上传目录 `u<ID>`；
+- 门户首页卡片由 `App.Card` 统一产出（服务端聚合），没有单独的 `/api/account/overview`；
+- `AccountBlocks` 暂未实现（账号页目前是内置的资料/设备两块，够用再说）；
+- `/leaderboard` 页面未建（游戏规则未定，先不占位）；
+- webui 包暂未改名 `internal/web/agent`（P2 再机械搬迁，避免这次 diff 过大）。
 
 ---
 

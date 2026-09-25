@@ -12,14 +12,16 @@
 ### 目标
 1. 有门户首页（`/`），把 Agent 作为其中一个应用。
 2. 有**账号系统**（当前只按名字），账号被 Portal 持有，Agent 与 Games 都依赖账号而不各自实现登录。
-3. 小游戏入口（先 1 个验证链路，再补 2 个），有**分数与排行榜**，绑定账号。
+3. 小游戏入口：**先只做平台骨架**（游戏目录 + 页面壳 + 一局原始记录），
+   **积分模型、排行榜、反作弊规则等游戏类型确定后再设计**（见 §8）。
 4. 一次登录，门户 / Agent / 游戏 / 排行榜全站通用。
 5. 现有 Agent 功能、数据、URL 与正在使用的线上实例**不被破坏**（可灰度、可回滚）。
 
 ### 非目标（v1 明确不做）
 - 不做前后端分离、不上 React/Vue/Next、不加构建步骤。
 - 不做微服务、不加 Redis/消息队列。
-- 不做游戏服务端权威判定（Level 2 反作弊）；v1 只做上限 + 节流 + 留档。
+- **不定积分/排行榜/反作弊规则**：游戏类型未定，这些规则不先写死；
+  平台只要求"一局能落一条原始记录"，规则层后置（见 §8）。
 - 不做改名功能（见 §9.4 的设计取舍与预留）。
 - 不做多人实时游戏（WebSocket 房间是 P5 之后的自然扩展，不在本期）。
 
@@ -84,8 +86,10 @@
 ### 3.1 目标结构
 ```
 internal/
-├── portal/                  ← 新增：页面路由 + 壳 + 账号中间件
+├── portal/                  ← 新增：页面路由 + 壳 + 账号中间件 + 应用注册表
 │   ├── server.go            页面路由（/, /agent, /games, /games/<id>, /leaderboard, /account）
+│   ├── apps.go              应用注册表（新增功能只在这里注册，见 §7.5）
+│   ├── home.go              /api/portal/home 聚合（逐应用 Card，失败降级）
 │   ├── static.go            内嵌页面与静态资源注入（版本号/调试开关）
 │   └── middleware.go        RequireUser / RequireAdmin / CORS / 访问日志
 ├── account/                 ← 新增：用户与会话（唯一身份来源）
@@ -155,7 +159,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 
--- 4.3 游戏成绩：每次游玩一条（只增不改）
+-- 4.3 游戏记录（预留；字段含义待游戏类型确定后再定，先按"原始记录"设计）
 CREATE TABLE IF NOT EXISTS game_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL,
@@ -168,7 +172,7 @@ CREATE TABLE IF NOT EXISTS game_runs (
 CREATE INDEX IF NOT EXISTS idx_game_runs_rank ON game_runs(game_id, score DESC, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_game_runs_user ON game_runs(user_id, game_id, created_at DESC);
 
--- 4.4 积分流水（ledger，不做 users.points 冗余字段：可审计、可扩展）
+-- 4.4 积分流水（预留；积分模型未定，实施时机见 §8/§10）
 CREATE TABLE IF NOT EXISTS point_events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL,
@@ -185,7 +189,7 @@ CREATE INDEX IF NOT EXISTS idx_point_events_user ON point_events(user_id, create
 - `messages.session_id` / `summaries.session_id` / `reminders.session_id` 的字串值在 P2 整体重命名（`web:c2c:<name>` → `web:user:<id>`），表结构不变。
 - `identity_links` 完全不动（`/bind` 的 MC 身份绑定继续用名字维度）。
 
-**清理策略（可选）**：`game_runs` 保留每人每游戏最近 200 条 + 历史最高分永久；`auth_sessions` 过期行按天清理；`point_events` 永久保留（量小）。
+**清理策略（可选，待定）**：`game_runs` 保留每人每游戏最近若干条；`auth_sessions` 过期行按天清理；`point_events` 永久保留（量小）。
 
 ---
 
@@ -250,11 +254,11 @@ RequireAdmin(next)  // 在上述基础上要求名字命中 cfg.Web.AdminUsers�
 | `/api/agent/workspace` | `/api/workspace` | GET | 浏览 workspace（管理员） |
 | `/api/agent/workspace/file` | 同名 | GET | 下载 workspace 文件（管理员） |
 | `/api/usage` | 同名 | GET | 模型额度（门户卡片也用） |
-| `/api/games` | — | GET | 游戏目录 + 我的最高分/积分 |
-| `/api/games/{id}/leaderboard?period=all|daily|weekly` | — | GET | 排行榜 |
-| `/api/games/{id}/me` | — | GET | 个人战绩（最高分/最近记录/名次） |
-| `/api/games/{id}/runs` | — | POST | 提交一局 `{score,durationMs,metadata?}` |
-| `/api/leaderboard` | — | GET | Portal 总积分榜（`point_events` 求和） |
+| `/api/portal/apps` | — | GET | 应用注册表（导航/卡片数据源，新增应用只改这里） |
+| `/api/portal/home` | — | GET | 首页聚合（欢迎语 + 各应用卡片数据） |
+| `/api/games` | — | GET | **预留骨架**：游戏目录（+ 我的最近记录，规则字段待定） |
+| `/api/games/{id}/runs` | — | POST | **预留骨架**：落一局原始记录 `{score?, durationMs?, metadata?}` |
+| `/api/games/{id}/leaderboard`、`/api/games/{id}/me`、`/api/leaderboard` | — | GET | **待定**（积分/排行模型未定，见 §8） |
 | `/api/version` | — | GET | 版本自检（保持免鉴权 + no-store） |
 
 **约定**
@@ -262,23 +266,25 @@ RequireAdmin(next)  // 在上述基础上要求名字命中 cfg.Web.AdminUsers�
 - 所有 `/api/*`（除 `login`、`version`）都过 `RequireUser`。
 - 旧路径保留至少一个发布周期；前端全部切换到新路径后，再在下一个版本删除（删除时更新本文档）。
 
-### 6.2 Games API 细节
+### 6.2 Portal 聚合接口（预留扩展点）
 ```
-GET /api/games
-→ { games:[{id,name,desc,icon,path,scoreCap,minDurationMs,myBest,myPlays,myPoints}], points: 1730 }
+GET /api/portal/apps
+→ { apps:[{id,name,desc,icon,path,order,adminOnly,enabled,card:{type,...}}] }
+   门户导航与首页卡片全部由它驱动；新增应用 = 注册一条 + 提供页面，
+   前端不需要改（卡片类型见 §7.5）
 
-POST /api/games/{id}/runs
-  body { score:int, durationMs:int, metadata?:object }
-  校验：game 存在 && 启用；0 ≤ score ≤ scoreCap；durationMs ≥ minDurationMs；
-        节流：同 user+game 两次提交 ≥5s，每自然日 ≤200 局；metadata JSON ≤2KB
-  记分：INSERT game_runs → 计算 points = clamp(floor(score/divisor), 0, perGamePointsCap)
-        （只有刷新个人最高分才给分，避免刷分）→ INSERT point_events(source='game', ref_id=run id)
-  返回 { ok:true, runId, best, isPB, pointsAwarded, rank }
+GET /api/portal/home
+→ { greeting, apps:[{id, card:{...}}], account:{name,totalPoints?} }
+   服务端聚合各应用卡片数据（同一个应用只暴露一个 card 函数），
+   避免前端逐应用发请求；某个应用失败不影响整页（该项返回 {error} ）
 ```
-- `isPB`（是否个人最佳）与 `points` 换算规则来自游戏注册表（§8.1）。
-- 排行榜口径：指定周期内，**每用户取最高分**参与排名；同分按更早达成者靠前；返回前 20 + `me` 的位次（若在榜外则单独给出 rank）。
 
----
+### 6.3 Games API（预留骨架，规则待定）
+- v1 只实现：`GET /api/games`（目录）、`POST /api/games/{id}/runs`（落一条**原始记录**）。
+- 提交体只约定"原样留档"型字段：`{score?:int, durationMs?:int, metadata?:object}`，
+  服务端做**最小**校验（游戏存在、JSON 合法、metadata ≤2KB、基础节流）。
+- **不做**：积分换算、PB 判定、排行榜聚合、上限/时长等反作弊规则 —— 规则层设计
+  放在"游戏类型确定后"的独立设计里（见 §8）。
 
 ## 7. 页面与前端结构
 
@@ -305,57 +311,114 @@ export default {
   id: '2048',
   mount(container, api) { /* 初始化渲染、键盘/触摸输入 */ },
   dispose() { /* 清理计时器/监听 */ },
-  // api.submit({score, durationMs, metadata}) 由平台封装：
-  //   - 自动带鉴权、自动节流提示、失败给出 toast
-  //   - 结束一局调用一次：api.finish({score, durationMs, metadata})
+  // 平台封装（规则未定，只保证"记录 + 反馈"）：
+  //   api.finish({ score?, durationMs?, metadata? })  一局结束调用一次
+  //   - 自动带鉴权、失败给出 toast、最近记录展示
+  //   - 是否给积分/是否进榜：待积分与排行榜模型确定后由平台统一加，不改游戏代码
 };
 ```
-- 大厅与游戏页只做"壳 + 计分提交"，不做游戏逻辑复用。
-- 游戏内"本机最高分"可放 localStorage 提升手感；**权威分数以服务端 `game_runs` 为准**。
+- 大厅与游戏页只做"壳 + 记录提交"，不做游戏逻辑复用。
+- 游戏内"本机最高分"可放 localStorage 提升手感；服务端 `game_runs` 只作为**原始记录**留存。
 
 ### 7.4 调试模式
 - `?ui=1`（假数据渲染）扩展到门户/游戏：`?ui=1&page=portal|games|leaderboard|account`，用于无头截图验收。
 
+### 7.5 门户扩展点与预留接口（重要）
+门户还会加别的功能，**新增功能一律走"注册一个应用"，不改门户骨架**。
+
+**1) 应用注册表（Go 侧唯一入口）**
+```go
+// internal/portal/apps.go
+type App struct {
+    ID        string // agent / games / minecraft / files / …
+    Name      string
+    Desc      string
+    Icon      string
+    Path      string // 应用页 URL
+    Order     int
+    AdminOnly bool
+    Enabled   bool
+    // Card 返回首页卡片数据；nil = 不在首页展示。
+    // 约定：失败必须返回 error，由门户降级为该卡片显示"暂不可用"。
+    Card func(ctx context.Context, user *account.User) (any, error)
+}
+func Register(app App)          // 各应用在 main 装配时自注册
+func Apps() []App               // /api/portal/apps 的数据源
+```
+- 新应用接入清单：① 在 `main.go` 调用 `portal.Register(...)`；② 提供页面目录 `static/<app>/index.html`；
+  ③ 自己的业务 API 挂 `/api/<app>/*`（统一过 `RequireUser`）。**前端门户无需改动**。
+
+**2) 首页聚合（服务端拼装，前端只渲染）**
+- `GET /api/portal/home` 由门户逐个调用 `App.Card`，单应用失败不影响整页。
+- 卡片用统一迷你 schema（前端按 `type` 渲染，未知类型降级为纯文本）：
+```json
+{ "type": "stat|list|progress|text|link", "title": "...", "items": [...], "value": 42, "hint": "..." }
+```
+
+**3) 导航与账号页插槽**
+- 顶栏导航由 `/api/portal/apps` 生成；账号菜单项固定（资料/外观/退出）。
+- `/account` 页支持"区块插槽"：应用可导出 `AccountBlocks(user) []Block`（同样走注册表），
+  例如游戏战绩、Agent 会话统计、MC 绑定状态。
+
+**4) API 命名空间约定**
+- 每个应用一个前缀：`/api/agent/*`、`/api/games/*`、`/api/<app>/*`；
+  账号相关固定在 `/api/auth/*` 与 `/api/account/*`。
+- 中间件、错误体、限流、访问日志全部复用 Portal 层，应用不重复实现。
+
+**5) 预留但本期不做**
+- `static/<app>/` 的**外部/第三方页面挂载**（iframe 或 JS 挂件）——预留 `App.Embed = true` 时的
+  `frame-ancestors` 与 CORS 策略位，具体实现放到目标页面确定后。
+- 应用级配置开关：`portal.apps.<id>.enabled`（先只支持全局 `portal.enabled`）。
+
 ---
 
-## 8. Games 平台
+## 8. Games 平台（先骨架，规则待定）
+
+> **本期的边界**：只把"平台"搭起来——能注册游戏、能打开游戏页、能把一局结果
+> 原样记下来。**积分模型、排行榜口径、反作弊策略、首批游戏清单，全部待游戏类型
+> 确定后再定**（届时另出设计，文档 §8.3 只列选项，不做承诺）。
 
 ### 8.1 游戏注册表（Go，代码定义，不做后台管理）
 ```go
+// internal/games/registry.go —— 平台唯一需要"定"的东西就是这层契约
 type Game struct {
-    ID            string // snake / 2048 / memory
-    Name          string
-    Description   string
-    Icon          string
-    ScoreCap      int    // 分数上限（反作弊下限保护）
-    MinDurationMs int    // 最短时长（过短判为异常）
-    PointsDivisor int    // 积分换算：points = score / divisor
-    PointsCap     int    // 单局最多积分
-    Enabled       bool
+    ID          string // 2048 / snake / memory / …
+    Name        string
+    Description string
+    Icon        string
+    Path        string // /games/<id>
+    Enabled     bool
+    Order       int
+    // 预留，不实现：积分/排行榜/反作弊相关字段（ScoreCap、PointsRule…）
+    // 等游戏类型确定后按需再加，加字段不影响已注册的游戏。
 }
+var Games = []Game{ /* 先放 1 个：2048（只为验证链路） */ }
 ```
-首批（P2/P3）：
-| ID | 名称 | ScoreCap | MinDurationMs | 积分规则 |
-|---|---|---|---|---|
-| `2048` | 2048 | 200000 | 20000 | `min(60, score/1000)`，仅 PB 给分 |
-| `snake` | 贪吃蛇 | 5000 | 15000 | `min(60, score/50)`，仅 PB 给分 |
-| `memory` | 记忆翻牌 | 2000 | 10000 | `min(60, score/20)`，仅 PB 给分 |
 
-### 8.2 三个概念不要混（实现时严格遵守）
-- **Game Score**：一局的技术成绩（`game_runs.score`）。
-- **Rank**：某游戏排行榜名次（按周期对 `game_runs` 聚合）。
-- **Portal Points**：全站积分（`point_events` 求和，ledger 可审计）。
+### 8.2 前端游戏模块契约（同样保持最小）
+```js
+// static/js/games/<id>.js
+export default {
+  id: '2048',
+  mount(container, api) { /* 渲染 + 输入 */ },
+  dispose() {},
+  // api.finish({ score, durationMs, metadata })   一局结束调用；
+  // 平台只做"记录 + 反馈"，不承诺积分/排行行为（规则未定）。
+};
+```
+大厅与游戏页只做壳：加载模块、透传 `finish`、展示"最近记录"（原始分数列表）。
 
-### 8.3 反作弊分级（v1 = Level 0）
-| 级别 | 做法 | 本期 |
+### 8.3 规则层选项（**不实现，仅供将来选型时讨论**）
+| 维度 | 可选方案 | 说明 |
 |---|---|---|
-| L0 | 上限 + 时长 + 节流 + 每日配额 + metadata 留档 | ✅ |
-| L1 | 客户端提交回放/事件，服务端重算校验 | 预留（`metadata` 存 seed/moves） |
-| L2 | 服务端权威（多人房间） | 不做 |
+| 积分 | 无积分 / 每局固定 / 按分数换算 / 按名次给分 / ledger 流水 | ledger 可审计，扩展性最好 |
+| 排行榜 | 每游戏独立榜 / 总积分榜 / 周期榜（日周月） | 与积分口径绑定 |
+| 反作弊 | L0 上限+节流 / L1 回放重算 / L2 服务端权威 | 取决于游戏类型（棋类/休闲/多人差异大） |
+| 首批游戏 | 2048 / Snake / Minesweeper / Memory / Tetris / 你画我猜 … | 建议先 1 个休闲类验证链路 |
 
-**排行榜定位**：朋友间玩票，不做强对抗；UI 上不承诺"绝对公平"。
-
----
+### 8.4 数据（预留）
+`game_runs` 先按"原始记录"落库（§4.3）；`point_events` **本期不建**，
+等积分模型定了再加（新增表不影响已有数据）。
 
 ## 9. Agent 迁移方案
 
@@ -391,9 +454,9 @@ type Game struct {
 |---|---|---|
 | **P0 基座** | `internal/portal`（路由/中间件/壳）、`internal/account`、`users`+`auth_sessions` 表、`/agent` 搬家、`/api/agent/*` 别名、登录委托 | `/` 门户可开；`/agent` 与旧聊天完全一致；旧 `/api/*` 仍工作；登录一次跨页有效；`portal.enabled=false` 时 `/` 回到聊天页；`tokens.json` 旧 token 仍能登录（惰性升级） |
 | **P1 门户与账号** | 门户首页（Agent/Games/Leaderboard/Account 卡片）、`/account`、`/api/account`、主题/导航共享、`tokens.json` 停写 | 首页 4 卡片数据真实（积分/游戏数/会话数）；账号页展示资料+统计；无密码登录体验不变 |
-| **P2 Games 平台 + 2048** | `internal/games`（registry/score/points/leaderboard）、`game_runs`+`point_events`、Games API、大厅、`/games/2048` 可玩、自动提交 | 完整链跑通：登录→玩 2048→提交→`game_runs` 有记录→PB 给积分→`/leaderboard` 更新；上限/节流/每日配额生效（curl 可测） |
-| **P3 更多游戏 + 排行榜页** | Snake、Memory、`/leaderboard` 页、`/account` 战绩明细、`/api/leaderboard`（总积分） | 3 个游戏可玩可计分；每游戏榜 + 总积分榜正确；个人页展示最近 10 局 |
-| **P4 可选** | `/agent/c/<conv>` 深链接、`?ui=1` 门户/游戏调试、PIN 登录（可选）、MC 信息卡、嵌入挂件（iframe/JS）、每日签到积分 | 按需立项 |
+| **P2 Portal 扩展点 + Games 骨架 + 2048** | `internal/portal` 应用注册表与 `/api/portal/*` 聚合接口、`internal/games`（registry + 原始记录）、大厅、`/games/2048` 可玩、`game_runs` 落原始记录 | 链路验证：登录→玩 2048→结束自动落一条 `game_runs`→`/api/games` 能看到我的最近记录；新增一个"应用卡片"只需注册、不改前端；`/api/portal/home` 聚合正常（某应用失败不影响整页） |
+| **P3 规则层（待游戏类型确定后另立项）** | 积分模型 / 排行榜 / 反作弊 / 更多游戏 | 届时另出设计（§8.3 选项表）；文档与 README 同步 |
+| **P4 可选** | `/agent/c/<conv>` 深链接、`?ui=1` 门户/游戏调试、PIN 登录（可选）、MC 信息卡、嵌入挂件（iframe/JS）、更多门户应用 | 按需立项 |
 
 **每阶段都要求**：`go test ./...` 全绿；`make build` 通过；用无头浏览器（chrome-headless-shell）截图验收关键页面；改动同步 README 与本文档。
 
@@ -428,11 +491,15 @@ type Game struct {
 ---
 
 ## 13. 待确认（开工前拍板）
-1. `/` 直接变门户（聊天移 `/agent`）✅/❌；或门户先挂 `/portal` 试水。
-2. 账号**不加密码**接受吗（任何人输名字即可登录/看你的积分）？要不要顺手实现 `pin_hash` 校验（可选填写）？
-3. 首批游戏：**2048 → Snake → Memory** 可以吗？
-4. 排行榜先做**每游戏独立榜**（+ 总积分榜 P3 再做）可以吗？
-5. P2 的 `user_id` 迁移是否列入本期（需要一次停机窗口 + 备份）？不做也能跑，只是键仍是名字。
+1. `/` 直接变门户（聊天移 `/agent`），带 `portal.enabled` 回滚开关 —— 可以吗？
+2. 账号**不加密码**（任何人输名字即可登录）接受吗？`users.pin_hash` 字段预留先不做校验。
+3. P2 的 `user_id` 迁移（会话键/文件目录改写，需一次停机 + 备份）**列入本期还是往后放**？
+   （不迁移也能跑，只是内部键仍是名字，将来改名/多应用仍可正常工作。）
+4. 门户首批要预留的"应用"除了 Agent / Games，还想先挂哪些？（如：额度卡、MC 状态卡、文件柜…）
+   新增应用按 §7.5 注册即可，不用改前端。
+
+> 已定：目录划分（§3）、账号从 Agent 抽离（§2/§5）、门户扩展点机制（§7.5）、
+> 游戏先做骨架（§8）；积分/排行榜/反作弊**待游戏类型确定后再定**。
 
 ---
 

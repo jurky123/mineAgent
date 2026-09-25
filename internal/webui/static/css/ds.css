@@ -23,12 +23,14 @@ body.ds a { color: inherit; }
   border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: .1px; text-decoration: none; font-size: 15px; }
-.brand-dot { width: 17px; height: 17px; border-radius: 6px; background: linear-gradient(135deg, var(--brand), #7c3aed); }
+.brand-logo { width: 22px; height: 22px; border-radius: 7px; }
 .nav { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
 .nav-item {
+  display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 11px; border-radius: 8px; text-decoration: none;
   color: var(--text-secondary); font-size: 14px; transition: background .12s, color .12s;
 }
+.nav-item .i { opacity: .85; }
 .nav-item:hover { background: var(--surface-muted); color: var(--text); }
 .nav-item.on { color: var(--brand); background: var(--brand-soft); }
 .spacer { flex: 1; }
@@ -47,6 +49,8 @@ body.ds a { color: inherit; }
   font-size: 13px; font-weight: 650; text-transform: uppercase;
 }
 .avatar.lg { width: 56px; height: 56px; font-size: 24px; }
+.game-icon-img { width: 22px; height: 22px; }
+.game-icon .i { width: 19px; height: 19px; }
 
 /* ---------- 弹出菜单 / 选择器 ---------- */
 .pop-wrap { position: relative; }
@@ -93,8 +97,9 @@ body.ds a { color: inherit; }
   border-radius: var(--radius-card); box-shadow: var(--shadow-card);
 }
 .section { margin: 34px 0 0; }
-.section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
-.section-title { font-size: 17px; font-weight: 650; margin: 0; }
+.section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.section-title { display: inline-flex; align-items: center; gap: 7px; font-size: 17px; font-weight: 650; margin: 0; }
+.section-title .i { color: var(--text-tertiary); }
 .section-sub { color: var(--text-tertiary); font-size: 13px; }
 .divider { height: 1px; background: var(--border); border: 0; margin: 0; }
 

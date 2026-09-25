@@ -1,7 +1,7 @@
 // chess.js — 国际象棋：大厅（没房间）→ 房间（等待 / 对局 / 终局），
 // 服务端权威 + SSE 同步。棋盘用 SVG 棋子（/static/<ver>/img/pieces/*.svg）。
 import { shell, boot, apiGet, apiPost } from './shell.js';
-import { h, icon, toast, confirmDialog, copyText } from './ds.js';
+import { h, icon, toast, confirmDialog, copyText, pieceImg } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -117,7 +117,9 @@ function renderInfo() {
   const mine = room.status === 'playing' && room.turn === room.you;
   if (room.status === 'waiting') {
     status.appendChild(h('span', null, '等待对手加入'));
-    const share = h('button', 'btn sm', '复制邀请链接');
+    const share = h('button', 'btn sm');
+    share.appendChild(icon('link'));
+    share.appendChild(h('span', null, '复制邀请链接'));
     share.onclick = () => copyText(shareLink(), '邀请链接已复制');
     status.appendChild(share);
   } else if (room.status === 'playing') {
@@ -135,7 +137,9 @@ function renderInfo() {
   }
 
   if (room.status === 'playing') {
-    const resign = h('button', 'btn danger sm', '认输');
+    const resign = h('button', 'btn danger sm');
+    resign.appendChild(icon('flag'));
+    resign.appendChild(h('span', null, '认输'));
     resign.onclick = async () => {
       const ok = await confirmDialog({ title: '确定认输？', body: '本局将判对手胜。', confirmText: '认输', danger: true });
       if (!ok) return;
@@ -146,7 +150,9 @@ function renderInfo() {
   }
   if (room.status === 'waiting' || room.status === 'finished') {
     if (room.status === 'finished') {
-      const again = h('button', 'btn primary cta', '再来一局');
+      const again = h('button', 'btn primary cta');
+      again.appendChild(icon('restart'));
+      again.appendChild(h('span', null, '再来一局'));
       again.onclick = async () => {
         await apiPost('/api/games/chess/leave');
         const res = await apiPost('/api/games/chess/rooms');
@@ -154,7 +160,9 @@ function renderInfo() {
       };
       actions.appendChild(again);
     }
-    const leave = h('button', 'btn sm', '离开房间');
+    const leave = h('button', 'btn sm');
+    leave.appendChild(icon('logout'));
+    leave.appendChild(h('span', null, '离开房间'));
     leave.onclick = () => leaveRoom();
     actions.appendChild(leave);
   }
@@ -171,7 +179,9 @@ function renderRoomInfo() {
   const head = h('div', 'side-head', '房间');
   box.appendChild(head);
   const codeRow = h('div', 'code-row');
-  const chip = h('button', 'room-code', room.id);
+  const chip = h('button', 'room-code');
+  chip.appendChild(h('span', null, room.id));
+  chip.appendChild(icon('copy', 'sm'));
   chip.title = '点击复制房间码';
   chip.onclick = () => copyText(room.id, '房间码已复制');
   codeRow.appendChild(chip);
@@ -186,7 +196,9 @@ function renderRoomInfo() {
     players.appendChild(line);
   }
   box.appendChild(players);
-  const copy = h('button', 'btn sm ghost', '复制邀请链接');
+  const copy = h('button', 'btn sm ghost');
+  copy.appendChild(icon('link'));
+  copy.appendChild(h('span', null, '复制邀请链接'));
   copy.onclick = () => copyText(shareLink(), '邀请链接已复制');
   box.appendChild(copy);
   box.appendChild(h('div', 'side-hint', '同一房间只允许两名玩家；刷新/断开重连不丢对局。'));
@@ -337,6 +349,8 @@ function demoRoom() {
 
 (async () => {
   document.getElementById('room-chip').hidden = true;
+  const lobbyPiece = document.getElementById('lobby-piece');
+  if (lobbyPiece) lobbyPiece.src = pieceImg('N').src;
   if (DEMO) {
     shell.user = { id: 1, name: 'jzk', admin: true };
     apply(demoRoom());

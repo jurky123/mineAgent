@@ -147,6 +147,11 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 | `/games` → `/games/chess` | Entertainment App | 游戏目录 → 国际象棋（大厅 → 房间 → 对局 三态） |
 | `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于 |
 
+**图标与品牌**：线性图标用 Lucide（ISC，内联在 `static/js/ds.js` 的 `ICON_PATHS`，34 个），
+品牌 mark / favicon 是自绘的 `static/img/logo.svg`（渐变方块 + 星光，`/favicon.ico` 也指向它），
+棋子是 Cburnett SVG（CC BY-SA 3.0，见 `static/img/pieces/NOTICE.txt`）；
+`/static/img/NOTICE.txt` 汇总了素材来源与许可。
+
 **交互与视觉**：浅灰页面 + 白色 surface + 极细边框 + 品牌蓝（`--brand: #0a84ff`）；
 组件遵循圆角体系（控件 10px / CTA 12px / 卡片 16px / 弹层 14-22px，只有 Tag 是胶囊）；
 公开的交互原语在 `static/css/ds.css` + `static/js/ds.js`（Button/IconButton/Card/Dialog/

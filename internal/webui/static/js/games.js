@@ -1,6 +1,6 @@
 // games.js — 游戏目录：只负责「发现游戏」，具体房间/对局在各自的游戏页里。
 import { shell, boot, apiGet } from './shell.js';
-import { h, icon } from './ds.js';
+import { h, icon, pieceImg } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -24,7 +24,7 @@ function catalogCard(game, status) {
   const card = h('article', 'card catalog-card');
   const head = h('div', 'catalog-head');
   const ic = h('span', 'game-icon');
-  ic.appendChild(icon('chess', 'lg'));
+  ic.appendChild(pieceImg('N', 'game-icon-img'));
   head.appendChild(ic);
   const t = h('div');
   t.appendChild(h('div', 'catalog-title', game.name));

@@ -1,0 +1,4 @@
+图标：
+- 线性图标来自 Lucide（https://lucide.dev，ISC 许可），经内联进 internal/webui/static/js/ds.js（未修改图形）。
+- 品牌 mark（logo.svg）为本项目自绘。
+- 棋子素材见 img/pieces/NOTICE.txt（Cburnett，CC BY-SA 3.0）。

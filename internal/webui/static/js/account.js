@@ -30,6 +30,21 @@ function deviceName(ua) {
   return br + ' · ' + os;
 }
 
+// 给静态分区标题补图标（账号/外观/安全/设备/游戏/关于）
+function decorateSections() {
+  const map = {
+    '账号': 'user', '外观': 'sun', '安全': 'shield', '设备': 'devices',
+    '游戏': 'gamepad', '关于': 'info',
+  };
+  document.querySelectorAll('.section-title').forEach((el) => {
+    const name = map[el.textContent.trim()];
+    if (!name) return;
+    el.innerHTML = '';
+    el.appendChild(icon(name, 'sm'));
+    el.appendChild(h('span', null, Object.keys(map).find((k) => map[k] === name)));
+  });
+}
+
 function renderHeader(u) {
   document.getElementById('acc-avatar').textContent = (u.name[0] || '?').toUpperCase();
   document.getElementById('acc-name').textContent = u.name;
@@ -184,6 +199,7 @@ document.getElementById('logout-row').onclick = () => logout();
   }
   await boot({ active: '/account' });
   if (!shell.user) return;
+  decorateSections();
   renderSecurity();
   renderThemeSeg();
   await reload();

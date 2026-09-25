@@ -14,6 +14,11 @@ export const shell = {
   apps: [],
 };
 
+// pageVersion 页面注入的版本号（静态资源带版本，避免缓存混用）。
+export function pageVersion() {
+  return (document.querySelector('meta[name=mineagent-version]') || {}).content || '';
+}
+
 // ---------- 主题（浅色 / 深色 / 跟随系统；和 Agent 页共用 mineagent.theme） ----------
 const MODES = [
   { id: 'system', label: '跟随系统', icon: 'monitor' },
@@ -129,7 +134,10 @@ function loginView() {
 
     const render = (showLast) => {
       box.innerHTML = '';
-      box.appendChild(h('div', 'login-mark'));
+      const lm = h('img', 'login-mark');
+      lm.src = '/static/' + pageVersion() + '/img/logo.svg';
+      lm.alt = '';
+      box.appendChild(lm);
       box.appendChild(h('h1', 'login-title', 'Mine'));
       if (showLast && lastName) {
         box.appendChild(h('p', 'login-sub', '欢迎回来'));
@@ -189,19 +197,24 @@ function paintTop(active) {
 
   const brand = h('a', 'brand');
   brand.href = '/';
-  brand.appendChild(h('span', 'brand-dot'));
+  const mark = h('img', 'brand-logo');
+  mark.src = '/static/' + pageVersion() + '/img/logo.svg';
+  mark.alt = '';
+  brand.appendChild(mark);
   brand.appendChild(h('span', null, 'Mine'));
   bar.appendChild(brand);
 
   const nav = h('nav', 'nav');
-  const mk = (label, path) => {
-    const a = h('a', 'nav-item' + (path === active ? ' on' : ''), label);
+  const mk = (label, path, iconName) => {
+    const a = h('a', 'nav-item' + (path === active ? ' on' : ''));
     a.href = path;
+    a.appendChild(icon(iconName));
+    a.appendChild(h('span', null, label));
     nav.appendChild(a);
   };
-  mk('首页', '/');
+  mk('首页', '/', 'home');
   for (const app of shell.apps) {
-    if (app.nav && app.path) mk(app.navLabel || app.name, app.path);
+    if (app.nav && app.path) mk(app.navLabel || app.name, app.path, app.icon || 'info');
   }
   bar.appendChild(nav);
   bar.appendChild(h('div', 'spacer'));

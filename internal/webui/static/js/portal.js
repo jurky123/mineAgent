@@ -1,6 +1,6 @@
 // portal.js —— 首页：Agent 一级入口 + MC 状态 + 游戏 + 最新动态（Bento 布局）。
 import { shell, boot, apiGet, fmtTime } from './shell.js';
-import { h, icon, toast, openDialog, confirmDialog } from './ds.js';
+import { h, icon, toast, openDialog, confirmDialog, pieceImg } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -26,7 +26,7 @@ function heroCard(app) {
   const card = h('article', 'card hero-card');
   const head = h('div', 'hero-head');
   const ic = h('span', 'hero-icon');
-  ic.appendChild(icon('sparkle', 'lg'));
+  ic.appendChild(icon(app.icon || 'sparkle', 'lg'));
   head.appendChild(ic);
   const headText = h('div');
   headText.appendChild(h('div', 'hero-title', c.title || 'MineAgent'));
@@ -66,6 +66,9 @@ function statusCard(app) {
   const c = app.card || {};
   const card = h('article', 'card status-card');
   const head = h('div', 'status-head');
+  const tile = h('span', 'app-icon-tile');
+  tile.appendChild(icon(app.icon || 'server', 'lg'));
+  head.appendChild(tile);
   const dot = h('span', 'status-dot' + (app.error ? ' off' : ' on'));
   head.appendChild(dot);
   head.appendChild(h('span', null, 'Minecraft'));
@@ -121,7 +124,7 @@ function gameCard(app) {
   const card = h('article', 'card game-card');
   const head = h('div', 'catalog-head');
   const ic = h('span', 'game-icon');
-  ic.appendChild(icon('chess', 'lg'));
+  ic.appendChild(pieceImg('N', 'game-icon-img'));
   head.appendChild(ic);
   const t = h('div');
   t.appendChild(h('div', 'game-title', c.name || app.name));
@@ -145,7 +148,10 @@ function feedSection(app) {
   const c = app.card || {};
   const sec = h('section', 'section');
   const head = h('div', 'section-head');
-  head.appendChild(h('h2', 'section-title', c.title || '最新动态'));
+  const st = h('h2', 'section-title');
+  st.appendChild(icon(app.icon || 'megaphone', 'sm'));
+  st.appendChild(h('span', null, c.title || '最新动态'));
+  head.appendChild(st);
   head.appendChild(h('div', 'spacer'));
   if (c.canEdit) {
     const publish = h('button', 'btn sm', '发布动态');

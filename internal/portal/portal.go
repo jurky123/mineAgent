@@ -75,6 +75,16 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/api/games", s.games)
 		mux.Handle("/api/games/", s.games)
 	}
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		b, err := webui.RenderPage("img/logo.svg")
+		if err != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(b)
+	})
 	mux.Handle("/api/", api)
 	mux.Handle("/static/", api)
 	mux.HandleFunc("/", s.handlePage)

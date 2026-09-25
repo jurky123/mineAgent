@@ -58,7 +58,16 @@ func (c *Channel) API() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
 	})
-	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		b, err := RenderPage("img/logo.svg")
+		if err != nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(b)
+	})
 	mux.HandleFunc("/api/logout", c.handleLogout)
 	mux.HandleFunc("/api/me", c.withAuth(c.handleMe))
 	mux.HandleFunc("/api/history", c.withAuth(c.handleHistory))

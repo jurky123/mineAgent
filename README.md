@@ -198,6 +198,9 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   SSE 实时同步，刷新/断线重连不丢对局；同时只在一个房间里（开新房或离开视为旧局认输）。
 - **大厅 / 对局**：`/games/chess` 自己管三态——没房间时是大厅（创建房间 / 输入房间码加入 /
   开放房间列表），进房间后是棋盘页（等待对手 → 对局 → 终局）。
+- **悔棋（需双方同意）**：点「悔棋」发出请求，对手在状态栏看到「同意 / 拒绝」；
+  同意则撤销你最近一手（及其后的对手回应，回到你重走），拒绝或 2 分钟超时则继续；
+  走出新的一步、认输或终局都会让请求自动作废。
 - **棋盘交互**：内置 Cburnett SVG 棋子（不依赖系统字体）、边线坐标、点击棋子 →
   服务端下发合法落点高亮 → 点击走子；上一手/被将军/选中/可吃子都有标记，
   黑白视角自动翻转；着法用标准代数记谱（SAN：`e4` `Nf3` `O-O` `exd5` `e8=Q+` `Qh4#`）
@@ -209,7 +212,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   2 小时无动作的对局会自动清理）。
 - **五子棋（`/games/gomoku`）**：15 路棋盘、黑先、横竖斜连成 5 子或以上即胜（自由规则，
   不做禁手/三三）；棋盘是简约白底发丝网格 + 圆子，最后一手有描边、获胜连线高亮；
-  棋盘满了算和棋。
+  棋盘满了算和棋。悔棋规则与象棋一致（两个游戏共用 `gameroom.js` 的请求/同意交互）。
 - **记录**：每局结束给双方各写一条 `game_runs`（胜/负/和 + 原因/颜色/回合数），
   只在"我的最近战绩"里展示；积分与排行榜模型仍未定，等游戏类型稳定后再设计。
 - **加新游戏**：`internal/games/<id>` 写规则 → `internal/games/match_<id>.go` 适配
@@ -223,6 +226,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `POST /api/games/<id>/rooms/join` `{room}` | 加入房间 |
 | `GET /api/games/<id>/room` | 我当前房间状态（含轮到我时的走法提示） |
 | `POST /api/games/<id>/move` | 走子：象棋 `{from,to,promotion?}`，五子棋 `{point:"h8"}` |
+| `POST /api/games/<id>/undo` `{action}` | 悔棋：`request`/`accept`/`decline`/`cancel`（需双方同意） |
 | `POST /api/games/<id>/resign`、`/leave` | 认输 / 离开 |
 | `GET /api/games/<id>/runs` | 我的最近战绩 |
 | `GET /api/games/events?token=` | SSE 房间事件（通用） |

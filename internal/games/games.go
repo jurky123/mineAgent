@@ -1,6 +1,7 @@
 // Package games 是门户的小游戏平台：注册表 + 房间管理 + HTTP API。
 //
-// v1 只有国际象棋（服务端权威规则见 internal/games/chess）。
+// 每个游戏 = 一份纯规则实现（internal/games/<id>）+ 一个 Match 适配器
+// （match_<id>.go，把规则翻译成房间需要的动作/视图）。
 // 房间在内存里（重启即清），一局结束把原始记录写进 game_runs（积分/排行榜模型未定）。
 package games
 
@@ -14,11 +15,35 @@ import (
 	"sync"
 	"time"
 
-	"mineagent/internal/games/chess"
 	"mineagent/internal/storage"
 )
 
-// Game 注册表条目（门户/大厅展示用）。
+var (
+	errBadMove     = fmt.Errorf("坐标非法")
+	errNotYourTurn = fmt.Errorf("还没轮到你走")
+)
+
+// Match 是一局棋的抽象：谁该走、走一步、给某一方的状态视图。
+// 实现见 match_chess.go / match_gomoku.go；规则细节在各游戏包里。
+type Match interface {
+	// Turn 当前该谁走："white" / "black"。
+	Turn() string
+	// Play 执行一步（调用方保证 side == Turn()）；payload 是前端的原始 JSON。
+	Play(side string, payload json.RawMessage) (PlayOutcome, error)
+	// Snapshot 某一方的视图（含该游戏的展示字段）；side 为空表示观战。
+	Snapshot(side string) map[string]any
+}
+
+// PlayOutcome 是一步走完的结果。
+type PlayOutcome struct {
+	Move   string // 记谱（展示用，如 e4 / Nf3 / h8）
+	Last   string // 最后一步的坐标（前端高亮用，如 e2e4 / h8）
+	Over   bool   // 是否终局
+	Winner string // "white"/"black"/"draw"（Over 时有效）
+	Reason string // checkmate/五连/认输…
+}
+
+// Game 注册表条目。
 type Game struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -26,24 +51,42 @@ type Game struct {
 	Icon    string `json:"icon"`
 	Path    string `json:"path"`
 	Enabled bool   `json:"enabled"`
-	Players int    `json:"players"` // 每局人数
+	Players int    `json:"players"`
+
+	FirstSide string       `json:"-"` // 房主执哪一方（象棋白先、五子棋黑先）
+	NewMatch  func() Match `json:"-"` // 新一局（函数字段不能进 JSON）
 }
 
 var registry = []Game{
-	{ID: "chess", Name: "国际象棋", Desc: "在线房间对战 · 服务端裁判", Icon: "♞", Path: "/games/chess", Enabled: true, Players: 2},
+	{
+		ID: "chess", Name: "国际象棋", Desc: "经典双人对战 · 服务端裁判", Icon: "chess-knight",
+		Path: "/games/chess", Enabled: true, Players: 2,
+		FirstSide: "white", NewMatch: func() Match { return newChessMatch() },
+	},
+	{
+		ID: "gomoku", Name: "五子棋", Desc: "15 路棋盘 · 先连五者胜", Icon: "gomoku",
+		Path: "/games/gomoku", Enabled: true, Players: 2,
+		FirstSide: "black", NewMatch: func() Match { return newGomokuMatch() },
+	},
 }
 
 // List 返回全部游戏（含未启用，前端展示"开发中"）。
 func List() []Game { return registry }
 
-// Enabled 某个游戏是否可用。
-func Enabled(id string) bool {
+// ByID 按 id 取游戏。
+func ByID(id string) (Game, bool) {
 	for _, g := range registry {
 		if g.ID == id {
-			return g.Enabled
+			return g, true
 		}
 	}
-	return false
+	return Game{}, false
+}
+
+// Enabled 某个游戏是否可用。
+func Enabled(id string) bool {
+	g, ok := ByID(id)
+	return ok && g.Enabled
 }
 
 // ---------- 房间 ----------
@@ -63,82 +106,69 @@ type Player struct {
 	Name string `json:"name"`
 }
 
-// Room 一局棋。White/Black 是玩家，Guest 为空表示还没人加入。
+// Room 一局棋（任意游戏）。Sides 是 "white"/"black" 两方，未就位为 nil。
 type Room struct {
-	ID      string
-	White   *Player
-	Black   *Player
-	Board   *chess.Board
-	Status  string
-	Result  string // white / black / draw / abort
-	Reason  string // checkmate / stalemate / resign / leave / abort
-	Moves   []string
-	Last    string
-	Started time.Time
-	Created time.Time
-	Updated time.Time
+	ID     string
+	GameID string
+	Sides  map[string]*Player
+	First  string // 先手方（房主）
+	Match  Match
+
+	Status   string
+	Result   string // white / black / draw
+	Reason   string
+	Moves    []string
+	LastMove string
+	Started  time.Time
+	Created  time.Time
+	Updated  time.Time
 }
 
 func (r *Room) players() []*Player {
 	out := make([]*Player, 0, 2)
-	if r.White != nil {
-		out = append(out, r.White)
-	}
-	if r.Black != nil {
-		out = append(out, r.Black)
+	for _, side := range []string{"white", "black"} {
+		if p := r.Sides[side]; p != nil {
+			out = append(out, p)
+		}
 	}
 	return out
 }
 
-func (r *Room) has(p *Player) bool {
-	return r.White != nil && r.White.ID == p.ID || r.Black != nil && r.Black.ID == p.ID
-}
-
-// colorOf 返回该玩家的颜色（"white"/"black"/""）。
-func (r *Room) colorOf(userID int64) string {
-	if r.White != nil && r.White.ID == userID {
-		return "white"
-	}
-	if r.Black != nil && r.Black.ID == userID {
-		return "black"
+// sideOf 返回该玩家执哪方（"" = 不在房间里）。
+func (r *Room) sideOf(userID int64) string {
+	for side, p := range r.Sides {
+		if p != nil && p.ID == userID {
+			return side
+		}
 	}
 	return ""
 }
 
-// Snapshot 给前端的房间状态（含"你的合法走法"，只在轮到你时下发）。
+// Snapshot 给前端的房间状态（游戏细节来自 Match.Snapshot）。
 func (r *Room) Snapshot(forUser int64) map[string]any {
+	side := r.sideOf(forUser)
 	m := map[string]any{
 		"id":        r.ID,
-		"game":      "chess",
+		"game":      r.GameID,
 		"status":    r.Status,
 		"result":    r.Result,
 		"reason":    r.Reason,
-		"pieces":    r.Board.Pieces(),
-		"turn":      r.Board.Turn.String(),
-		"inCheck":   r.Board.InCheck(r.Board.Turn),
-		"ply":       r.Board.Ply,
-		"lastMove":  r.Last,
+		"turn":      r.Match.Turn(),
 		"moves":     r.Moves,
+		"lastMove":  r.LastMove,
 		"startedAt": r.Started.UnixMilli(),
 		"players": map[string]any{
-			"white": playerJSON(r.White),
-			"black": playerJSON(r.Black),
+			"white": playerJSON(r.Sides["white"]),
+			"black": playerJSON(r.Sides["black"]),
 		},
-		"you": r.colorOf(forUser),
+		"you": side,
 	}
-	if r.Status == StatusPlaying && r.colorOf(forUser) != "" {
-		want := chess.White
-		if r.colorOf(forUser) == "black" {
-			want = chess.Black
-		}
-		if r.Board.Turn == want {
-			legal := r.Board.LegalMoves()
-			list := make([]string, 0, len(legal))
-			for _, mv := range legal {
-				list = append(list, mv.String())
-			}
-			m["legalMoves"] = list
-		}
+	for k, v := range r.Match.Snapshot(side) {
+		m[k] = v
+	}
+	// 约定：走法提示只在真正对局中下发（等待/终局没有"能走哪里"这回事）。
+	if r.Status != StatusPlaying {
+		delete(m, "legalMoves")
 	}
 	return m
 }
@@ -174,27 +204,33 @@ func NewManager(log *slog.Logger, store *storage.Store) *Manager {
 	return m
 }
 
-// Create 建房（房主执白，等待对手）。
-func (m *Manager) Create(p *Player) *Room {
+// Create 建房（房主执先手，等待对手）。
+func (m *Manager) Create(gameID string, p *Player) (*Room, error) {
+	g, ok := ByID(gameID)
+	if !ok || !g.Enabled {
+		return nil, fmt.Errorf("游戏不存在或未开放")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.detachLocked(p.ID) // 同时只在一个房间里
 	r := &Room{
 		ID:      m.newRoomIDLocked(),
-		White:   &Player{ID: p.ID, Name: p.Name},
-		Board:   chess.Start(),
+		GameID:  gameID,
+		Sides:   map[string]*Player{g.FirstSide: {ID: p.ID, Name: p.Name}},
+		First:   g.FirstSide,
+		Match:   g.NewMatch(),
 		Status:  StatusWaiting,
 		Created: time.Now(),
 		Updated: time.Now(),
 	}
 	m.rooms[r.ID] = r
 	m.byUser[p.ID] = r.ID
-	m.log.Info("chess room created", "room", r.ID, "host", p.Name)
+	m.log.Info("game room created", "game", gameID, "room", r.ID, "host", p.Name)
 	m.publishLocked(r)
-	return r
+	return r, nil
 }
 
-// Join 加入房间（执黑），返回错误原因。
+// Join 加入房间（执后手）。
 func (m *Manager) Join(p *Player, roomID string) (*Room, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -205,16 +241,20 @@ func (m *Manager) Join(p *Player, roomID string) (*Room, error) {
 	if r.Status != StatusWaiting {
 		return nil, fmt.Errorf("房间已在对局中")
 	}
-	if r.White != nil && r.White.ID == p.ID {
+	if host := r.Sides[r.First]; host != nil && host.ID == p.ID {
 		return nil, fmt.Errorf("这是你自己的房间")
 	}
+	other := "black"
+	if r.First == "black" {
+		other = "white"
+	}
 	m.detachLocked(p.ID)
-	r.Black = &Player{ID: p.ID, Name: p.Name}
+	r.Sides[other] = &Player{ID: p.ID, Name: p.Name}
 	r.Status = StatusPlaying
 	r.Started = time.Now()
 	r.Updated = time.Now()
 	m.byUser[p.ID] = r.ID
-	m.log.Info("chess room joined", "room", r.ID, "guest", p.Name)
+	m.log.Info("game room joined", "game", r.GameID, "room", r.ID, "guest", p.Name)
 	m.publishLocked(r)
 	return r, nil
 }
@@ -226,22 +266,26 @@ func (m *Manager) RoomOf(userID int64) *Room {
 	return m.rooms[m.byUser[userID]]
 }
 
-// OpenRooms 等待加入的房间列表（新→旧）。
-func (m *Manager) OpenRooms() []*Room {
+// OpenRooms 某游戏等待加入的房间（新→旧）；gameID 为空 = 全部。
+func (m *Manager) OpenRooms(gameID string) []*Room {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*Room
 	for _, r := range m.rooms {
-		if r.Status == StatusWaiting {
-			out = append(out, r)
+		if r.Status != StatusWaiting {
+			continue
 		}
+		if gameID != "" && r.GameID != gameID {
+			continue
+		}
+		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
 	return out
 }
 
-// Move 走一步（服务端校验）。
-func (m *Manager) Move(userID int64, from, to int, promo byte) error {
+// Move 走一步（服务端校验：轮次/合法性由 Match 负责）。
+func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := m.rooms[m.byUser[userID]]
@@ -251,24 +295,23 @@ func (m *Manager) Move(userID int64, from, to int, promo byte) error {
 	if r.Status != StatusPlaying {
 		return fmt.Errorf("对局还没开始或已结束")
 	}
-	want := chess.White
-	if r.colorOf(userID) == "black" {
-		want = chess.Black
-	}
-	if r.Board.Turn != want {
+	side := r.sideOf(userID)
+	if r.Match.Turn() != side {
 		return fmt.Errorf("还没轮到你走")
 	}
-	res, err := r.Board.Play(from, to, promo)
+	out, err := r.Match.Play(side, payload)
 	if err != nil {
 		return err
 	}
-	r.Moves = append(r.Moves, res.SAN)
-	r.Last = res.Move.String()
+	r.Moves = append(r.Moves, out.Move)
+	r.LastMove = out.Last
 	r.Updated = time.Now()
-	if res.Checkmate {
-		m.finishLocked(r, winnerColor(r.Board.Turn), "checkmate")
-	} else if res.Stalemate {
-		m.finishLocked(r, "draw", "stalemate")
+	if out.Over {
+		winner := out.Winner
+		if winner == "" {
+			winner = "draw"
+		}
+		m.finishLocked(r, winner, out.Reason)
 	} else {
 		m.publishLocked(r)
 	}
@@ -291,20 +334,20 @@ func (m *Manager) Resign(userID int64) error {
 		return fmt.Errorf("对局已结束")
 	}
 	other := "white"
-	if r.colorOf(userID) == "white" {
+	if r.sideOf(userID) == "white" {
 		other = "black"
 	}
 	m.finishLocked(r, other, "resign")
 	return nil
 }
 
-// Leave 离开：等待中解散房间；对局中算认输（对手还能看到终局棋盘）。
+// Leave 离开：等待中解散房间；对局中算认输（对手还能看到终局）。
 func (m *Manager) Leave(userID int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if r := m.rooms[m.byUser[userID]]; r != nil && r.Status == StatusPlaying {
 		other := "white"
-		if r.colorOf(userID) == "white" {
+		if r.sideOf(userID) == "white" {
 			other = "black"
 		}
 		m.finishLocked(r, other, "leave")
@@ -316,19 +359,12 @@ func (m *Manager) Leave(userID int64) {
 func (m *Manager) detachLocked(userID int64) {
 	if r := m.rooms[m.byUser[userID]]; r != nil && r.Status == StatusPlaying {
 		other := "white"
-		if r.colorOf(userID) == "white" {
+		if r.sideOf(userID) == "white" {
 			other = "black"
 		}
 		m.finishLocked(r, other, "leave")
 	}
 	m.leaveLocked(userID)
-}
-
-func winnerColor(turn chess.Color) string {
-	if turn == chess.White {
-		return "black" // 轮到的这方被将杀，对方赢
-	}
-	return "white"
 }
 
 // finishLocked 结束对局并落库（调用方持锁）。
@@ -342,35 +378,34 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 			continue
 		}
 		outcome := "draw"
-		if result == "draw" {
-			outcome = "draw"
-		} else if r.colorOf(p.ID) == result {
-			outcome = "win"
-		} else {
-			outcome = "lose"
+		if result != "draw" {
+			if r.sideOf(p.ID) == result {
+				outcome = "win"
+			} else {
+				outcome = "lose"
+			}
 		}
 		meta, _ := json.Marshal(map[string]any{
 			"room": r.ID, "reason": reason, "moves": len(r.Moves),
-			"color": r.colorOf(p.ID), "opponent": opponentName(r, p.ID),
+			"side": r.sideOf(p.ID), "opponent": opponentName(r, p.ID),
 		})
 		if _, err := m.store.AddGameRun(context.Background(), storage.GameRun{
-			UserID: p.ID, GameID: "chess", Result: outcome,
+			UserID: p.ID, GameID: r.GameID, Result: outcome,
 			DurationMS: r.Updated.Sub(r.Started).Milliseconds(),
 			Metadata:   string(meta), CreatedAt: time.Now().UnixMilli(),
 		}); err != nil {
-			m.log.Warn("save chess game run", "room", r.ID, "user", p.Name, "err", err)
+			m.log.Warn("save game run", "game", r.GameID, "room", r.ID, "user", p.Name, "err", err)
 		}
 	}
 	m.publishLocked(r)
-	m.log.Info("chess room finished", "room", r.ID, "result", result, "reason", reason, "moves", len(r.Moves))
+	m.log.Info("game room finished", "game", r.GameID, "room", r.ID, "result", result, "reason", reason, "moves", len(r.Moves))
 }
 
 func opponentName(r *Room, userID int64) string {
-	if r.White != nil && r.White.ID != userID {
-		return r.White.Name
-	}
-	if r.Black != nil && r.Black.ID != userID {
-		return r.Black.Name
+	for _, p := range r.players() {
+		if p.ID != userID {
+			return p.Name
+		}
 	}
 	return ""
 }
@@ -388,14 +423,13 @@ func (m *Manager) leaveLocked(userID int64) {
 	}
 	if r.Status == StatusWaiting {
 		delete(m.rooms, roomID)
-		m.log.Info("chess room closed", "room", roomID)
+		m.log.Info("game room closed", "game", r.GameID, "room", roomID)
 		return
 	}
-	if r.White != nil && r.White.ID == userID {
-		r.White = nil
-	}
-	if r.Black != nil && r.Black.ID == userID {
-		r.Black = nil
+	for side, p := range r.Sides {
+		if p != nil && p.ID == userID {
+			r.Sides[side] = nil
+		}
 	}
 }
 
@@ -492,7 +526,7 @@ func (m *Manager) clean() {
 				}
 			}
 			delete(m.rooms, id)
-			m.log.Info("chess room expired", "room", id, "status", r.Status)
+			m.log.Info("game room expired", "game", r.GameID, "room", id, "status", r.Status)
 		}
 	}
 }

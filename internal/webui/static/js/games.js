@@ -1,15 +1,15 @@
 // games.js — 游戏目录：只负责「发现游戏」，具体房间/对局在各自的游戏页里。
 import { shell, boot, apiGet } from './shell.js';
-import { h, icon, pieceImg } from './ds.js';
+import { h, icon, gameIcon } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
 
 // 每个游戏卡片的"额外状态"数据源（有就展示，没有就只显示简介）
-async function chessStatus() {
+async function gameStatus(gameId) {
   const [rooms, runs] = await Promise.all([
-    apiGet('/api/games/chess/rooms').catch(() => ({ rooms: [] })),
-    apiGet('/api/games/chess/runs?limit=50').catch(() => ({ runs: [] })),
+    apiGet('/api/games/' + gameId + '/rooms').catch(() => ({ rooms: [] })),
+    apiGet('/api/games/' + gameId + '/runs?limit=50').catch(() => ({ runs: [] })),
   ]);
   let wins = 0, losses = 0, draws = 0;
   for (const r of runs.runs || []) {
@@ -24,7 +24,7 @@ function catalogCard(game, status) {
   const card = h('article', 'card catalog-card');
   const head = h('div', 'catalog-head');
   const ic = h('span', 'game-icon');
-  ic.appendChild(pieceImg('N', 'game-icon-img'));
+  ic.appendChild(gameIcon(game.id, 'game-icon-img'));
   head.appendChild(ic);
   const t = h('div');
   t.appendChild(h('div', 'catalog-title', game.name));
@@ -53,6 +53,9 @@ function catalogCard(game, status) {
     document.getElementById('catalog').appendChild(
       catalogCard({ id: 'chess', name: '国际象棋', desc: '经典双人对战 · 在线房间', path: '/games/chess' },
         { openRooms: 2, wins: 3, losses: 1, draws: 0, total: 4 }));
+    document.getElementById('catalog').appendChild(
+      catalogCard({ id: 'gomoku', name: '五子棋', desc: '15 路棋盘 · 先连五者胜', path: '/games/gomoku' },
+        { openRooms: 0, wins: 0, losses: 0, draws: 0, total: 0 }));
     return;
   }
   await boot({ active: '/games' });
@@ -63,9 +66,7 @@ function catalogCard(game, status) {
     const list = (games || []).filter((g) => g.enabled);
     if (!list.length) { host.appendChild(h('div', 'card', '暂时还没有可玩的游戏')); return; }
     for (const g of list) {
-      let status = null;
-      if (g.id === 'chess') status = await chessStatus();
-      host.appendChild(catalogCard(g, status));
+      host.appendChild(catalogCard(g, await gameStatus(g.id)));
     }
   } catch (e) {
     host.appendChild(h('div', 'card', '加载失败：' + e.message));

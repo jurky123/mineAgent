@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"mineagent/internal/account"
-	"mineagent/internal/games/chess"
 	"mineagent/internal/storage"
 )
 
 // Authed 是门户的鉴权中间件签名（portal.requireUser）。
 type Authed func(func(w http.ResponseWriter, r *http.Request, u *storage.User)) http.HandlerFunc
 
-// API 是 /api/games/* 的处理器。auth 是门户的鉴权中间件（普通 JSON 接口用）；
-// SSE 因为 EventSource 带不了 header，单独用 account 校验 ?token=/cookie。
+// API 是 /api/games/* 的处理器（按游戏 id 分发，不针对某个具体游戏）。
+// auth 是门户的鉴权中间件（普通 JSON 接口用）；SSE 因为 EventSource 带不了 header，
+// 单独用 account 校验 ?token=/cookie。
 type API struct {
 	log  *slog.Logger
 	mgr  *Manager
@@ -33,40 +33,81 @@ func NewAPI(log *slog.Logger, mgr *Manager, acct *account.Service, auth Authed) 
 
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/games", a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) {
-		writeJSON(w, http.StatusOK, map[string]any{"games": List()})
-	}))
-	mux.HandleFunc("/api/games/chess/rooms", a.auth(a.handleRooms))
-	mux.HandleFunc("/api/games/chess/rooms/join", a.auth(a.handleJoin))
-	mux.HandleFunc("/api/games/chess/room", a.auth(a.handleRoom))
-	mux.HandleFunc("/api/games/chess/move", a.auth(a.handleMove))
-	mux.HandleFunc("/api/games/chess/resign", a.auth(a.handleResign))
-	mux.HandleFunc("/api/games/chess/leave", a.auth(a.handleLeave))
-	mux.HandleFunc("/api/games/chess/runs", a.auth(a.handleRuns))
-	mux.HandleFunc("/api/games/chess/events", a.handleEvents)
+	mux.HandleFunc("/api/games", a.auth(a.handleList))
+	mux.HandleFunc("/api/games/", a.handleDispatch) // /api/games/<id>/<action>
 	return mux
 }
 
-func (a *API) handleRooms(w http.ResponseWriter, r *http.Request, u *storage.User) {
+func (a *API) handleList(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	writeJSON(w, http.StatusOK, map[string]any{"games": List()})
+}
+
+// handleDispatch 解析 /api/games/<id>/<action...> 并把请求交给带鉴权的子处理器。
+func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/games/")
+	if rest == "events" { // 通用房间事件流（不分游戏）
+		a.handleEvents(w, r)
+		return
+	}
+	parts := strings.SplitN(rest, "/", 2)
+	id := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	if _, ok := ByID(id); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "游戏不存在"})
+		return
+	}
+	switch action {
+	case "rooms":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleRooms(w, r, u, id) })(w, r)
+	case "rooms/join":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleJoin(w, r, u, id) })(w, r)
+	case "room":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleRoom(w, r, u, id) })(w, r)
+	case "move":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleMove(w, r, u, id) })(w, r)
+	case "resign":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleResign(w, r, u, id) })(w, r)
+	case "leave":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleLeave(w, r, u, id) })(w, r)
+	case "runs":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleRuns(w, r, u, id) })(w, r)
+	default:
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "未知操作"})
+	}
+}
+
+func (a *API) handleRooms(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
 	switch r.Method {
 	case http.MethodGet:
-		list := a.mgr.OpenRooms()
+		list := a.mgr.OpenRooms(gameID)
 		out := make([]map[string]any, 0, len(list))
 		for _, room := range list {
+			host := room.Sides[room.First]
+			name := ""
+			if host != nil {
+				name = host.Name
+			}
 			out = append(out, map[string]any{
-				"id": room.ID, "host": room.White.Name, "createdAt": room.Created.UnixMilli(),
+				"id": room.ID, "host": name, "createdAt": room.Created.UnixMilli(),
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"rooms": out})
 	case http.MethodPost:
-		room := a.mgr.Create(&Player{ID: u.ID, Name: u.Username})
+		room, err := a.mgr.Create(gameID, &Player{ID: u.ID, Name: u.Username})
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 GET/POST"})
 	}
 }
 
-func (a *API) handleJoin(w http.ResponseWriter, r *http.Request, u *storage.User) {
+func (a *API) handleJoin(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
 		return
@@ -83,10 +124,37 @@ func (a *API) handleJoin(w http.ResponseWriter, r *http.Request, u *storage.User
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
+	if room.GameID != gameID {
+		// 加入了另一个游戏的房间：如实返回，让前端跳转
+		writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID), "redirect": "/games/" + room.GameID})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
 }
 
-func (a *API) handleRoom(w http.ResponseWriter, r *http.Request, u *storage.User) {
+func (a *API) handleRoom(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
+	room := a.mgr.RoomOf(u.ID)
+	if room == nil || room.GameID != gameID {
+		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+}
+
+func (a *API) handleMove(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<10))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "请求体读取失败"})
+		return
+	}
+	if err := a.mgr.Move(u.ID, json.RawMessage(body)); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
 	room := a.mgr.RoomOf(u.ID)
 	if room == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
@@ -95,39 +163,7 @@ func (a *API) handleRoom(w http.ResponseWriter, r *http.Request, u *storage.User
 	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
 }
 
-func (a *API) handleMove(w http.ResponseWriter, r *http.Request, u *storage.User) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
-		return
-	}
-	var req struct {
-		From      string `json:"from"`
-		To        string `json:"to"`
-		Promotion string `json:"promotion"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "参数不是合法 JSON"})
-		return
-	}
-	from, ok1 := chess.ParseSquare(strings.ToLower(req.From))
-	to, ok2 := chess.ParseSquare(strings.ToLower(req.To))
-	if !ok1 || !ok2 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "坐标非法"})
-		return
-	}
-	var promo byte
-	if len(req.Promotion) == 1 {
-		promo = strings.ToLower(req.Promotion)[0]
-	}
-	if err := a.mgr.Move(u.ID, from, to, promo); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
-		return
-	}
-	room := a.mgr.RoomOf(u.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
-}
-
-func (a *API) handleResign(w http.ResponseWriter, r *http.Request, u *storage.User) {
+func (a *API) handleResign(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
 		return
@@ -144,7 +180,7 @@ func (a *API) handleResign(w http.ResponseWriter, r *http.Request, u *storage.Us
 	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
 }
 
-func (a *API) handleLeave(w http.ResponseWriter, r *http.Request, u *storage.User) {
+func (a *API) handleLeave(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
 		return
@@ -153,9 +189,9 @@ func (a *API) handleLeave(w http.ResponseWriter, r *http.Request, u *storage.Use
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *API) handleRuns(w http.ResponseWriter, r *http.Request, u *storage.User) {
+func (a *API) handleRuns(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	list, err := a.mgr.store.ListGameRuns(r.Context(), u.ID, "chess", limit)
+	list, err := a.mgr.store.ListGameRuns(r.Context(), u.ID, gameID, limit)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return

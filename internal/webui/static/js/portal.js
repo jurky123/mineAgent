@@ -1,6 +1,6 @@
 // portal.js —— 首页：Agent 一级入口 + MC 状态 + 游戏 + 最新动态（Bento 布局）。
 import { shell, boot, apiGet, fmtTime } from './shell.js';
-import { h, icon, toast, openDialog, confirmDialog, pieceImg } from './ds.js';
+import { h, icon, toast, openDialog, confirmDialog, gameIcon } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -119,26 +119,25 @@ function statusCard(app) {
 }
 
 // ---------- 游戏卡 ----------
-function gameCard(app) {
-  const c = app.card || {};
+function gameCard(item) {
   const card = h('article', 'card game-card');
   const head = h('div', 'catalog-head');
   const ic = h('span', 'game-icon');
-  ic.appendChild(pieceImg('N', 'game-icon-img'));
+  ic.appendChild(gameIcon(item.id, 'game-icon-img'));
   head.appendChild(ic);
   const t = h('div');
-  t.appendChild(h('div', 'game-title', c.name || app.name));
-  const openRooms = c.openRooms || 0;
-  t.appendChild(h('div', 'game-desc', openRooms ? openRooms + ' 个开放房间' : '经典双人对战'));
+  t.appendChild(h('div', 'game-title', item.name));
+  const openRooms = item.openRooms || 0;
+  t.appendChild(h('div', 'game-desc', openRooms ? openRooms + ' 个开放房间' : (item.desc || '')));
   head.appendChild(t);
   card.appendChild(head);
   const stats = [];
-  if (c.wins) stats.push(c.wins + ' 胜');
-  if (c.losses) stats.push(c.losses + ' 负');
-  if (c.draws) stats.push(c.draws + ' 和');
+  if (item.wins) stats.push(item.wins + ' 胜');
+  if (item.losses) stats.push(item.losses + ' 负');
+  if (item.draws) stats.push(item.draws + ' 和');
   card.appendChild(h('div', 'game-stats', stats.length ? '最近战绩：' + stats.join(' · ') : '还没有对局记录'));
   const start = h('a', 'btn primary cta', openRooms ? '去加入' : '开始');
-  start.href = c.path || app.path || '/games/chess';
+  start.href = item.path || '/games';
   card.appendChild(start);
   return card;
 }
@@ -257,14 +256,21 @@ function paint(data) {
     if (status) top.appendChild(statusCard(status));
     host.appendChild(top);
   }
-  if (content.length) {
+  const games = [];
+  for (const app of content) {
+    for (const item of ((app.card && app.card.items) || [])) games.push(item);
+  }
+  if (games.length) {
     const sec = h('section', 'section');
     const head = h('div', 'section-head');
-    head.appendChild(h('h2', 'section-title', '游戏'));
+    const st = h('h2', 'section-title');
+    st.appendChild(icon('gamepad', 'sm'));
+    st.appendChild(h('span', null, '游戏'));
+    head.appendChild(st);
     host.appendChild(sec);
     sec.appendChild(head);
     const grid = h('div', 'game-grid');
-    for (const app of content) grid.appendChild(gameCard(app));
+    for (const item of games) grid.appendChild(gameCard(item));
     sec.appendChild(grid);
   }
   for (const app of feed) host.appendChild(feedSection(app));
@@ -288,9 +294,10 @@ function demoData() {
         tps: 19.98, weather: '晴天', period: '白天',
         details: [{ label: '内存', value: '1234 / 4096 MB' }, { label: '版本', value: '26.2' }, { label: 'TPS 5m/15m', value: '19.99 / 20.00' }],
       } },
-      { id: 'games', name: '游戏', path: '/games', role: 'content', card: {
-        type: 'game', game: 'chess', name: '国际象棋', path: '/games/chess', openRooms: 2, wins: 3, losses: 1, draws: 0,
-      } },
+      { id: 'games', name: '游戏', path: '/games', role: 'content', card: { type: 'games', items: [
+        { id: 'chess', name: '国际象棋', desc: '经典双人对战', path: '/games/chess', openRooms: 2, wins: 3, losses: 1, draws: 0 },
+        { id: 'gomoku', name: '五子棋', desc: '15 路棋盘 · 先连五者胜', path: '/games/gomoku', openRooms: 0, wins: 0, losses: 1, draws: 0 },
+      ] } },
       { id: 'announcements', name: '最新动态', role: 'feed', card: {
         type: 'feed', title: '最新动态', canEdit: true, items: [
           { id: 2, text: '门户改版：首页变成个人 Hub，动态流取代了公告卡片。', author: 'jzk', createdAt: Date.now() - 3600e3 },

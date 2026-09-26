@@ -524,6 +524,7 @@ export default {
 | P1 门户壳 | ✅ 2026-09-25 | `internal/portal`（页面白名单路由、App 注册表、`/api/portal/apps`+`/home` 聚合、`/api/auth/*`、`/api/account/sessions`）、`static/{portal,account}/` + `shell.js`/`portal.js`/`account.js`/`portal.css` |
 | P1 公告栏 + MC 卡 | ✅ 2026-09-25 | `announcements` 表 + 管理员发布/删除；MC 状态卡经网关 `minecraft_server_status` |
 | P2 Games 骨架 + 首个游戏 | ✅ 2026-09-25 | **首个游戏改为国际象棋（用户拍板）**：`internal/games`（注册表 + 内存房间 + SSE + `/api/games/chess/*`）、`internal/games/chess` 服务端权威规则引擎（走子/将杀/逼和/易位/升变；v1 不含吃过路兵）、`/games` 大厅 + `/games/chess` 棋盘页、`game_runs` 原始记录 |
+| P2+ 第二个游戏 | ✅ 2026-09-26 | **五子棋**（用户选择）：通用棋室抽象（`games.Match` + 注册表 `FirstSide/NewMatch`，API 改为 `/api/games/<id>/*` 分发）、`internal/games/gomoku` 规则（15 路/黑先/连五/满盘和）、前端共享 `gameroom.js` |
 | P3 规则层 | ⏳ 待定 | 积分/排行榜/反作弊（§8.3）；chess 特殊规则补全（吃过路兵/50 回合/三次重复）可随时做 |
 | P4 可选 | ⏳ 待定 | PIN、深链接、MC 信息卡、嵌入挂件、更多应用 |
 

@@ -192,21 +192,30 @@ func mcStatusCard(gw *tools.Gateway) portal.CardFunc {
 	}
 }
 
-// gamesCard 首页内容区：开放房间 + 我的胜负。
+// gamesCard 首页内容区：每个游戏一张卡（开放房间 + 我的胜负）。
 func gamesCard(store *storage.Store, mgr *games.Manager) portal.CardFunc {
 	return func(ctx context.Context, u *storage.User) (any, error) {
-		out := map[string]any{
-			"type": "game", "game": "chess", "name": "国际象棋",
-			"path": "/games/chess", "openRooms": len(mgr.OpenRooms()),
-		}
-		if stats, err := store.GameStats(ctx, u.ID); err == nil {
-			for _, st := range stats {
-				if st.GameID == "chess" {
-					out["wins"], out["losses"], out["draws"] = st.Wins, st.Losses, st.Draws
-				}
+		stats := map[string]storage.GameStat{}
+		if list, err := store.GameStats(ctx, u.ID); err == nil {
+			for _, st := range list {
+				stats[st.GameID] = st
 			}
 		}
-		return out, nil
+		items := []map[string]any{}
+		for _, g := range games.List() {
+			if !g.Enabled {
+				continue
+			}
+			item := map[string]any{
+				"id": g.ID, "name": g.Name, "desc": g.Desc, "path": g.Path,
+				"openRooms": len(mgr.OpenRooms(g.ID)),
+			}
+			if st, ok := stats[g.ID]; ok {
+				item["wins"], item["losses"], item["draws"], item["total"] = st.Wins, st.Losses, st.Draws, st.Total
+			}
+			items = append(items, item)
+		}
+		return map[string]any{"type": "games", "items": items}, nil
 	}
 }
 

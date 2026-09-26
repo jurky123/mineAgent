@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mineagent-version" content="__VER__">
+<link rel="icon" type="image/svg+xml" href="/static/__VER__/img/logo.svg">
+<title>五子棋 · Mine</title>
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/ds.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/games.css">
+</head>
+<body>
+<div id="shell-top"></div>
+
+<main class="wrap chess-wrap">
+  <nav class="crumb">
+    <a class="crumb-link" href="/games">
+      <svg viewBox="0 0 24 24" class="i sm" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+      游戏大厅
+    </a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-title">五子棋</span>
+    <span class="spacer"></span>
+    <button class="room-chip" id="room-chip" hidden></button>
+  </nav>
+
+  <!-- 大厅（没在房间里） -->
+  <div id="lobby" hidden></div>
+
+  <!-- 房间里（等待 / 对局 / 终局） -->
+  <div id="room" class="room-layout" hidden>
+    <div class="board-col">
+      <div class="player-bar" id="top-player"></div>
+      <div class="gomoku-board" id="board"></div>
+      <div class="player-bar" id="bottom-player"></div>
+      <div class="status-bar" id="status">…</div>
+      <div class="chess-actions" id="actions"></div>
+    </div>
+    <aside class="chess-side">
+      <div class="card side-card" id="room-info"></div>
+      <div class="card side-card">
+        <div class="side-head">着法</div>
+        <div class="moves-table" id="moves"><div class="empty">暂无</div></div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<script type="module" src="/static/__VER__/js/gomoku.js"></script>
+</body>
+</html>

@@ -168,6 +168,21 @@ export function pieceSrc(base) {
   return '/static/' + ver + '/img/pieces/' + (dark ? 'w' : 'b') + base + '.svg';
 }
 
+// imgAsset 站点自带的图片资源（带版本号）
+export function imgAsset(name, cls) {
+  const ver = (document.querySelector('meta[name=mineagent-version]') || {}).content || '';
+  const img = h('img', cls || '');
+  img.src = '/static/' + ver + '/img/' + name;
+  img.alt = '';
+  return img;
+}
+
+// 游戏图标（棋类用棋子图，其它用站点图）
+export function gameIcon(gameId, cls) {
+  if (gameId === 'chess') return pieceImg('N', cls);
+  return imgAsset(gameId + '.svg', cls);
+}
+
 export function pieceImg(base, cls) {
   const img = h('img', cls || '');
   img.src = pieceSrc(base);

@@ -187,10 +187,12 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 - **MC 状态卡**：经网关调 `minecraft_server_status`，显示在线/TPS/内存/版本
 - **Agent 卡片**：显示会话数，点击进 `/agent`
 
-### 小游戏（国际象棋，`/games`）
+### 小游戏（`/games`：国际象棋、五子棋）
 
-`/games` 是游戏大厅：游戏列表、**创建房间**、输房间码加入、等待加入的房间列表、
-我的最近战绩。`/games/chess?room=ABC123` 这样带房间码的链接可以**直接分享给朋友自动加入**。
+`/games` 是游戏目录（每张卡显示开放房间数与最近战绩），点进各自游戏页：
+**国际象棋 `/games/chess`**、**五子棋 `/games/gomoku`**。两个游戏共用同一套房间机制
+（创建房间 / 输房间码加入 / 开放房间列表 / 访客邀请链接 `/games/<id>?room=ABC123` 自动加入），
+房间与大厅 UI 在 `static/js/gameroom.js` 里共用，服务端是通用棋室（`internal/games`）+ 各游戏规则包。
 
 - **在线房间对战**：房主执白，加入者执黑；服务端权威裁判（走法校验、将杀/逼和判定），
   SSE 实时同步，刷新/断线重连不丢对局；同时只在一个房间里（开新房或离开视为旧局认输）。
@@ -205,19 +207,25 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   （默认升后，可指定 q/r/b/n）；**暂不支持吃过路兵、50 回合/三次重复和棋**（后续再补）。
 - **房间在内存里**：`mineagent` 重启会清空未结束的房间（约 30 分钟无人的等待房间、
   2 小时无动作的对局会自动清理）。
+- **五子棋（`/games/gomoku`）**：15 路棋盘、黑先、横竖斜连成 5 子或以上即胜（自由规则，
+  不做禁手/三三）；棋盘是简约白底发丝网格 + 圆子，最后一手有描边、获胜连线高亮；
+  棋盘满了算和棋。
 - **记录**：每局结束给双方各写一条 `game_runs`（胜/负/和 + 原因/颜色/回合数），
   只在"我的最近战绩"里展示；积分与排行榜模型仍未定，等游戏类型稳定后再设计。
+- **加新游戏**：`internal/games/<id>` 写规则 → `internal/games/match_<id>.go` 适配
+  （Turn/Play/Snapshot）→ 在 `internal/games/games.go` 的注册表加一条 →
+  前端复制一份游戏页（用 `gameroom.js` 复用大厅/房间/SSE）。
 
 | 接口 | 说明 |
 |---|---|
 | `GET /api/games` | 游戏注册表 |
-| `GET/POST /api/games/chess/rooms` | 开放房间列表 / 创建房间 |
-| `POST /api/games/chess/rooms/join` `{room}` | 加入房间 |
-| `GET /api/games/chess/room` | 我当前房间状态（含轮到我时的合法走法） |
-| `POST /api/games/chess/move` `{from,to,promotion?}` | 走子（坐标记法 e2e4） |
-| `POST /api/games/chess/resign`、`/leave` | 认输 / 离开 |
-| `GET /api/games/chess/runs` | 我的最近战绩 |
-| `GET /api/games/chess/events?token=` | SSE 房间事件 |
+| `GET/POST /api/games/<id>/rooms` | 开放房间列表 / 创建房间 |
+| `POST /api/games/<id>/rooms/join` `{room}` | 加入房间 |
+| `GET /api/games/<id>/room` | 我当前房间状态（含轮到我时的走法提示） |
+| `POST /api/games/<id>/move` | 走子：象棋 `{from,to,promotion?}`，五子棋 `{point:"h8"}` |
+| `POST /api/games/<id>/resign`、`/leave` | 认输 / 离开 |
+| `GET /api/games/<id>/runs` | 我的最近战绩 |
+| `GET /api/games/events?token=` | SSE 房间事件（通用） |
 
 ### 聊天页（`/agent`）
 

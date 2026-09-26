@@ -98,3 +98,39 @@ html[data-theme="dark"] .sq.dark { background: #45403a; }
 @media (min-width: 901px) {
   .wrap.chess-wrap { max-width: 66rem; }
 }
+
+/* ---------- 五子棋棋盘（简约：白底 + 发丝网格 + 圆子） ---------- */
+.gomoku-board {
+  width: 100%; max-width: var(--board-max); aspect-ratio: 1 / 1;
+  display: grid; grid-template-columns: repeat(var(--gomoku-size, 15), 1fr);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-card);
+}
+.gcell {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; padding: 0; cursor: pointer; border-radius: 0;
+}
+.gcell::after {
+  content: ''; position: absolute; inset: 0;
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  pointer-events: none;
+}
+.gcell:nth-child(15n)::after { border-right: 0; }
+.gcell:nth-last-child(-n+15)::after { border-bottom: 0; }
+.gcell:hover { background: var(--surface-muted); }
+.stone {
+  width: 84%; height: 84%; border-radius: 50%; position: relative; z-index: 1;
+}
+.stone.b { background: radial-gradient(circle at 32% 28%, #4c4c55, #16161a 72%); }
+.stone.w { background: radial-gradient(circle at 32% 28%, #ffffff, #dcdce1 78%); box-shadow: inset 0 0 0 1px #c9c9cf; }
+.gcell.last::before {
+  content: ''; position: absolute; inset: 10%; border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--brand); z-index: 2;
+}
+.gcell.win { background: var(--brand-soft); }
+.gcell.win .stone { box-shadow: 0 0 0 3px var(--brand); }
+
+/* 大厅游戏图标（棋类用棋子/石图） */
+.lobby-icon { width: 46px; height: 46px; border-radius: 14px; background: var(--brand-soft); display: inline-flex; align-items: center; justify-content: center; }
+.lobby-icon .lobby-piece { width: 26px; height: 26px; }
+.lobby-icon img { width: 26px; height: 26px; }

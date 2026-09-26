@@ -134,3 +134,11 @@ html[data-theme="dark"] .sq.dark { background: #45403a; }
 .lobby-icon { width: 46px; height: 46px; border-radius: 14px; background: var(--brand-soft); display: inline-flex; align-items: center; justify-content: center; }
 .lobby-icon .lobby-piece { width: 26px; height: 26px; }
 .lobby-icon img { width: 26px; height: 26px; }
+
+/* 悔棋请求横幅（需双方同意） */
+.undo-banner {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--brand-soft); color: var(--brand);
+  border-radius: 10px; padding: 5px 6px 5px 12px; font-size: 13.5px;
+}
+.undo-banner .btn { background: var(--surface); }

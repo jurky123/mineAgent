@@ -21,6 +21,7 @@ import (
 var (
 	errBadMove     = fmt.Errorf("坐标非法")
 	errNotYourTurn = fmt.Errorf("还没轮到你走")
+	errNoOwnMove   = fmt.Errorf("你还没走过棋，没有可悔的")
 )
 
 // Match 是一局棋的抽象：谁该走、走一步、给某一方的状态视图。
@@ -32,6 +33,10 @@ type Match interface {
 	Play(side string, payload json.RawMessage) (PlayOutcome, error)
 	// Snapshot 某一方的视图（含该游戏的展示字段）；side 为空表示观战。
 	Snapshot(side string) map[string]any
+	// CanUndo 只读校验：请求者是否有可悔的棋（没走过棋就不行）。
+	CanUndo(side string) error
+	// Undo 悔棋：撤销到请求者上一手之前（通常 1-2 步），返回剩余记谱与最后一步坐标。
+	Undo(side string) (moves []string, last string, err error)
 }
 
 // PlayOutcome 是一步走完的结果。
@@ -99,7 +104,18 @@ const (
 	waitingTTL  = 30 * time.Minute
 	playingTTL  = 2 * time.Hour
 	finishedTTL = 30 * time.Minute
+
+	// undoTTL 悔棋请求的有效期（超时视为自动放弃）。
+	undoTTL = 2 * time.Minute
 )
+
+// UndoReq 是一条待处理的悔棋请求（需要对手同意）。
+type UndoReq struct {
+	By string // 请求方 side
+	At time.Time
+}
+
+func (u *UndoReq) fresh(now time.Time) bool { return u != nil && now.Sub(u.At) < undoTTL }
 
 type Player struct {
 	ID   int64  `json:"id"`
@@ -119,6 +135,7 @@ type Room struct {
 	Reason   string
 	Moves    []string
 	LastMove string
+	UndoReq  *UndoReq
 	Started  time.Time
 	Created  time.Time
 	Updated  time.Time
@@ -154,6 +171,7 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 		"result":    r.Result,
 		"reason":    r.Reason,
 		"turn":      r.Match.Turn(),
+		"first":     r.First,
 		"moves":     r.Moves,
 		"lastMove":  r.LastMove,
 		"startedAt": r.Started.UnixMilli(),
@@ -169,6 +187,10 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 	// 约定：走法提示只在真正对局中下发（等待/终局没有"能走哪里"这回事）。
 	if r.Status != StatusPlaying {
 		delete(m, "legalMoves")
+	}
+	// 待处理的悔棋请求（超时的不下发）
+	if r.Status == StatusPlaying && r.UndoReq.fresh(time.Now()) {
+		m["undoReq"] = map[string]any{"by": r.UndoReq.By, "at": r.UndoReq.At.UnixMilli()}
 	}
 	return m
 }
@@ -305,6 +327,7 @@ func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 	}
 	r.Moves = append(r.Moves, out.Move)
 	r.LastMove = out.Last
+	r.UndoReq = nil // 走了新的一步，之前的悔棋请求作废
 	r.Updated = time.Now()
 	if out.Over {
 		winner := out.Winner
@@ -313,6 +336,90 @@ func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 		}
 		m.finishLocked(r, winner, out.Reason)
 	} else {
+		m.publishLocked(r)
+	}
+	return nil
+}
+
+// UndoRequest 请求悔棋（等对手同意）。
+func (m *Manager) UndoRequest(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.Status != StatusPlaying {
+		return fmt.Errorf("对局还没开始或已结束")
+	}
+	side := r.sideOf(userID)
+	if side == "" {
+		return fmt.Errorf("你不在这个房间里")
+	}
+	if len(r.Moves) == 0 {
+		return fmt.Errorf("还没有可悔的棋")
+	}
+	if err := r.Match.CanUndo(side); err != nil {
+		return err // 例如"你还没走过棋"
+	}
+	if r.UndoReq != nil && r.UndoReq.fresh(time.Now()) && r.UndoReq.By == side {
+		return fmt.Errorf("已经发过请求了，等对手回应")
+	}
+	r.UndoReq = &UndoReq{By: side, At: time.Now()}
+	r.Updated = time.Now()
+	m.log.Info("undo requested", "game", r.GameID, "room", r.ID, "by", side)
+	m.publishLocked(r)
+	return nil
+}
+
+// UndoRespond 回应悔棋请求：只有对手能同意/拒绝；同意则回退棋局。
+func (m *Manager) UndoRespond(userID int64, accept bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.Status != StatusPlaying {
+		return fmt.Errorf("对局还没开始或已结束")
+	}
+	side := r.sideOf(userID)
+	if r.UndoReq == nil || !r.UndoReq.fresh(time.Now()) {
+		r.UndoReq = nil
+		return fmt.Errorf("没有待处理的悔棋请求")
+	}
+	if r.UndoReq.By == side {
+		return fmt.Errorf("这是你自己发的请求")
+	}
+	requester := r.UndoReq.By
+	r.UndoReq = nil
+	if accept {
+		moves, last, err := r.Match.Undo(requester)
+		if err != nil {
+			return err
+		}
+		r.Moves = moves
+		r.LastMove = last
+		m.log.Info("undo accepted", "game", r.GameID, "room", r.ID, "by", requester, "moves", len(moves))
+	} else {
+		m.log.Info("undo declined", "game", r.GameID, "room", r.ID, "by", requester)
+	}
+	r.Updated = time.Now()
+	m.publishLocked(r)
+	return nil
+}
+
+// UndoCancel 撤回自己的悔棋请求（请求方用）。
+func (m *Manager) UndoCancel(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.UndoReq != nil && r.UndoReq.By == r.sideOf(userID) {
+		r.UndoReq = nil
+		r.Updated = time.Now()
 		m.publishLocked(r)
 	}
 	return nil
@@ -337,6 +444,7 @@ func (m *Manager) Resign(userID int64) error {
 	if r.sideOf(userID) == "white" {
 		other = "black"
 	}
+	r.UndoReq = nil
 	m.finishLocked(r, other, "resign")
 	return nil
 }
@@ -372,6 +480,7 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 	r.Status = StatusFinished
 	r.Result = result
 	r.Reason = reason
+	r.UndoReq = nil
 	r.Updated = time.Now()
 	for _, p := range r.players() {
 		if p == nil || m.store == nil {

@@ -72,6 +72,8 @@ func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleResign(w, r, u, id) })(w, r)
 	case "leave":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleLeave(w, r, u, id) })(w, r)
+	case "undo":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleUndo(w, r, u, id) })(w, r)
 	case "runs":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleRuns(w, r, u, id) })(w, r)
 	default:
@@ -187,6 +189,45 @@ func (a *API) handleLeave(w http.ResponseWriter, r *http.Request, u *storage.Use
 	}
 	a.mgr.Leave(u.ID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleUndo 悔棋（需双方同意）：request / accept / decline / cancel。
+func (a *API) handleUndo(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "参数不是合法 JSON"})
+		return
+	}
+	var err error
+	switch req.Action {
+	case "request":
+		err = a.mgr.UndoRequest(u.ID)
+	case "accept":
+		err = a.mgr.UndoRespond(u.ID, true)
+	case "decline":
+		err = a.mgr.UndoRespond(u.ID, false)
+	case "cancel":
+		err = a.mgr.UndoCancel(u.ID)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "action 只能是 request/accept/decline/cancel"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	room := a.mgr.RoomOf(u.ID)
+	if room == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
 }
 
 func (a *API) handleRuns(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {

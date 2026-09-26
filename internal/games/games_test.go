@@ -221,3 +221,140 @@ func TestOpenRoomsAndSnapshot(t *testing.T) {
 		t.Fatalf("黑方视角不对: %+v", snapB)
 	}
 }
+
+func TestUndoChessNeedsBothSides(t *testing.T) {
+	m := testManager(t)
+	r, _ := m.Create("chess", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	// 白先走 1.e4，黑回应 1...e5
+	playChess(t, m, 1, "e2e4")
+	playChess(t, m, 2, "e7e5")
+	// 白请求悔棋：撤销 e5 + e4，回到开局
+	if err := m.UndoRequest(1); err != nil {
+		t.Fatal(err)
+	}
+	// 请求方自己不能同意
+	if err := m.UndoRespond(1, true); err == nil {
+		t.Fatal("自己同意应报错")
+	}
+	// 请求中不能走棋（要等对手回应）
+	// 对手同意
+	if err := m.UndoRespond(2, true); err != nil {
+		t.Fatal(err)
+	}
+	got := m.RoomOf(1)
+	if len(got.Moves) != 0 || got.Match.Turn() != "white" {
+		t.Fatalf("悔棋后应回到开局: moves=%v turn=%s", got.Moves, got.Match.Turn())
+	}
+	if snap := got.Snapshot(1); snap["undoReq"] != nil {
+		t.Fatal("悔棋请求应已清除")
+	}
+	// 悔棋后可以重新走（白走 d2d4）
+	playChess(t, m, 1, "d2d4")
+	if n := len(m.RoomOf(1).Moves); n != 1 {
+		t.Fatalf("重新走一步后记谱应为 1，得到 %d", n)
+	}
+	// 黑还没走过棋（唯一一手已被悔掉）→ 不允许悔棋
+	if err := m.UndoRequest(2); err == nil {
+		t.Fatal("没走过棋时请求悔棋应报错")
+	}
+}
+
+func TestUndoDeclineAndNewMove(t *testing.T) {
+	m := testManager(t)
+	r, _ := m.Create("gomoku", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]string{"point": "h8"})
+	if err := m.Move(1, body); err != nil { // 黑 h8
+		t.Fatal(err)
+	}
+	// 黑请求悔棋
+	if err := m.UndoRequest(1); err != nil {
+		t.Fatal(err)
+	}
+	if snap := m.RoomOf(1).Snapshot(1); snap["undoReq"] == nil {
+		t.Fatal("应有待处理悔棋请求")
+	}
+	// 白拒绝：棋局不变
+	if err := m.UndoRespond(2, false); err != nil {
+		t.Fatal(err)
+	}
+	got := m.RoomOf(1)
+	if len(got.Moves) != 1 || got.Match.Turn() != "white" {
+		t.Fatalf("拒绝后不应变化: moves=%v turn=%s", got.Moves, got.Match.Turn())
+	}
+	// 请求后对手走了一步 → 请求作废
+	if err := m.UndoRequest(1); err != nil {
+		t.Fatal(err)
+	}
+	body2, _ := json.Marshal(map[string]string{"point": "a1"})
+	if err := m.Move(2, body2); err != nil { // 白 a1
+		t.Fatal(err)
+	}
+	if snap := m.RoomOf(1).Snapshot(1); snap["undoReq"] != nil {
+		t.Fatal("走了新的一步后悔棋请求应作废")
+	}
+	if err := m.UndoRespond(1, true); err == nil {
+		t.Fatal("没有待处理请求时应报错")
+	}
+}
+
+func TestUndoGomokuRemovesTwoPly(t *testing.T) {
+	m := testManager(t)
+	r, _ := m.Create("gomoku", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	drop := func(user int64, pt string) {
+		t.Helper()
+		b, _ := json.Marshal(map[string]string{"point": pt})
+		if err := m.Move(user, b); err != nil {
+			t.Fatalf("%s 落子失败: %v", pt, err)
+		}
+	}
+	drop(1, "h8") // 黑
+	drop(2, "a1") // 白
+	drop(1, "i8") // 黑：最后一步是黑自己的，悔棋只退这一手
+	if err := m.UndoRequest(1); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.UndoRespond(2, true); err != nil {
+		t.Fatal(err)
+	}
+	got := m.RoomOf(1)
+	if len(got.Moves) != 2 || got.Moves[0] != "h8" || got.Moves[1] != "a1" {
+		t.Fatalf("应退掉 i8 只剩 h8/a1: %v", got.Moves)
+	}
+	snap := got.Snapshot(1)
+	if snap["turn"] != "black" {
+		t.Fatalf("应轮到黑重走: %v", snap["turn"])
+	}
+	if snap["lastMove"] != "a1" {
+		t.Fatalf("最后一步应为 a1: %v", snap["lastMove"])
+	}
+	cells := snap["cells"].(string)
+	if cells[7*gomokuSize+8] != '.' || cells[0] != 'w' {
+		t.Fatalf("i8 应恢复为空且 a1 仍在: %q %q", cells[7*gomokuSize+8], cells[0])
+	}
+	// 白请求悔棋：最后一步是黑走的（对手），退 2 手（i8? 黑重下后为 j8 + a1 应都消失）
+	drop(1, "j8")
+	if err := m.UndoRequest(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.UndoRespond(1, true); err != nil {
+		t.Fatal(err)
+	}
+	got = m.RoomOf(2)
+	if len(got.Moves) != 1 || got.Moves[0] != "h8" {
+		t.Fatalf("白悔棋应退掉 j8 + a1 只剩 h8: %v", got.Moves)
+	}
+	if got.Snapshot(2)["turn"] != "white" {
+		t.Fatal("应轮到白重走")
+	}
+}
+
+const gomokuSize = 15

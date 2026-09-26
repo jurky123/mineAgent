@@ -31,6 +31,9 @@ export async function rematch(gameId) {
   await leaveRoom(gameId);
   return createRoom(gameId);
 }
+export async function undoAction(gameId, action) {
+  return await apiPost('/api/games/' + gameId + '/undo', { action });
+}
 export async function loadRoom(gameId) {
   const { room } = await apiGet('/api/games/' + gameId + '/room');
   return room && room.game === gameId ? room : null;
@@ -122,10 +125,32 @@ export function movesTable(el, moves) {
   if (lastEl) lastEl.scrollIntoView({ block: 'nearest' });
 }
 
-// 动作按钮：认输 / 离开 / 再来一局（onRoom 回调更新局面，返回大厅用 onExit）
+// 我（按先手方推算）已经走过几步——没走过就没什么可悔的。
+function ownMoveCount(room) {
+  const first = room.first || 'white';
+  const n = (room.moves || []).length;
+  return room.you === first ? Math.ceil(n / 2) : Math.floor(n / 2);
+}
+
+// 动作按钮：悔棋（需对方同意）/ 认输 / 离开 / 再来一局。
+// onRoom 更新局面；onExit 返回大厅。
 export function actionButtons(el, room, { onRoom, onExit }) {
   el.innerHTML = '';
   if (room.status === 'playing') {
+    const undo = h('button', 'btn sm');
+    undo.appendChild(icon('restart'));
+    undo.appendChild(h('span', null, '悔棋'));
+    undo.title = '请求悔棋（需要对方同意）';
+    undo.disabled = ownMoveCount(room) === 0 || !!room.undoReq;
+    undo.onclick = async () => {
+      try {
+        const res = await undoAction(room.game, 'request');
+        onRoom(res.room);
+        toast('已请求悔棋，等待对方同意');
+      } catch (e) { toast(e.message, { warn: true }); }
+    };
+    el.appendChild(undo);
+
     const resign = h('button', 'btn danger sm');
     resign.appendChild(icon('flag'));
     resign.appendChild(h('span', null, '认输'));
@@ -143,6 +168,30 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     again.appendChild(h('span', null, '再来一局'));
     again.onclick = async () => { onRoom(await rematch(room.game)); };
     el.appendChild(again);
+  }
+  if (room.undoReq) {
+    const banner = h('div', 'undo-banner');
+    if (room.undoReq.by === room.you) {
+      banner.appendChild(h('span', null, '已请求悔棋，等待对方同意…'));
+      const cancel = h('button', 'btn sm ghost', '撤回');
+      cancel.onclick = async () => {
+        try { const res = await undoAction(room.game, 'cancel'); onRoom(res.room); } catch (e) { toast(e.message, { warn: true }); }
+      };
+      banner.appendChild(cancel);
+    } else {
+      banner.appendChild(h('span', null, (SIDE_LABEL[room.undoReq.by] || '对方') + '请求悔棋'));
+      const ok = h('button', 'btn sm primary', '同意');
+      ok.onclick = async () => {
+        try { const res = await undoAction(room.game, 'accept'); onRoom(res.room); toast('已同意悔棋'); } catch (e) { toast(e.message, { warn: true }); }
+      };
+      const no = h('button', 'btn sm ghost', '拒绝');
+      no.onclick = async () => {
+        try { const res = await undoAction(room.game, 'decline'); onRoom(res.room); toast('已拒绝'); } catch (e) { toast(e.message, { warn: true }); }
+      };
+      banner.appendChild(ok);
+      banner.appendChild(no);
+    }
+    el.appendChild(banner);
   }
   if (room.status === 'waiting' || room.status === 'finished') {
     const leave = h('button', 'btn sm');

@@ -101,7 +101,37 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/", api)
 	mux.Handle("/static/", api)
 	mux.HandleFunc("/", s.handlePage)
-	return mux
+	return s.redirectHTTPS(mux)
+}
+
+// redirectHTTPS 把走 http 的域名页面请求 301 到 https（启用 web.domain 后生效）。
+// 例外：非 GET/HEAD（走 API 的 POST 不能被改语义）、/api/、/.well-known/（ACME）、
+// 以及 Host 不是本站域名的请求（比如直接访问 IP:8766）。
+func (s *Server) redirectHTTPS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.tlsDomain == "" || r.TLS != nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			next.ServeHTTP(w, r)
+			return
+		}
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/.well-known/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		host := r.Host
+		if i := strings.LastIndex(host, ":"); i > 0 && !strings.Contains(host[i:], "]") {
+			host = host[:i]
+		}
+		if !strings.EqualFold(host, s.tlsDomain) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		http.Redirect(w, r, "https://"+s.tlsDomain+r.URL.RequestURI(), http.StatusMovedPermanently)
+	})
 }
 
 // 页面白名单：URL -> 内嵌文件（相对 internal/webui/static）。

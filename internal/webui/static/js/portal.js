@@ -85,7 +85,7 @@ function statusCard(app) {
   }
   const players = c.players || [];
   card.appendChild(h('div', 'status-count',
-    players.length ? players.length + ' 人正在游戏' : '现在没人，服务器开着'));
+    players.length ? players.length + ' 人正在游戏' : '现在没人，服务器正在运行'));
   if (players.length) {
     const chips = h('div', 'player-chips');
     for (const name of players.slice(0, 8)) chips.appendChild(h('span', 'player-chip', name));

@@ -5,6 +5,7 @@
 import { h, icon, toast } from './ds.js';
 
 const TOKEN_KEY = 'mineagent.token';
+const LOGIN_SLOGAN = '欢迎━(*｀∀´*)ノ亻!';
 const NAME_KEY = 'mineagent.name';
 const LAST_KEY = 'mineagent.lastName';
 
@@ -140,7 +141,7 @@ function loginView() {
       box.appendChild(lm);
       box.appendChild(h('h1', 'login-title', 'Mine'));
       if (showLast && lastName) {
-        box.appendChild(h('p', 'login-sub', '欢迎回来'));
+        box.appendChild(h('p', 'login-sub', LOGIN_SLOGAN));
         const cont = h('button', 'btn primary cta login-go', '以 ' + lastName + ' 继续');
         cont.onclick = () => submit(lastName);
         box.appendChild(cont);
@@ -169,7 +170,7 @@ function loginView() {
 
 function paintForm(value, submit) {
   const frag = document.createDocumentFragment();
-  frag.appendChild(h('p', 'login-sub', '欢迎来到我们的空间'));
+  frag.appendChild(h('p', 'login-sub', LOGIN_SLOGAN));
   const field = h('div', 'field');
   const input = h('input', 'input login-input');
   input.id = 'login-name';

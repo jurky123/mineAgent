@@ -9,3 +9,6 @@ paper-plugin/build/
 .idea/
 *.iml
 /workspace/
+
+node_modules/
+/ui-preview/

@@ -5,7 +5,7 @@ import { h, icon, toast, gameIcon, copyText } from './ds.js';
 import * as room from './gameroom.js';
 
 const qs = new URLSearchParams(location.search);
-const DEMO = qs.get('ui') === '1';
+const DEMO = qs.get('ui') === '1' || qs.get('ui') === 'motion';
 const GAME = 'gomoku';
 
 let state = { room: null };
@@ -133,7 +133,12 @@ function paint() {
     chip.hidden = true;
     roomEl.hidden = true;
     lobbyEl.hidden = false;
-    room.lobby(lobbyEl, { gameId: GAME, onRoom: apply, iconEl: gameIcon(GAME, 'lobby-piece') });
+    room.lobby(lobbyEl, {
+      gameId: GAME, onRoom: apply, iconEl: gameIcon(GAME, 'lobby-piece'),
+      demoRooms: DEMO ? () => [{ id: 'GM5K2Q', host: '朋友的房间', createdAt: Date.now() - 132000 }] : undefined,
+      demoCreate: DEMO ? demoWaiting : undefined,
+      demoJoin: DEMO ? demoPlaying : undefined,
+    });
   }
 }
 
@@ -142,22 +147,85 @@ function apply(r) {
   paint();
 }
 
-function demoRoom() {
+// ---------- UI 预览模式（?ui=1&state=… / ?ui=motion）----------
+const UI_STATE = (qs.get('state') || 'playing').toLowerCase();
+const UI_MOTION = qs.get('ui') === 'motion';
+const DEMO_PLAYERS = { black: { id: 1, name: 'jzk' }, white: { id: 2, name: '朋友' } };
+
+function demoRoom(over) {
   const cells = new Array(225).fill('.');
-  cells[7 * 15 + 7] = 'b'; // h8
-  cells[7 * 15 + 8] = 'w'; // i8
-  cells[8 * 15 + 7] = 'b'; // h9
-  return {
+  return Object.assign({
     id: 'GM5K2Q', game: 'gomoku', status: 'playing', result: '', reason: '',
-    turn: 'black', size: 15, cells: cells.join(''), lastMove: 'h9', you: 'black',
-    players: { black: { id: 1, name: 'jzk' }, white: { id: 2, name: '朋友' } },
-    moves: ['h8', 'i8', 'h9'],
-  };
+    turn: 'black', size: 15, cells: cells.join(''), lastMove: '',
+    you: 'black', players: DEMO_PLAYERS, moves: [], first: 'black',
+  }, over || {});
+}
+function withStones(pts, over) {
+  const cells = new Array(225).fill('.');
+  let turn = 'b';
+  const moves = [];
+  for (const pt of pts) {
+    const col = pt.charCodeAt(0) - 97;
+    const row = parseInt(pt.slice(1), 10) - 1;
+    cells[row * 15 + col] = turn;
+    moves.push(pt);
+    turn = turn === 'b' ? 'w' : 'b';
+  }
+  return demoRoom(Object.assign({
+    cells: cells.join(''), turn, moves,
+    lastMove: pts.length ? pts[pts.length - 1] : '',
+  }, over || {}));
+}
+function demoWaiting() {
+  return demoRoom({ status: 'waiting', players: { black: { id: 1, name: 'jzk' }, white: null } });
+}
+function demoPlaying() { return withStones(['h8', 'h9', 'i8', 'i9', 'g8', 'j8']); }
+
+// 五连：黑 h8..l8 横向
+function demoWin() {
+  const pts = ['h8', 'h9', 'i8', 'i9', 'j8', 'j9', 'k8', 'k9', 'l8'];
+  const room = withStones(pts, { status: 'finished', result: 'black', reason: 'five' });
+  room.winLine = [7 * 15 + 7, 7 * 15 + 8, 7 * 15 + 9, 7 * 15 + 10, 7 * 15 + 11];
+  return room;
+}
+function demoUndoRequest() {
+  return Object.assign(demoPlaying(), { undoReq: { by: 'white', at: Date.now() } });
+}
+const DEMO_STATES = {
+  lobby: () => null,
+  waiting: demoWaiting,
+  playing: demoPlaying,
+  'finished-win': demoWin,
+  'undo-request': demoUndoRequest,
+};
+
+function runMotion() {
+  const timeline = [
+    [0, null],
+    [1000, demoWaiting()],
+    [2600, withStones(['h8'])],
+    [3800, withStones(['h8', 'h9'])],
+    [5200, withStones(['h8', 'h9', 'i8', 'i9'])],
+    [6600, withStones(['h8', 'h9', 'i8', 'i9', 'j8', 'j9'])],
+    [8200, demoUndoRequest()],
+    [10400, demoWin()],
+  ];
+  for (const [at, r] of timeline) {
+    setTimeout(() => {
+      document.querySelectorAll('.dialog-mask').forEach((el) => el.remove());
+      apply(r);
+    }, at);
+  }
 }
 
 (async () => {
   document.getElementById('room-chip').hidden = true;
-  if (DEMO) { apply(demoRoom()); return; }
+  if (DEMO) {
+    if (UI_MOTION) { apply(null); runMotion(); return; }
+    const build = DEMO_STATES[UI_STATE] || DEMO_STATES.playing;
+    apply(build());
+    return;
+  }
   const user = await boot({ active: '/games' });
   if (!user) return;
   const invite = (qs.get('room') || '').trim().toUpperCase();

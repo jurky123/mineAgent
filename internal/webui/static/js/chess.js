@@ -5,7 +5,7 @@ import { h, icon, toast, gameIcon, copyText } from './ds.js';
 import * as room from './gameroom.js';
 
 const qs = new URLSearchParams(location.search);
-const DEMO = qs.get('ui') === '1';
+const DEMO = qs.get('ui') === '1' || qs.get('ui') === 'motion';
 const GAME = 'chess';
 
 let state = { room: null, selected: null };
@@ -151,7 +151,12 @@ function paint() {
     chip.hidden = true;
     roomEl.hidden = true;
     lobbyEl.hidden = false;
-    room.lobby(lobbyEl, { gameId: GAME, onRoom: apply, iconEl: gameIcon(GAME, 'lobby-piece') });
+    room.lobby(lobbyEl, {
+      gameId: GAME, onRoom: apply, iconEl: gameIcon(GAME, 'lobby-piece'),
+      demoRooms: DEMO ? () => [{ id: 'AB3K9Q', host: '朋友的房间', createdAt: Date.now() - 132000 }] : undefined,
+      demoCreate: DEMO ? demoWaiting : undefined,
+      demoJoin: DEMO ? demoAfterE4E5 : undefined,
+    });
   }
 }
 
@@ -161,21 +166,120 @@ function apply(r) {
   paint();
 }
 
-// ---------- demo ----------
-function demoRoom() {
-  const rows = ['rnbqkbnr', 'pppppppp', '........', '........', '....P...', '........', 'PPPP.PPP', 'RNBQKBNR'];
-  return {
-    id: 'AB3K9Q', game: 'chess', status: 'playing', result: '', reason: '', turn: 'white', inCheck: false,
-    pieces: rows.join(''), lastMove: 'e2e4', you: 'white',
-    players: { white: { id: 1, name: 'jzk' }, black: { id: 2, name: '朋友' } },
-    legalMoves: ['g1f3', 'f1c4', 'd2d4', 'e4e5', 'b1c3'],
-    moves: ['e2e4'],
-  };
+// ---------- UI 预览模式（?ui=1&state=… / ?ui=motion）----------
+// 状态化假数据，供截图/录屏评审用；?ui=motion 会按时间线自动演示一遍。
+const UI_STATE = (qs.get('state') || 'playing').toLowerCase();
+const UI_MOTION = qs.get('ui') === 'motion';
+const START_PIECES = 'RNBQKBNRPPPPPPPP' + '.'.repeat(32) + 'pppppppprnbqkbnr';
+const OPENING_LEGAL = ['b1a3','b1c3','g1f3','g1h3','a2a3','b2b3','c2c3','d2d3','e2e3','f2f3','g2g3','h2h3','a2a4','b2b4','c2c4','d2d4','e2e4','f2f4','g2g4','h2h4'];
+
+// demoUci 在假数据里重演 UCI（与 history.js 的 applyUci 同逻辑）
+function demoUci(pieces, uci) {
+  const arr = pieces.split('');
+  const from = (uci.charCodeAt(1) - 49) * 8 + (uci.charCodeAt(0) - 97);
+  const to = (uci.charCodeAt(3) - 49) * 8 + (uci.charCodeAt(2) - 97);
+  const p = arr[from];
+  if (!p || p === '.') return pieces;
+  arr[from] = '.';
+  let piece = p;
+  if (uci.length === 5) piece = p === p.toUpperCase() ? uci[4].toUpperCase() : uci[4];
+  arr[to] = piece;
+  if ((p === 'K' || p === 'k') && Math.abs((to % 8) - (from % 8)) === 2) {
+    const rank = Math.floor(from / 8);
+    if (to % 8 === 6) { arr[rank * 8 + 5] = arr[rank * 8 + 7]; arr[rank * 8 + 7] = '.'; }
+    else { arr[rank * 8 + 3] = arr[rank * 8 + 0]; arr[rank * 8 + 0] = '.'; }
+  }
+  return arr.join('');
+}
+function demoPieces(moves) {
+  let p = START_PIECES;
+  for (const m of moves) p = demoUci(p, m);
+  return p;
+}
+
+const DEMO_PLAYERS = { white: { id: 1, name: 'jzk' }, black: { id: 2, name: '朋友' } };
+function demoRoom(over) {
+  return Object.assign({
+    id: 'AB3K9Q', game: 'chess', status: 'playing', result: '', reason: '',
+    turn: 'white', inCheck: false, pieces: START_PIECES, lastMove: '',
+    you: 'white', players: DEMO_PLAYERS, legalMoves: OPENING_LEGAL, moves: [], first: 'white',
+  }, over || {});
+}
+function demoWaiting() {
+  return demoRoom({ status: 'waiting', players: { white: { id: 1, name: 'jzk' }, black: null }, moves: [] });
+}
+function demoAfterE4() {
+  return demoRoom({ turn: 'black', pieces: demoPieces(['e2e4']), lastMove: 'e2e4', moves: ['e4'],
+    legalMoves: ['e7e5','e7e6','c7c5','g8f6','b8c6','d7d5'] });
+}
+function demoAfterE4E5() {
+  return demoRoom({ turn: 'white', pieces: demoPieces(['e2e4','e7e5']), lastMove: 'e7e5', moves: ['e4','e5'],
+    legalMoves: ['g1f3','f1c4','d2d4','b1c3'] });
+}
+function demoAfterNf3() {
+  return demoRoom({ turn: 'black', pieces: demoPieces(['e2e4','e7e5','g1f3']), lastMove: 'g1f3',
+    moves: ['e4','e5','Nf3'], legalMoves: ['b8c6','d7d6','g8f6'] });
+}
+function demoCheck() {
+  const rows = ['rnb1kbnr', 'pppp1ppp', '........', '....p...', '.......q', '.....P..', 'PPPPP.PP', 'RNBQKBNR'];
+  return demoRoom({ pieces: rows.join(''), inCheck: true, turn: 'white', lastMove: 'd8h4',
+    moves: ['f3','e5','g4','Qh4+'], legalMoves: ['g2g3', 'e1f2', 'g2g4'] });
+}
+function demoUndoRequest() {
+  return Object.assign(demoAfterE4E5(), { undoReq: { by: 'black', at: Date.now() } });
+}
+function demoSwapRequest() {
+  return Object.assign(demoAfterE4E5(), { swapReq: { by: 'black', at: Date.now() } });
+}
+function demoFinished(youWin) {
+  const rows = ['6k1', '5ppp', '........', '........', '........', '........', '........', 'R6K'];
+  return demoRoom({
+    status: 'finished', result: youWin ? 'white' : 'black', reason: 'checkmate',
+    pieces: youWin ? rows.join('') : demoPieces(['f2f3','e7e5','g2g4','d8h4']),
+    lastMove: youWin ? 'a1a8' : 'd8h4',
+    moves: youWin ? ['Ra8#'] : ['f3','e5','g4','Qh4#'],
+    legalMoves: undefined,
+  });
+}
+const DEMO_STATES = {
+  lobby: () => null,
+  waiting: demoWaiting,
+  playing: () => demoAfterE4E5(),
+  check: demoCheck,
+  'finished-win': () => demoFinished(true),
+  'finished-lose': () => demoFinished(false),
+  'undo-request': demoUndoRequest,
+  'swap-request': demoSwapRequest,
+};
+
+// motion：按时间线自动演示一遍（给录屏用，12 秒左右）
+function runMotion() {
+  const timeline = [
+    [0, null],
+    [1000, demoWaiting()],
+    [2600, demoRoom({ turn: 'white', pieces: START_PIECES, moves: [] })],
+    [4200, demoAfterE4()],
+    [5400, demoAfterE4E5()],
+    [7000, demoAfterNf3()],
+    [8400, demoUndoRequest()],
+    [10600, demoFinished(true)],
+  ];
+  for (const [at, r] of timeline) {
+    setTimeout(() => {
+      document.querySelectorAll('.dialog-mask').forEach((el) => el.remove());
+      apply(r);
+    }, at);
+  }
 }
 
 (async () => {
   document.getElementById('room-chip').hidden = true;
-  if (DEMO) { apply(demoRoom()); return; }
+  if (DEMO) {
+    if (UI_MOTION) { apply(null); runMotion(); return; }
+    const build = DEMO_STATES[UI_STATE] || DEMO_STATES.playing;
+    apply(build());
+    return;
+  }
   const user = await boot({ active: '/games' });
   if (!user) return;
   const invite = (qs.get('room') || '').trim().toUpperCase();

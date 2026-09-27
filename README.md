@@ -310,6 +310,30 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 `Authorization: Bearer <token>`（无 Cookie），`web.allowedOrigins` 可收紧来源。
 上传文件存在 `workspace/web-files/u<用户ID>/` 下，单文件默认 20MB（`web.maxUploadMB`）。
 
+## UI 预览 / 视觉回归（开发工具）
+
+`?ui=1` 不是"随手假数据"，而是固定的 **UI Preview Mode**：每个页面都能用 URL 指定状态，
+方便截图对比、做视觉回归。常用：
+
+```
+/?ui=1                          /games?ui=1                     /account?ui=1
+/games/chess?ui=1&state=lobby|waiting|playing|check|finished-win|finished-lose|undo-request|swap-request
+/games/gomoku?ui=1&state=lobby|waiting|playing|finished-win|undo-request
+/games/chess?ui=motion          # 自动演示一遍（大厅→等待→开局→落子→悔棋→终局），给录屏用
+```
+
+一键生成截图 + 动效视频（Playwright，仅开发依赖，不参与服务端构建/部署）：
+
+```bash
+npm install && npx playwright install chromium   # 一次性
+npm run ui-preview                               # 默认打 http://127.0.0.1:8877
+node scripts/ui-preview.mjs --base https://zkun.art --only shots
+```
+
+产出 `ui-preview/`：`desktop/`、`mobile/` 固定尺寸截图，`states/` 关键状态，
+`motion/full-flow.webm`（Portal→Games→棋局全流程）与 `motion/gomoku-flow.webm`。
+改完 CSS 重跑一遍即可前后对比。
+
 ## 微信的其它路线（备查）
 
 - **个人微信 ClawBot（官方 iLink 通道）**：代码已实现（`internal/wechat/`，

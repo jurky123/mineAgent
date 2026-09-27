@@ -250,7 +250,7 @@ function paintTop(active) {
 
   // 账户菜单
   const accWrap = h('div', 'pop-wrap');
-  const accBtn = h('button', 'icon-btn');
+  const accBtn = h('button', 'icon-btn account-btn');
   accBtn.title = shell.user ? shell.user.name : '登录';
   if (shell.user) accBtn.appendChild(h('span', 'avatar', (shell.user.name[0] || '?')));
   else accBtn.appendChild(icon('user'));

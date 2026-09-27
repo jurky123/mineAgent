@@ -336,7 +336,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
 }
 
 // 大厅：创建房间 / 输码加入 / 开放房间列表
-export function lobby(el, { gameId, onRoom, iconEl }) {
+export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJoin }) {
   el.innerHTML = '';
   const hero = h('div', 'lobby-hero');
   const tile = h('span', 'lobby-icon');
@@ -354,6 +354,7 @@ export function lobby(el, { gameId, onRoom, iconEl }) {
   createCard.appendChild(h('div', 'lobby-card-sub', '创建后把房间码或邀请链接发给朋友'));
   const create = h('button', 'btn primary cta', '创建房间');
   create.onclick = async () => {
+    if (demoCreate) { onRoom(demoCreate()); return; }
     try { onRoom(await createRoom(gameId)); } catch (e) { toast(e.message, { warn: true }); }
   };
   createCard.appendChild(create);
@@ -372,6 +373,7 @@ export function lobby(el, { gameId, onRoom, iconEl }) {
   const doJoin = async () => {
     const code = input.value.trim().toUpperCase();
     if (!code) { toast('先填房间码', { warn: true }); return; }
+    if (demoJoin) { onRoom(demoJoin()); return; }
     try {
       const res = await joinRoom(gameId, code);
       if (res.redirect && res.redirect !== '/games/' + gameId) { location.href = res.redirect; return; }
@@ -399,7 +401,7 @@ export function lobby(el, { gameId, onRoom, iconEl }) {
 
   const loadRooms = async () => {
     try {
-      const { rooms } = await apiGet('/api/games/' + gameId + '/rooms');
+      const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
       list.innerHTML = '';
       if (!rooms.length) { list.appendChild(h('div', 'empty', '还没有等待中的房间，创建一间等人来吧')); return; }
       for (const r of rooms) {
@@ -411,6 +413,7 @@ export function lobby(el, { gameId, onRoom, iconEl }) {
         item.appendChild(main);
         const b = h('button', 'btn sm', '加入');
         b.onclick = async () => {
+          if (demoJoin) { onRoom(demoJoin()); return; }
           try { onRoom((await joinRoom(gameId, r.id)).room); } catch (e) { toast(e.message, { warn: true }); }
         };
         item.appendChild(b);

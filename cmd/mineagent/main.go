@@ -283,8 +283,28 @@ func main() {
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
 		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
 		// 必须在 WithGames 之后取 Handler()——门户 mux 是构建时快照，早取就没有 games 路由。
+		httpHandler := portalSrv.Handler()
+		if cfg.Web.Domain != "" {
+			certDir := cfg.Web.CertDir
+			if certDir == "" {
+				certDir = filepath.Join(dataDir, "certs")
+			}
+			portalSrv.EnableTLS(cfg.Web.Domain, certDir, cfg.Web.ACMEEmail)
+			// 80 端口兼做 ACME HTTP-01 验证（/.well-known/acme-challenge/...）
+			httpHandler = portalSrv.HTTPHandlerForACME(httpHandler)
+			tlsAddr := cfg.Web.TLSListen
+			if tlsAddr == "" {
+				tlsAddr = "[::]:443"
+			}
+			go func() {
+				if err := portalSrv.ServeTLS(tlsAddr); err != nil {
+					log.Error("portal https stopped", "err", err)
+				}
+			}()
+			log.Info("portal https enabled", "domain", cfg.Web.Domain, "addr", tlsAddr, "certDir", certDir)
+		}
 		if wecomCh != nil {
-			wecomCh.WithFallback(portalSrv.Handler())
+			wecomCh.WithFallback(httpHandler)
 		}
 		go func() {
 			if err := portalSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {

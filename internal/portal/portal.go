@@ -17,6 +17,8 @@ import (
 	"mineagent/internal/games"
 	"mineagent/internal/storage"
 	"mineagent/internal/webui"
+
+	"golang.org/x/crypto/acme/autocert"
 )
 
 type Server struct {
@@ -27,6 +29,10 @@ type Server struct {
 	web   *webui.Channel
 	apps  []App
 	games http.Handler // 小游戏 API（main 注入，见 WithGames）
+
+	acme      *autocert.Manager // 启用 HTTPS 时才有
+	tlsDomain string
+	tlsSrv    *http.Server
 }
 
 func New(log *slog.Logger, cfg config.Config, store *storage.Store, acct *account.Service, web *webui.Channel) *Server {
@@ -52,7 +58,14 @@ func (s *Server) Start() error {
 	return s.web.ServeOn(s.cfg.Listen, s.Handler())
 }
 
-func (s *Server) Stop() { s.web.Stop() }
+func (s *Server) Stop() {
+	s.web.Stop()
+	if s.tlsSrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = s.tlsSrv.Shutdown(ctx)
+	}
+}
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -93,11 +106,11 @@ func (s *Server) Handler() http.Handler {
 
 // 页面白名单：URL -> 内嵌文件（相对 internal/webui/static）。
 var pages = map[string]string{
-	"/":        "portal/index.html",
-	"/agent":   "chat/index.html",
+	"/":                "portal/index.html",
+	"/agent":           "chat/index.html",
 	"/account":         "account/index.html",
 	"/account/history": "account/history/index.html",
-	"/games":   "games/index.html",
+	"/games":           "games/index.html",
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {

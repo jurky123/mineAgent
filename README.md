@@ -266,8 +266,12 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 
 ### 配置与接口
 
-0. **访问入口**：本机域名 `http://zkun.art/`（80 端口，与企微回调共用——`/wecom` 仍走回调，
-   其它路径转发给门户），也可以走 `http://<公网IP>:8766/`（DNS 只解析了 IPv4）。
+0. **访问入口**：`https://zkun.art/`（Let's Encrypt 证书由内置 autocert 自动签发/续期，
+   首次握手按需申请，缓存在 `<web.dataDir>/certs`）或 `http://zkun.art/`
+   （80 端口与企微回调共用——`/wecom` 仍走回调，其它路径转发给门户；80 同时服务 ACME 验证），
+   也可以走 `http://<公网IP>:8766/`。启用 HTTPS 只需在 `web.domain` 填域名。
+   ⚠️ 公网要能连：控制台防火墙需放行 TCP 80/443（来源 `0.0.0.0/0` 与 `::/0`）；
+   DNS 只有 A 记录时，IPv4 的 443 必须放行。
 1. **数据位置**：运行数据不在代码目录里——本机放在 `/home/ubuntu/mineagent-data/`
    （`mineagent.db` / `webui/` / `workspace/`，由 `config.json` 的 `storage.path`、
    `web.dataDir`、`workspace.root` 绝对路径指定；`scripts/deploy.sh` 的令牌也从这里读）。

@@ -147,6 +147,15 @@ type Web struct {
 	DataDir string `json:"dataDir"`
 	// Portal 开关：nil/true = `/` 是门户（聊天在 /agent）；false 回滚成 `/` 即聊天页。
 	Portal *bool `json:"portal"`
+	// 站点域名：设置后用 Let's Encrypt 自动给该域名签发/续期 HTTPS 证书
+	//（80 端口同时服务 ACME HTTP-01 验证；证书缓存在 certDir）。
+	Domain string `json:"domain"`
+	// HTTPS 监听地址，默认 [::]:443。
+	TLSListen string `json:"tlsListen"`
+	// ACME 证书缓存目录，默认 <dataDir>/certs。
+	CertDir string `json:"certDir"`
+	// ACME 账号邮箱（可选，Let's Encrypt 到期提醒用）。
+	ACMEEmail string `json:"acmeEmail"`
 	// 快捷指令（+ 菜单的"技能"）：点一下把 prompt 填进输入框。
 	// 留空用内置默认（见 DefaultSkills）。
 	Skills []Skill `json:"skills"`

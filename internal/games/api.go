@@ -42,11 +42,32 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request, u *storage.User
 	writeJSON(w, http.StatusOK, map[string]any{"games": List()})
 }
 
+// handleActive 运维用：未结束的房间（仅管理员，部署前检查用）。
+func (a *API) handleActive(w http.ResponseWriter, r *http.Request) {
+	u := a.acct.Current(r.Context(), tokenOf(r))
+	if u == nil || !u.IsAdmin {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "需要管理员权限"})
+		return
+	}
+	rooms := a.mgr.ActiveRooms()
+	playing := 0
+	for _, room := range rooms {
+		if room.Status == StatusPlaying {
+			playing++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rooms": rooms, "playing": playing})
+}
+
 // handleDispatch 解析 /api/games/<id>/<action...> 并把请求交给带鉴权的子处理器。
 func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/games/")
 	if rest == "events" { // 通用房间事件流（不分游戏）
 		a.handleEvents(w, r)
+		return
+	}
+	if rest == "active" { // 部署前检查：有没有进行中的对局
+		a.handleActive(w, r)
 		return
 	}
 	parts := strings.SplitN(rest, "/", 2)

@@ -306,6 +306,35 @@ func (m *Manager) OpenRooms(gameID string) []*Room {
 	return out
 }
 
+// ActiveRoom 是给运维看的房间摘要（部署前检查有没有人正在下棋）。
+type ActiveRoom struct {
+	ID      string `json:"id"`
+	Game    string `json:"game"`
+	Status  string `json:"status"`
+	Players int    `json:"players"`
+	Moves   int    `json:"moves"`
+	Updated int64  `json:"updatedAt"`
+}
+
+// ActiveRooms 返回全部未结束的房间（等待 + 对局中）。
+func (m *Manager) ActiveRooms() []ActiveRoom {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []ActiveRoom
+	for _, r := range m.rooms {
+		if r.Status == StatusFinished {
+			continue
+		}
+		out = append(out, ActiveRoom{
+			ID: r.ID, Game: r.GameID, Status: r.Status,
+			Players: len(r.players()), Moves: len(r.Moves),
+			Updated: r.Updated.UnixMilli(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
+	return out
+}
+
 // Move 走一步（服务端校验：轮次/合法性由 Match 负责）。
 func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 	m.mu.Lock()

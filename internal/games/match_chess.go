@@ -2,6 +2,7 @@ package games
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"mineagent/internal/games/chess"
@@ -118,6 +119,20 @@ func (m *chessMatch) Undo(side string) ([]string, []string, string, error) {
 		last = m.ucis[n-1]
 	}
 	return append([]string(nil), m.sans...), append([]string(nil), m.ucis...), last, nil
+}
+
+// PromptContext 给解说用：先后手、最近几手、FEN。
+func (m *chessMatch) PromptContext() string {
+	tail := m.sans
+	if len(tail) > 8 {
+		tail = tail[len(tail)-8:]
+	}
+	last := ""
+	if n := len(m.sans); n > 0 {
+		last = m.sans[n-1]
+	}
+	return fmt.Sprintf("国际象棋，共 %d 手，刚刚白/黑走了：%s\n最近几手：%s\n当前局面 FEN：%s",
+		len(m.sans), last, strings.Join(tail, " "), m.b.FEN())
 }
 
 func otherSide(side string) string {

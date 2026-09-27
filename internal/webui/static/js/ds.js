@@ -200,6 +200,30 @@ export function pieceImg(base, cls) {
   return img;
 }
 
+// ---------- 桌面通知 ----------
+// 页面在后台时才发（前台有 toast/flash 就够了）。权限由账号页开关触发申请。
+export function notifySupported() { return typeof Notification !== 'undefined'; }
+export function notifyEnabled() { return localStorage.getItem('mineagent.notify') === 'on'; }
+
+export async function setNotifyEnabled(on) {
+  if (!on) { localStorage.setItem('mineagent.notify', 'off'); return false; }
+  if (!notifySupported()) return false;
+  let perm = Notification.permission;
+  if (perm === 'default') perm = await Notification.requestPermission();
+  if (perm !== 'granted') { localStorage.setItem('mineagent.notify', 'off'); return false; }
+  localStorage.setItem('mineagent.notify', 'on');
+  return true;
+}
+
+export function notify(title, body, tag) {
+  if (!notifyEnabled() || !notifySupported() || Notification.permission !== 'granted') return;
+  if (!document.hidden) return;
+  try {
+    const ver = (document.querySelector('meta[name=mineagent-version]') || {}).content || '';
+    new Notification(title, { body, tag: tag || 'mine', icon: '/static/' + ver + '/img/icon-192.png' });
+  } catch (e) { /* 忽略 */ }
+}
+
 // ---------- Pending（异步按钮统一反馈）----------
 // 用法：withPending(btn, async () => { ... }) 自动 disabled + spinner + 防重复点击。
 export async function withPending(btn, fn) {

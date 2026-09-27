@@ -179,3 +179,6 @@
 .presence-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .14); }
 .presence .player-faces { margin-left: 2px; }
 .presence .face { width: 22px; height: 22px; font-size: 11px; margin-right: -7px; }
+
+/* 动态流：对局结果用一个小奖杯色点区分 */
+.feed-dot.game { background: #f59e0b; }

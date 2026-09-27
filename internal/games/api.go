@@ -101,6 +101,8 @@ func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleUndo(w, r, u, id) })(w, r)
 	case "swap":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleSwap(w, r, u, id) })(w, r)
+	case "comment":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleComment(w, r, u, id) })(w, r)
 	case "runs":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleRuns(w, r, u, id) })(w, r)
 	default:
@@ -298,6 +300,20 @@ func (a *API) handleSwap(w http.ResponseWriter, r *http.Request, u *storage.User
 	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
 }
 
+// handleComment 请求"最后一手"的 AI 解说（每个 ply 只生成一次）。
+func (a *API) handleComment(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
+		return
+	}
+	text, pending, err := a.mgr.RequestComment(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"comment": text, "pending": pending})
+}
+
 // handleHistory 我的对局历史（所有游戏，按 id 倒序分页）。
 func (a *API) handleHistory(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodGet {
@@ -359,7 +375,15 @@ func (a *API) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case data := <-ch:
-			fmt.Fprintf(w, "event: room\ndata: %s\n\n", data)
+			// 事件名按负载里的 type 走（room / comment），前端各自监听
+			ev := "room"
+			var head struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(data, &head) == nil && head.Type != "" {
+				ev = head.Type
+			}
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev, data)
 			flusher.Flush()
 		case <-ticker.C:
 			fmt.Fprint(w, ": ping\n\n")

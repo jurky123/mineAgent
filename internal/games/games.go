@@ -33,6 +33,8 @@ type Match interface {
 	Play(side string, payload json.RawMessage) (PlayOutcome, error)
 	// Snapshot 某一方的视图（含该游戏的展示字段）；side 为空表示观战。
 	Snapshot(side string) map[string]any
+	// PromptContext 给"AI 解说"的局面描述（现在的局面 + 刚刚这一步）。
+	PromptContext() string
 	// CanUndo 只读校验：请求者是否有可悔的棋（没走过棋就不行）。
 	CanUndo(side string) error
 	// Undo 悔棋：撤销到请求者上一手之前（通常 1-2 步），返回剩余记谱/原始着法与最后一步坐标。
@@ -139,9 +141,15 @@ type Room struct {
 	LastMove string
 	UndoReq  *UndoReq
 	SwapReq  *UndoReq // 换边请求（与悔棋同样的 2 分钟有效期）
-	Started  time.Time
-	Created  time.Time
-	Updated  time.Time
+
+	// 解说：ply -> 文案（ply = 第几手，从 1 开始）；commenting 防重复生成。
+	Comments   map[int]string
+	commenting map[int]bool
+	// CommentaryEnabled 服务端是否配置了解说模型（前端据此显示/隐藏解说面板）。
+	CommentaryEnabled bool
+	Started           time.Time
+	Created           time.Time
+	Updated           time.Time
 }
 
 func (r *Room) players() []*Player {
@@ -191,6 +199,11 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 	if r.Status != StatusPlaying {
 		delete(m, "legalMoves")
 	}
+	// 解说（ply -> 文案），便于刷新/重连后还能看到
+	m["commentary"] = r.CommentaryEnabled
+	if len(r.Comments) > 0 {
+		m["comments"] = r.Comments
+	}
 	// 待处理的悔棋 / 换边请求（超时的不下发）
 	if r.Status == StatusPlaying {
 		now := time.Now()
@@ -216,11 +229,12 @@ type Manager struct {
 	log   *slog.Logger
 	store *storage.Store
 
-	mu     sync.Mutex
-	rooms  map[string]*Room
-	byUser map[int64]string
-	subs   map[int64]map[chan []byte]struct{}
-	seq    int
+	mu          sync.Mutex
+	rooms       map[string]*Room
+	byUser      map[int64]string
+	subs        map[int64]map[chan []byte]struct{}
+	seq         int
+	commentator func(ctx context.Context, prompt string) (string, error)
 }
 
 func NewManager(log *slog.Logger, store *storage.Store) *Manager {
@@ -236,6 +250,91 @@ func NewManager(log *slog.Logger, store *storage.Store) *Manager {
 }
 
 // Create 建房（房主执先手，等待对手）。
+// commentator 由 main 注入（internal/commentary）；nil = 关闭解说。
+func (m *Manager) SetCommentator(fn func(ctx context.Context, prompt string) (string, error)) {
+	m.commentator = fn
+}
+
+func (m *Manager) CommentaryEnabled() bool { return m.commentator != nil }
+
+// RequestComment 为"最后一手"生成解说：已有就直接返回，正在生成返回 pending。
+func (m *Manager) RequestComment(ctx context.Context, userID int64) (text string, pending bool, err error) {
+	m.mu.Lock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		m.mu.Unlock()
+		return "", false, fmt.Errorf("你不在任何房间里")
+	}
+	if m.commentator == nil {
+		m.mu.Unlock()
+		return "", false, fmt.Errorf("解说未启用")
+	}
+	ply := len(r.Moves)
+	if ply == 0 {
+		m.mu.Unlock()
+		return "", false, fmt.Errorf("还没有可解说的棋")
+	}
+	if r.Comments == nil {
+		r.Comments = map[int]string{}
+	}
+	if r.commenting == nil {
+		r.commenting = map[int]bool{}
+	}
+	if v, ok := r.Comments[ply]; ok {
+		m.mu.Unlock()
+		return v, false, nil
+	}
+	if r.commenting[ply] {
+		m.mu.Unlock()
+		return "", true, nil
+	}
+	r.commenting[ply] = true
+	roomID := r.ID
+	prompt := r.Match.PromptContext()
+	side := r.sideOf(userID)
+	m.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 40*time.Second)
+	defer cancel()
+	comment, genErr := m.commentator(ctx, prompt)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r = m.rooms[roomID]
+	if r == nil {
+		return "", false, genErr
+	}
+	delete(r.commenting, ply)
+	if genErr != nil {
+		m.log.Warn("commentary failed", "game", r.GameID, "room", r.ID, "ply", ply, "err", genErr)
+		return "", false, genErr
+	}
+	r.Comments[ply] = comment
+	r.Updated = time.Now()
+	m.log.Info("commentary ready", "game", r.GameID, "room", r.ID, "ply", ply, "by", side)
+	m.publishEventLocked(r, map[string]any{"type": "comment", "ply": ply, "text": comment})
+	return comment, false, nil
+}
+
+// publishEventLocked 给房间里的玩家推一条自定义 SSE 事件（调用方持锁）。
+func (m *Manager) publishEventLocked(r *Room, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	for _, p := range r.players() {
+		if p == nil {
+			continue
+		}
+		for ch := range m.subs[p.ID] {
+			select {
+			case ch <- data:
+			default:
+			}
+		}
+	}
+}
+
 func (m *Manager) Create(gameID string, p *Player) (*Room, error) {
 	g, ok := ByID(gameID)
 	if !ok || !g.Enabled {
@@ -245,14 +344,15 @@ func (m *Manager) Create(gameID string, p *Player) (*Room, error) {
 	defer m.mu.Unlock()
 	m.detachLocked(p.ID) // 同时只在一个房间里
 	r := &Room{
-		ID:      m.newRoomIDLocked(),
-		GameID:  gameID,
-		Sides:   map[string]*Player{g.FirstSide: {ID: p.ID, Name: p.Name}},
-		First:   g.FirstSide,
-		Match:   g.NewMatch(),
-		Status:  StatusWaiting,
-		Created: time.Now(),
-		Updated: time.Now(),
+		ID:                m.newRoomIDLocked(),
+		GameID:            gameID,
+		Sides:             map[string]*Player{g.FirstSide: {ID: p.ID, Name: p.Name}},
+		First:             g.FirstSide,
+		Match:             g.NewMatch(),
+		Status:            StatusWaiting,
+		Created:           time.Now(),
+		Updated:           time.Now(),
+		CommentaryEnabled: m.commentator != nil,
 	}
 	m.rooms[r.ID] = r
 	m.byUser[p.ID] = r.ID
@@ -632,6 +732,7 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 			"side": r.sideOf(p.ID), "opponent": opponentName(r, p.ID),
 			"movelist": append([]string(nil), r.RawMoves...), // 回放用（象棋 UCI / 五子棋坐标）
 			"display":  append([]string(nil), r.Moves...),    // 展示用（SAN / 坐标）
+			"comments": cloneIntMap(r.Comments),              // AI 解说（回放页可显示）
 		})
 		if _, err := m.store.AddGameRun(context.Background(), storage.GameRun{
 			UserID: p.ID, GameID: r.GameID, Result: outcome,
@@ -643,6 +744,17 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 	}
 	m.publishLocked(r)
 	m.log.Info("game room finished", "game", r.GameID, "room", r.ID, "result", result, "reason", reason, "moves", len(r.Moves))
+}
+
+func cloneIntMap(in map[int]string) map[int]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[int]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func opponentName(r *Room, userID int64) string {

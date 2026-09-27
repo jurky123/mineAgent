@@ -2,6 +2,8 @@ package games
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
 	"mineagent/internal/games/gomoku"
 )
@@ -100,6 +102,35 @@ func (m *gomokuMatch) Undo(side string) ([]string, []string, string, error) {
 	}
 	raws := append([]string(nil), m.pts...)
 	return append([]string(nil), m.pts...), raws, last, nil
+}
+
+// PromptContext 给解说用：15x15 盘面（●黑 ○白 ·空）+ 刚刚落子。
+func (m *gomokuMatch) PromptContext() string {
+	var sb strings.Builder
+	sb.WriteString("五子棋（15 路，黑先，连五者胜）。盘面（●黑 ○白 ·空，行 1 在最下）：\n")
+	for row := gomoku.Size - 1; row >= 0; row-- {
+		for col := 0; col < gomoku.Size; col++ {
+			switch m.b.Cells[row*gomoku.Size+col] {
+			case gomoku.Black:
+				sb.WriteString("●")
+			case gomoku.White:
+				sb.WriteString("○")
+			default:
+				sb.WriteString("·")
+			}
+		}
+		sb.WriteByte('\n')
+	}
+	last := ""
+	if n := len(m.pts); n > 0 {
+		last = m.pts[n-1]
+	}
+	tail := m.pts
+	if len(tail) > 8 {
+		tail = tail[len(tail)-8:]
+	}
+	sb.WriteString("共 " + fmt.Sprint(len(m.pts)) + " 手，刚刚落子：" + last + "\n最近： " + strings.Join(tail, " "))
+	return sb.String()
 }
 
 func (m *gomokuMatch) Snapshot(side string) map[string]any {

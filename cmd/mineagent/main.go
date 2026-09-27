@@ -21,6 +21,7 @@ import (
 	"mineagent/internal/agent"
 	"mineagent/internal/aibot"
 	"mineagent/internal/channels/minecraft"
+	"mineagent/internal/commentary"
 	"mineagent/internal/config"
 	"mineagent/internal/games"
 	"mineagent/internal/portal"
@@ -279,6 +280,8 @@ func main() {
 
 		portalSrv = portal.New(log, cfg, store, acct, webCh)
 		gamesMgr := games.NewManager(log, store)
+		// AI 解说（每步点评）：用同一个模型网关，失败不影响对局
+		gamesMgr.SetCommentator(commentary.New(cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Name, log).Comment)
 		portalSrv.WithGames(games.NewAPI(log, gamesMgr, acct, portalSrv.Auth()).Handler())
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
 		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。

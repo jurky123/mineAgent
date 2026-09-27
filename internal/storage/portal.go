@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -453,6 +454,53 @@ func (s *Store) GameStats(ctx context.Context, userID int64) ([]GameStat, error)
 		case "draw":
 			out[i].Draws += n
 		}
+	}
+	return out, rows.Err()
+}
+
+// RecentGameHighlights 最近的对局结果（每个对局只取"胜者/和棋"一条，避免同一局出现两次）。
+type GameHighlight struct {
+	GameID    string `json:"gameId"`
+	Winner    string `json:"winner"`
+	Loser     string `json:"loser"`
+	Draw      bool   `json:"draw"`
+	Reason    string `json:"reason"`
+	Moves     int    `json:"moves"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+func (s *Store) RecentGameHighlights(ctx context.Context, limit int) ([]GameHighlight, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT r.game_id, r.result, r.metadata, r.created_at, u.username
+		 FROM game_runs r JOIN users u ON u.id = r.user_id
+		 WHERE r.result <> 'lose'
+		   AND CAST(COALESCE(json_extract(r.metadata, '$.moves'), 0) AS INTEGER) >= 2
+		 ORDER BY r.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GameHighlight
+	for rows.Next() {
+		var gameID, result, meta, name string
+		var at int64
+		if err := rows.Scan(&gameID, &result, &meta, &at, &name); err != nil {
+			return nil, err
+		}
+		var m struct {
+			Opponent string `json:"opponent"`
+			Reason   string `json:"reason"`
+			Moves    int    `json:"moves"`
+		}
+		_ = json.Unmarshal([]byte(meta), &m)
+		h := GameHighlight{GameID: gameID, Winner: name, Loser: m.Opponent, Reason: m.Reason, Moves: m.Moves, CreatedAt: at}
+		if result == "draw" {
+			h.Draw = true
+		}
+		out = append(out, h)
 	}
 	return out, rows.Err()
 }

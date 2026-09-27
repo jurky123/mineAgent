@@ -292,3 +292,11 @@ body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; 
   0% { opacity: .85; transform: translate(0, 0) scale(1); }
   100% { opacity: 0; transform: translate(calc(var(--dx) * 90px), calc(var(--dy) * 60px)) scale(.4); }
 }
+
+/* ---------- AI 解说面板 ---------- */
+.commentary-toggle.on { color: var(--brand); }
+.commentary-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; width: 100%; }
+.commentary-row { display: flex; gap: 8px; font-size: 13.5px; line-height: 1.55; }
+.commentary-ply { color: var(--text-tertiary); font-variant-numeric: tabular-nums; flex: none; }
+.commentary-text { color: var(--text); }
+.commentary-row.pending .commentary-text { color: var(--text-tertiary); font-style: italic; }

@@ -1,7 +1,7 @@
 // gameroom.js — 棋类房间的公共部分（大厅 / 房间信息 / 着法 / SSE / 动作按钮）。
 // 国际象棋与五子棋共用；各游戏只负责自己的棋盘渲染与走子交互。
 import { shell, apiGet, apiPost } from './shell.js';
-import { h, icon, toast, confirmDialog, copyText, openDialog, withPending } from './ds.js';
+import { h, icon, toast, confirmDialog, copyText, openDialog, withPending, notify } from './ds.js';
 import { play } from './sfx.js';
 
 export const SIDE_LABEL = { white: '白方', black: '黑方' };
@@ -44,7 +44,7 @@ export function shareLink(room) {
 }
 
 // SSE：房间状态变化（EventSource 带不了 header，用 ?token=）
-export function connectRoomEvents({ gameId, onRoom }) {
+export function connectRoomEvents({ gameId, onRoom, onComment }) {
   const es = new EventSource('/api/games/events?token=' + encodeURIComponent(shell.token));
   let last = Date.now();
   es.addEventListener('room', (ev) => {
@@ -54,6 +54,13 @@ export function connectRoomEvents({ gameId, onRoom }) {
       if (!data || !data.room) return;
       if (gameId && data.room.game !== gameId) return;
       onRoom(data.room);
+    } catch (e) { /* 忽略坏帧 */ }
+  });
+  es.addEventListener('comment', (ev) => {
+    last = Date.now();
+    try {
+      const data = JSON.parse(ev.data);
+      if (data && data.ply && onComment) onComment(data.ply, data.text);
     } catch (e) { /* 忽略坏帧 */ }
   });
   es.onerror = () => {
@@ -177,15 +184,21 @@ function notePhase(room) {
   if (started) {
     toast('对局开始 · ' + (next.turn === room.you ? '你先手' : '等对方先走'));
     boardFlash(next.turn === room.you ? '你先手' : '对局开始');
+    notify('对局开始', next.turn === room.you ? '你先手' : '等对方先走', 'mine-game');
     return;
   }
   if (next.status === 'playing' && prev.turn !== next.turn && next.turn === room.you) {
     boardFlash(next.inCheck ? '将军！轮到你' : '轮到你', 1100);
     play(next.inCheck ? 'check' : 'yourTurn');
+    notify(next.inCheck ? '将军！轮到你' : '轮到你走', '（' + (SIDE_LABEL[room.you] || '') + '）', 'mine-turn');
   }
   if (prev.status !== 'finished' && next.status === 'finished') {
-    if (room.result === 'draw') play('yourTurn');
-    else play(room.result === room.you ? 'win' : 'lose');
+    if (room.result === 'draw') { play('yourTurn'); notify('对局结束', '和棋', 'mine-game'); }
+    else {
+      const win = room.result === room.you;
+      play(win ? 'win' : 'lose');
+      notify(win ? '你赢了' : '你输了', (room.result === 'white' ? '白方' : '黑方') + '胜 · ' + reasonLabel(room.reason), 'mine-game');
+    }
   }
 }
 
@@ -260,6 +273,68 @@ function requestBanner(el, room, kind, onRoom) {
   el.appendChild(banner);
 }
 
+// ---------- AI 解说 ----------
+// 每个用户自己开关（localStorage）；开启时每收到新的一手就请求解说，服务端每个 ply 只生成一次。
+export function commentaryOn() { return localStorage.getItem('mineagent.commentary') !== 'off'; }
+export function setCommentary(on) { localStorage.setItem('mineagent.commentary', on ? 'on' : 'off'); }
+
+let commentPendingPly = 0;
+const commentFailed = new Set();
+
+export function maybeRequestComment(room) {
+  if (!room || room.status !== 'playing' || !room.moves || !room.moves.length) return;
+  if (!commentaryOn()) return;
+  const ply = room.moves.length;
+  if ((room.comments && room.comments[ply]) || commentPendingPly === ply || commentFailed.has(ply)) return;
+  commentPendingPly = ply;
+  apiPost('/api/games/' + room.game + '/comment', {}).then((res) => {
+    if (res && res.comment) {
+      room.comments = Object.assign({}, room.comments, { [ply]: res.comment });
+      document.dispatchEvent(new CustomEvent('mine:comment', { detail: { ply, text: res.comment } }));
+    }
+  }).catch(() => {
+    commentFailed.add(ply);
+    if (room.comments && !room.comments[ply]) room.comments = Object.assign({}, room.comments, { [ply]: '' });
+    document.dispatchEvent(new CustomEvent('mine:comment', { detail: { ply, text: '' } }));
+  }).finally(() => { if (commentPendingPly === ply) commentPendingPly = 0; });
+}
+
+// 解说面板：一行一手，自动滚到最新
+export function commentaryPanel(el, room) {
+  el.innerHTML = '';
+  const head = h('div', 'side-head');
+  head.appendChild(h('span', null, 'AI 解说'));
+  const toggle = h('button', 'btn sm ghost commentary-toggle' + (commentaryOn() ? ' on' : ''), commentaryOn() ? '开' : '关');
+  toggle.title = '每一步让 AI 点评（同一个模型网关，失败不影响下棋）';
+  toggle.onclick = () => {
+    setCommentary(!commentaryOn());
+    commentaryPanel(el, room);
+    if (commentaryOn()) maybeRequestComment(room);
+  };
+  head.appendChild(toggle);
+  el.appendChild(head);
+  const list = h('div', 'commentary-list');
+  const comments = (room && room.comments) || {};
+  const count = (room && room.moves && room.moves.length) || 0;
+  if (!commentaryOn()) {
+    list.appendChild(h('div', 'empty', '解说已关闭（点右上"开"打开）'));
+  } else if (room && room.commentary === false) {
+    list.appendChild(h('div', 'empty', '服务端未配置解说模型'));
+  } else if (!count) {
+    list.appendChild(h('div', 'empty', '走第一步后开始解说'));
+  } else {
+    for (let ply = 1; ply <= count; ply++) {
+      const row = h('div', 'commentary-row' + (comments[ply] ? '' : ' pending'));
+      row.appendChild(h('span', 'commentary-ply', ply + '.'));
+      const text = comments[ply] !== undefined && comments[ply] !== '' ? comments[ply] : (commentFailed.has(ply) ? '解说暂不可用' : '解说生成中…');
+      row.appendChild(h('span', 'commentary-text', text));
+      list.appendChild(row);
+    }
+  }
+  el.appendChild(list);
+  list.scrollTop = list.scrollHeight;
+}
+
 // 动作按钮：悔棋 / 换边（对局中需对方同意）/ 认输 / 离开 / 再来一局。
 // onRoom 更新局面；onExit 返回大厅。
 // 终局浮层：棋盘结果的"最精致一次状态变化"（含轻微粒子）
@@ -301,6 +376,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
   el.innerHTML = '';
   notePhase(room);
   resultOverlay(room, onRoom);
+  if (room.status === 'playing') maybeRequestComment(room);
   maybeRequestModal(room, 'undo', onRoom);
   maybeRequestModal(room, 'swap', onRoom);
 

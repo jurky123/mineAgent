@@ -1,6 +1,6 @@
 // account.js — 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于。
 import { shell, boot, apiGet, apiPost, logout, themeMode, setTheme, applyTheme } from './shell.js';
-import { h, icon, toast, confirmDialog } from './ds.js';
+import { h, icon, toast, confirmDialog, notifyEnabled, setNotifyEnabled } from './ds.js';
 import { sfxEnabled, setSfxEnabled } from './sfx.js';
 
 const qs = new URLSearchParams(location.search);
@@ -172,6 +172,30 @@ async function reload() {
     renderStats(games);
   } catch (e) { /* 没有战绩就不显示 */ }
 }
+
+// 桌面通知开关（需要浏览器授权；默认关）
+(function bindNotifyToggle() {
+  const box = document.getElementById('acc-notify');
+  if (!box) return;
+  const paint = () => {
+    box.innerHTML = '';
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    for (const [val, label] of [[true, '开'], [false, '关']]) {
+      const b = document.createElement('button');
+      b.className = 'seg-item' + (notifyEnabled() === val ? ' on' : '');
+      b.textContent = label;
+      b.onclick = async () => {
+        const ok = await setNotifyEnabled(val);
+        if (val && !ok) toast('浏览器没有授权通知', { warn: true });
+        paint();
+      };
+      seg.appendChild(b);
+    }
+    box.appendChild(seg);
+  };
+  paint();
+})();
 
 // 游戏音效开关（A/B 之外最实用的设置；默认开）
 (function bindSfxToggle() {

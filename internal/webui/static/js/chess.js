@@ -150,6 +150,13 @@ function paint() {
     renderStatus();
     room.roomInfo(document.getElementById('room-info'), r);
     room.movesTable(document.getElementById('moves'), r.moves);
+    let com = document.getElementById('commentary');
+    if (!com) {
+      com = h('div', 'card side-card');
+      com.id = 'commentary';
+      document.querySelector('.chess-side').appendChild(com);
+    }
+    room.commentaryPanel(com, r);
     room.actionButtons(document.getElementById('actions'), r, {
       onRoom: apply,
       onExit: () => { state.room = null; paint(); },
@@ -221,7 +228,8 @@ function demoAfterE4() {
 }
 function demoAfterE4E5() {
   return demoRoom({ turn: 'white', pieces: demoPieces(['e2e4','e7e5']), lastMove: 'e7e5', moves: ['e4','e5'],
-    legalMoves: ['g1f3','f1c4','d2d4','b1c3'] });
+    legalMoves: ['g1f3','f1c4','d2d4','b1c3'],
+    comments: { 1: '抢下中心，最经典的起手。', 2: '对称回应，双方进入正常开局。' } });
 }
 function demoAfterNf3() {
   return demoRoom({ turn: 'black', pieces: demoPieces(['e2e4','e7e5','g1f3']), lastMove: 'g1f3',
@@ -305,5 +313,22 @@ function runMotion() {
   } else {
     paint();
   }
-  room.connectRoomEvents({ gameId: GAME, onRoom: apply });
+  room.connectRoomEvents({
+    gameId: GAME,
+    onRoom: apply,
+    onComment: (ply, text) => {
+      if (state.room) {
+        state.room.comments = Object.assign({}, state.room.comments, { [ply]: text });
+        paint();
+      }
+    },
+  });
+  // 解说异步返回：合并到当前房间再重绘（请求期间可能已经换过 snapshot 对象）
+  document.addEventListener('mine:comment', (e) => {
+    const d = e.detail || {};
+    if (state.room && d.ply) {
+      state.room.comments = Object.assign({}, state.room.comments, { [d.ply]: d.text });
+    }
+    paint();
+  });
 })();

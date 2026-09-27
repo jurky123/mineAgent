@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"mineagent/internal/games"
@@ -219,17 +220,58 @@ func gamesCard(store *storage.Store, mgr *games.Manager) portal.CardFunc {
 	}
 }
 
-// announcementsFeed 首页动态流：最新 3 条 + 管理员发布入口。
+// announcementsFeed 首页动态流：公告 + 最近对局结果（低噪音时间轴）。
 func announcementsFeed(store *storage.Store) portal.CardFunc {
+	gameName := map[string]string{"chess": "国际象棋", "gomoku": "五子棋"}
+	reasonName := map[string]string{
+		"checkmate": "将杀", "stalemate": "逼和", "resign": "认输", "leave": "对手离开",
+		"five": "五连", "full": "棋盘已满",
+	}
 	return func(ctx context.Context, u *storage.User) (any, error) {
-		list, err := store.ListAnnouncements(ctx, 3)
+		anns, err := store.ListAnnouncements(ctx, 4)
 		if err != nil {
 			return nil, err
 		}
-		items := make([]map[string]any, 0, len(list))
-		for _, a := range list {
+		games, err := store.RecentGameHighlights(ctx, 4)
+		if err != nil {
+			return nil, err
+		}
+		type item struct {
+			kind string
+			text string
+			meta string
+			at   int64
+			id   int64
+		}
+		all := make([]item, 0, len(anns)+len(games))
+		for _, a := range anns {
+			all = append(all, item{kind: "announce", text: a.Text, meta: a.Author, at: a.CreatedAt, id: a.ID})
+		}
+		for _, g := range games {
+			game := gameName[g.GameID]
+			if game == "" {
+				game = g.GameID
+			}
+			text := ""
+			if g.Draw {
+				text = game + "：" + g.Winner + " 与 " + g.Loser + " 和棋"
+			} else {
+				text = game + "：" + g.Winner + " 战胜了 " + g.Loser
+			}
+			meta := reasonName[g.Reason]
+			if g.Moves > 0 {
+				meta += " · " + fmt.Sprint(g.Moves) + " 手"
+			}
+			all = append(all, item{kind: "game", text: text, meta: meta, at: g.CreatedAt, id: 0})
+		}
+		sort.SliceStable(all, func(i, j int) bool { return all[i].at > all[j].at })
+		if len(all) > 5 {
+			all = all[:5]
+		}
+		items := make([]map[string]any, 0, len(all))
+		for _, it := range all {
 			items = append(items, map[string]any{
-				"id": a.ID, "text": a.Text, "author": a.Author, "createdAt": a.CreatedAt,
+				"id": it.id, "kind": it.kind, "text": it.text, "author": it.meta, "createdAt": it.at,
 			})
 		}
 		return map[string]any{

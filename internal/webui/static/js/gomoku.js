@@ -126,6 +126,13 @@ function paint() {
     renderStatus();
     room.roomInfo(document.getElementById('room-info'), r);
     room.movesTable(document.getElementById('moves'), r.moves);
+    let com = document.getElementById('commentary');
+    if (!com) {
+      com = h('div', 'card side-card');
+      com.id = 'commentary';
+      document.querySelector('.chess-side').appendChild(com);
+    }
+    room.commentaryPanel(com, r);
     room.actionButtons(document.getElementById('actions'), r, {
       onRoom: apply,
       onExit: () => { state.room = null; paint(); },
@@ -180,7 +187,11 @@ function withStones(pts, over) {
 function demoWaiting() {
   return demoRoom({ status: 'waiting', players: { black: { id: 1, name: 'jzk' }, white: null } });
 }
-function demoPlaying() { return withStones(['h8', 'h9', 'i8', 'i9', 'g8', 'j8']); }
+function demoPlaying() {
+  return withStones(['h8', 'h9', 'i8', 'i9', 'g8', 'j8'], {
+    comments: { 1: '天元附近开局，稳。', 2: '贴身紧逼，想抢外势。', 3: '继续压住对方的活二。', 4: '白棋贴上来，局面开始纠缠。', 5: '黑棋跳三，威胁成形。', 6: '白棋必须防了。' },
+  });
+}
 
 // 五连：黑 h8..l8 横向
 function demoWin() {
@@ -245,5 +256,22 @@ function runMotion() {
   } else {
     paint();
   }
-  room.connectRoomEvents({ gameId: GAME, onRoom: apply });
+  room.connectRoomEvents({
+    gameId: GAME,
+    onRoom: apply,
+    onComment: (ply, text) => {
+      if (state.room) {
+        state.room.comments = Object.assign({}, state.room.comments, { [ply]: text });
+        paint();
+      }
+    },
+  });
+  // 解说异步返回：合并到当前房间再重绘（请求期间可能已经换过 snapshot 对象）
+  document.addEventListener('mine:comment', (e) => {
+    const d = e.detail || {};
+    if (state.room && d.ply) {
+      state.room.comments = Object.assign({}, state.room.comments, { [d.ply]: d.text });
+    }
+    paint();
+  });
 })();

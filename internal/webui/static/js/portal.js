@@ -190,7 +190,11 @@ function feedSection(app) {
   } else {
     for (const it of items) {
       const row = h('div', 'feed-row');
-      row.appendChild(h('span', 'feed-dot'));
+      if (it.kind === 'game') {
+        row.appendChild(h('span', 'feed-dot game'));
+      } else {
+        row.appendChild(h('span', 'feed-dot'));
+      }
       const main = h('div', 'feed-main');
       main.appendChild(h('div', 'feed-text', it.text));
       main.appendChild(h('div', 'feed-meta', (it.author ? it.author + ' · ' : '') + fmtTime(it.createdAt)));
@@ -347,8 +351,9 @@ function demoData() {
       ] } },
       { id: 'announcements', name: '最新动态', role: 'feed', card: {
         type: 'feed', title: '最新动态', canEdit: true, items: [
+          { id: 0, kind: 'game', text: '五子棋：jzk 战胜了 Alex', author: '五连 · 9 手', createdAt: Date.now() - 1800e3 },
           { id: 2, text: '门户改版：首页变成个人 Hub，动态流取代了公告卡片。', author: 'jzk', createdAt: Date.now() - 3600e3 },
-          { id: 1, text: '国际象棋在线房间已开放，和朋友开一局吧。', author: 'jzk', createdAt: Date.now() - 86400e3 },
+          { id: 0, kind: 'game', text: '国际象棋：朋友 战胜了 jzk', author: '将杀 · 4 手', createdAt: Date.now() - 7200e3 },
         ],
       } },
     ],

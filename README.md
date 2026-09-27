@@ -142,7 +142,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 | 页面 | UI 模式 | 说明 |
 |---|---|---|
-| `/` | Personal Hub | 首页：Agent **Quick Composer**（直接提问，回车后跳到 `/agent` 并自动发出）、Minecraft 状态（头像堆叠的"谁在玩"+ 天气/时段/TPS，细节可展开）、游戏内容卡、最新动态 Feed；欢迎语右侧有 **在线人数（Presence）** |
+| `/` | Personal Hub | 首页：Agent **Quick Composer**（直接提问，回车后跳到 `/agent` 并自动发出）、Minecraft 状态（头像堆叠的"谁在玩"+ 天气/时段/TPS，细节可展开）、游戏内容卡、最新动态 Feed（公告 + 最近对局结果的时间轴）；欢迎语右侧有 **在线人数（Presence）** |
 | `/agent` | Productivity App | Agent 聊天页（ChatGPT 风全屏工作区：多会话/文件收发/模型切换，见下） |
 | `/games` → `/games/chess` | Entertainment App | 游戏目录 → 国际象棋（大厅 → 房间 → 对局 三态） |
 | `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于 |
@@ -203,6 +203,9 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 - **大厅 / 对局**：`/games/chess` 自己管三态——没房间时是大厅（创建房间 / 输入房间码加入 /
   开放房间列表），进房间后是棋盘页（等待对手 → 对局 → 终局）。
 - **音效**：落子/吃子/轮到你/将军/胜负，全部用 Web Audio 合成（零素材）；账号页可关（`游戏音效`）。
+- **AI 解说**：每一步落下后，右侧「AI 解说」面板给出 1–2 句点评（同一个模型网关，每手只生成一次、
+  双方共享；面板右上角可开关，服务端没配模型时自动隐藏）；终局把解说写进 `game_runs.metadata`，回放页也能看。
+- **桌面通知**：账号页可开启（需浏览器授权）；页面在后台时提醒「轮到你 / 将军 / 对局结束」。
 - **终局呈现**：棋盘上浮出「胜利/惜败/和棋 · 将杀/五连」+ [再来一局][查看棋谱]，胜利时少量粒子；棋盘几何保持不变。
 - **悔棋（需双方同意）**：点「悔棋」发出请求，对手在状态栏看到「同意 / 拒绝」；
   同意则撤销你最近一手（及其后的对手回应，回到你重走），拒绝或 2 分钟超时则继续；
@@ -235,7 +238,8 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `POST /api/games/<id>/undo` `{action}` | 悔棋：`request`/`accept`/`decline`/`cancel`（需双方同意） |
 | `POST /api/games/<id>/resign`、`/leave` | 认输 / 离开 |
 | `GET /api/games/<id>/runs` | 我的最近战绩 |
-| `GET /api/games/events?token=` | SSE 房间事件（通用） |
+| `POST /api/games/<id>/comment` | 请求"最后一手"的 AI 解说（每手只生成一次，双方共享） |
+| `GET /api/games/events?token=` | SSE 房间事件（`room` / `comment`） |
 
 ### 聊天页（`/agent`）
 
@@ -298,6 +302,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `GET /api/portal/apps` | 应用注册表（导航数据源） |
 | `GET /api/portal/home` | 首页聚合（欢迎语 + 各应用卡片） |
 | `GET/POST/DELETE /api/portal/announcements` | 公告栏（读公开，写仅管理员） |
+| `GET /api/portal/presence` | 现在有哪些人开着网页（Presence） |
 | `GET /api/history?conv=&after=<id>` | 历史消息（含附件引用） |
 | `POST /api/clear` | 清空当前会话（前端"新会话"），并广播其它标签页 |
 | `GET /api/options` | 技能 / 可选模型 / 思考强度 / 当前偏好 |

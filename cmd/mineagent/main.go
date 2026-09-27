@@ -278,13 +278,14 @@ func main() {
 			WithMCStatus(mcStatusFn)
 
 		portalSrv = portal.New(log, cfg, store, acct, webCh)
-		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
-		if wecomCh != nil {
-			wecomCh.WithFallback(portalSrv.Handler())
-		}
 		gamesMgr := games.NewManager(log, store)
 		portalSrv.WithGames(games.NewAPI(log, gamesMgr, acct, portalSrv.Auth()).Handler())
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
+		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
+		// 必须在 WithGames 之后取 Handler()——门户 mux 是构建时快照，早取就没有 games 路由。
+		if wecomCh != nil {
+			wecomCh.WithFallback(portalSrv.Handler())
+		}
 		go func() {
 			if err := portalSrv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				log.Error("web ui stopped", "err", err)

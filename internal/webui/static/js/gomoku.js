@@ -56,7 +56,8 @@ function renderBoard() {
     const c = cells[i] || '.';
     if (c === 'b') btn.appendChild(h('span', 'stone b'));
     else if (c === 'w') btn.appendChild(h('span', 'stone w'));
-    else if (myTurn) btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
+    else if (r.status === 'playing') btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
+    if (c === '.') btn.classList.add(myTurn ? 'playable' : 'locked');
     if (r.lastMove === pt) btn.classList.add('last');
     if (win.has(i)) btn.classList.add('win');
     btn.addEventListener('click', () => place(i));

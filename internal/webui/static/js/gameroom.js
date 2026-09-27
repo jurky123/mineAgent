@@ -121,8 +121,8 @@ export function movesTable(el, moves) {
     table.appendChild(h('span', 'mv' + (i + 1 === list.length - 1 ? ' last' : ''), list[i + 1] || ''));
   }
   el.appendChild(table);
-  const lastEl = table.querySelector('.mv.last');
-  if (lastEl) lastEl.scrollIntoView({ block: 'nearest' });
+  // 只滚着法容器本身，不要 scrollIntoView（那会把整页滚下去，顶栏都滚没影）
+  if (el.scrollHeight > el.clientHeight) el.scrollTop = el.scrollHeight;
 }
 
 // 我（按先手方推算）已经走过几步——没走过就没什么可悔的。
@@ -130,6 +130,46 @@ function ownMoveCount(room) {
   const first = room.first || 'white';
   const n = (room.moves || []).length;
   return room.you === first ? Math.ceil(n / 2) : Math.floor(n / 2);
+}
+
+// ---------- 开局 / 轮次提示 + 棋盘动效 ----------
+let phase = { key: '', status: '', turn: '', inCheck: false };
+let flashTimer = null;
+
+// boardFlash 在棋盘上方居中弹一条短提示（对局开始 / 轮到你 / 将军）。
+export function boardFlash(text, ms = 1300) {
+  const host = document.querySelector('.board-col') || document.querySelector('.chess-wrap');
+  if (!host) return;
+  let el = host.querySelector('.board-flash');
+  if (!el) {
+    el = h('div', 'board-flash');
+    host.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.remove('on');
+  void el.offsetWidth; // 重启 CSS 动画
+  el.classList.add('on');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => el.classList.remove('on'), ms);
+}
+
+// notePhase 记录房间状态：状态从等待变对局时给"开局"提示；轮到自己/被将军时给短提示。
+function notePhase(room) {
+  const key = room.id + ':' + room.game;
+  const next = { key, status: room.status, turn: room.turn, inCheck: !!room.inCheck };
+  const prev = phase;
+  phase = next;
+  document.body.classList.toggle('in-game', room.status === 'playing');
+  if (prev.key !== key) return; // 刚进页面/换房间：不补提示，避免噪音
+  const started = prev.status !== 'playing' && next.status === 'playing';
+  if (started) {
+    toast('对局开始 · ' + (next.turn === room.you ? '你先手' : '等对方先走'));
+    boardFlash(next.turn === room.you ? '你先手' : '对局开始');
+    return;
+  }
+  if (next.status === 'playing' && prev.turn !== next.turn && next.turn === room.you) {
+    boardFlash(next.inCheck ? '将军！轮到你' : '轮到你', 1100);
+  }
 }
 
 // 请求类交互（悔棋 / 换边）：同一请求只弹一次模态；横幅常驻。
@@ -204,6 +244,7 @@ function requestBanner(el, room, kind, onRoom) {
 // onRoom 更新局面；onExit 返回大厅。
 export function actionButtons(el, room, { onRoom, onExit }) {
   el.innerHTML = '';
+  notePhase(room);
   maybeRequestModal(room, 'undo', onRoom);
   maybeRequestModal(room, 'swap', onRoom);
 

@@ -203,8 +203,12 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 - **大厅 / 对局**：`/games/chess` 自己管三态——没房间时是大厅（创建房间 / 输入房间码加入 /
   开放房间列表），进房间后是棋盘页（等待对手 → 对局 → 终局）。
 - **音效**：落子/吃子/轮到你/将军/胜负，全部用 Web Audio 合成（零素材）；账号页可关（`游戏音效`）。
-- **AI 解说**：每一步落下后，右侧「AI 解说」面板给出 1–2 句点评（同一个模型网关，每手只生成一次、
-  双方共享；面板右上角可开关，服务端没配模型时自动隐藏）；终局把解说写进 `game_runs.metadata`，回放页也能看。
+- **提和**：对局中点「提和」发出请求（和悔棋/换边同一套），对手同意即判和棋；走出新的一步会让请求作废。
+- **AI 解说**：每一步落下后，右侧「AI 解说」面板给出 1–2 句点评。喂给模型的是**完整对局进程**：
+  刚刚谁用什么子从哪走到哪、吃掉了什么、是否将军/将杀；最近 16 手进程；**双方剩余子力**（象棋按
+  后/车/象/马/兵计数）；当前棋盘（象棋 ASCII + FEN，五子棋带行列的 15×15 盘面）以及之前几手的解说
+  （保持叙事连贯）。每手只生成一次、双方共享；面板右上角可开关、没配模型时自动隐藏；
+  终局把解说写进 `game_runs.metadata`，回放页也能看。
 - **桌面通知**：账号页可开启（需浏览器授权）；页面在后台时提醒「轮到你 / 将军 / 对局结束」。
 - **终局呈现**：棋盘上浮出「胜利/惜败/和棋 · 将杀/五连」+ [再来一局][查看棋谱]，胜利时少量粒子；棋盘几何保持不变。
 - **悔棋（需双方同意）**：点「悔棋」发出请求，对手在状态栏看到「同意 / 拒绝」；
@@ -236,6 +240,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `GET /api/games/<id>/room` | 我当前房间状态（含轮到我时的走法提示） |
 | `POST /api/games/<id>/move` | 走子：象棋 `{from,to,promotion?}`，五子棋 `{point:"h8"}` |
 | `POST /api/games/<id>/undo` `{action}` | 悔棋：`request`/`accept`/`decline`/`cancel`（需双方同意） |
+| `POST /api/games/<id>/draw` `{action}` | 提和：`request`/`accept`/`decline`/`cancel`（同意即和棋） |
 | `POST /api/games/<id>/resign`、`/leave` | 认输 / 离开 |
 | `GET /api/games/<id>/runs` | 我的最近战绩 |
 | `POST /api/games/<id>/comment` | 请求"最后一手"的 AI 解说（每手只生成一次，双方共享） |

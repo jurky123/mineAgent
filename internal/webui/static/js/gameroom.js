@@ -1,7 +1,7 @@
 // gameroom.js — 棋类房间的公共部分（大厅 / 房间信息 / 着法 / SSE / 动作按钮）。
 // 国际象棋与五子棋共用；各游戏只负责自己的棋盘渲染与走子交互。
 import { shell, apiGet, apiPost } from './shell.js';
-import { h, icon, toast, confirmDialog, copyText, openDialog } from './ds.js';
+import { h, icon, toast, confirmDialog, copyText, openDialog, withPending } from './ds.js';
 
 export const SIDE_LABEL = { white: '白方', black: '黑方' };
 export const REASON_LABEL = {
@@ -74,9 +74,7 @@ export function playerBar(room, side) {
   const line = h('div', 'player-line' + (turn ? ' turn' : ''));
   line.appendChild(h('span', 'dot ' + side[0]));
   line.appendChild(h('span', 'player-name', p ? p.name + (you ? '（你）' : '') : '等待加入…'));
-  if (turn && room.inCheck) line.appendChild(h('span', 'badge warn', '被将军'));
-  else if (turn && you) line.appendChild(h('span', 'badge brand', '你的回合'));
-  else if (turn && !you) line.appendChild(h('span', 'badge', '正在思考'));
+  if (turn) line.classList.add('acting');   // 轮到谁：dot 高亮 + 名字加粗
   if (room.status === 'finished' && room.result === side) line.appendChild(h('span', 'badge brand', '胜'));
   return line;
 }
@@ -159,7 +157,11 @@ function notePhase(room) {
   const next = { key, status: room.status, turn: room.turn, inCheck: !!room.inCheck };
   const prev = phase;
   phase = next;
-  document.body.classList.toggle('in-game', room.status === 'playing');
+  // 几何布局绑定 game-focus（对局中 + 终局都保持大棋盘居中，终局不塌回去）；
+  // 交互状态绑定 game-live / game-finished。
+  document.body.classList.toggle('game-focus', room.status === 'playing' || room.status === 'finished');
+  document.body.classList.toggle('game-live', room.status === 'playing');
+  document.body.classList.toggle('game-finished', room.status === 'finished');
   if (prev.key !== key) return; // 刚进页面/换房间：不补提示，避免噪音
   const started = prev.status !== 'playing' && next.status === 'playing';
   if (started) {
@@ -254,13 +256,13 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     undo.appendChild(h('span', null, '悔棋'));
     undo.title = '请求悔棋（需要对方同意）';
     undo.disabled = ownMoveCount(room) === 0 || !!room.undoReq;
-    undo.onclick = async () => {
+    undo.onclick = () => withPending(undo, async () => {
       try {
         const res = await apiPost('/api/games/' + room.game + '/undo', { action: 'request' });
         onRoom(res.room);
         toast('已请求悔棋，等待对方同意');
       } catch (e) { toast(e.message, { warn: true }); }
-    };
+    });
     el.appendChild(undo);
 
     const swap = h('button', 'btn sm');
@@ -268,24 +270,24 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     swap.appendChild(h('span', null, '换边'));
     swap.title = '请求换边（需要对方同意）';
     swap.disabled = !!room.swapReq;
-    swap.onclick = async () => {
+    swap.onclick = () => withPending(swap, async () => {
       try {
         const res = await apiPost('/api/games/' + room.game + '/swap', { action: 'request' });
         onRoom(res.room);
         toast('已请求换边，等待对方同意');
       } catch (e) { toast(e.message, { warn: true }); }
-    };
+    });
     el.appendChild(swap);
 
     const resign = h('button', 'btn danger sm');
     resign.appendChild(icon('flag'));
     resign.appendChild(h('span', null, '认输'));
-    resign.onclick = async () => {
+    resign.onclick = () => withPending(resign, async () => {
       const ok = await confirmDialog({ title: '确定认输？', body: '本局将判对手胜。', confirmText: '认输', danger: true });
       if (!ok) return;
       const next = await resignRoom(room.game);
       if (next) onRoom(next); else onExit();
-    };
+    });
     el.appendChild(resign);
   }
 
@@ -295,13 +297,13 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     swap.appendChild(icon('refresh'));
     swap.appendChild(h('span', null, '换边'));
     swap.title = '换到另一方（' + (room.you === 'white' ? '执黑' : '执白') + '，等待对手加入）';
-    swap.onclick = async () => {
+    swap.onclick = () => withPending(swap, async () => {
       try {
         const res = await apiPost('/api/games/' + room.game + '/swap', { action: 'request' });
         onRoom(res.room);
         toast('已换到' + (res.room && res.room.you === 'white' ? '白方' : '黑方'));
       } catch (e) { toast(e.message, { warn: true }); }
-    };
+    });
     el.appendChild(swap);
   }
 
@@ -353,10 +355,10 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   createCard.appendChild(h('div', 'lobby-card-title', '创建一个新房间'));
   createCard.appendChild(h('div', 'lobby-card-sub', '创建后把房间码或邀请链接发给朋友'));
   const create = h('button', 'btn primary cta', '创建房间');
-  create.onclick = async () => {
+  create.onclick = () => withPending(create, async () => {
     if (demoCreate) { onRoom(demoCreate()); return; }
     try { onRoom(await createRoom(gameId)); } catch (e) { toast(e.message, { warn: true }); }
-  };
+  });
   createCard.appendChild(create);
   grid.appendChild(createCard);
 
@@ -380,7 +382,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
       onRoom(res.room);
     } catch (e) { toast(e.message, { warn: true }); }
   };
-  join.onclick = doJoin;
+  join.onclick = () => withPending(join, doJoin);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
   row.appendChild(input);
   row.appendChild(join);

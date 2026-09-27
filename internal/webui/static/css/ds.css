@@ -60,6 +60,7 @@ body.ds a { color: inherit; }
   box-shadow: var(--shadow-raised); padding: 6px; display: none; z-index: 40;
 }
 .pop.on { display: block; animation: pop .13s ease; }
+.pop.closing { display: block; animation: pop-out .09s ease forwards; }
 .pop-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
 .pop-title { font-size: 13px; color: var(--text-tertiary); }
 .pop-name { font-weight: 600; color: var(--text); }
@@ -89,7 +90,16 @@ body.ds a { color: inherit; }
 .btn.sm { padding: 5px 10px; font-size: 13px; border-radius: 8px; }
 .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border-strong)); }
 .btn.danger:hover { background: color-mix(in srgb, var(--danger) 8%, transparent); }
-.btn:disabled { opacity: .5; cursor: default; }
+.btn:disabled { opacity: .55; cursor: default; }
+/* pending：按钮里自动出现 spinner（配 withPending() 用） */
+.btn.pending { position: relative; color: transparent !important; pointer-events: none; }
+.btn.pending::after {
+  content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  color: var(--text); animation: spin .7s linear infinite;
+}
+.btn.primary.pending::after { color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- 卡片 / 分区 ---------- */
 .card {
@@ -139,11 +149,16 @@ body.ds a { color: inherit; }
   background: rgba(16, 16, 20, .34); backdrop-filter: blur(3px);
   animation: fadein .15s ease; padding: 20px;
 }
+.dialog-mask.closing { animation: fade-out .14s ease forwards; }
+.dialog-mask.closing .dialog { animation: dialog-out .13s ease forwards; }
 .dialog {
   width: min(94vw, 440px); background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius-large); box-shadow: var(--shadow-raised);
   animation: rise .18s cubic-bezier(.2, .8, .2, 1); overflow: hidden;
 }
+@keyframes pop-out { to { opacity: 0; transform: translateY(3px); } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes dialog-out { to { opacity: 0; transform: scale(.985); } }
 .dialog-head { display: flex; align-items: center; gap: 10px; padding: 18px 20px 0; }
 .dialog-title { margin: 0; font-size: 17px; font-weight: 650; flex: 1; }
 .dialog-body { padding: 14px 20px 4px; color: var(--text-secondary); font-size: 14.5px; }
@@ -166,7 +181,23 @@ body.ds a { color: inherit; }
   background-size: 200% 100%; animation: sk 1.2s linear infinite;
 }
 @keyframes sk { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (max-width: 640px) {
+  .topbar { padding: 0 10px; gap: 6px; height: 52px; }
+  .brand span { display: none; }        /* 手机只留 logo，省出空间 */
+  .brand-logo { width: 26px; height: 26px; }
+  .nav { margin-left: 0; gap: 0; }
+  .nav-item { white-space: nowrap; padding: 10px 11px; }   /* 点击区 ≥40px */
+  .theme-wrap { display: none; }        /* 手机主题切换挪进头像菜单 */
+  .icon-btn { width: 40px; height: 40px; }
+}
 @keyframes pop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes fadein { from { opacity: 0; } }
 [hidden] { display: none !important; }
+
+/* 账号菜单里的外观分段控件 */
+.menu-theme { padding: 6px 10px 8px; }
+.menu-theme-title { font-size: 12px; color: var(--text-tertiary); margin-bottom: 6px; }
+.menu-theme .seg { display: inline-flex; background: var(--surface-muted); border-radius: 9px; padding: 3px; gap: 2px; }
+.menu-theme .seg-item { border: 0; background: transparent; color: var(--text-secondary); padding: 5px 9px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.menu-theme .seg-item.on { background: var(--surface); color: var(--text); font-weight: 600; }

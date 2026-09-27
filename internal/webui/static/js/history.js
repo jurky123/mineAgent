@@ -252,7 +252,12 @@ function demoRuns() {
   document.getElementById('last').onclick = () => { replay.index = replay.steps.length - 1; renderReplay(); };
   document.getElementById('slider').oninput = (e) => { replay.index = Number(e.target.value); renderReplay(); };
 
-  if (DEMO) { runs = demoRuns(); renderList(runs, false); return; }
+  if (DEMO) {
+    await boot({ active: '/account', preview: true });
+    runs = demoRuns();
+    renderList(runs, false);
+    return;
+  }
   const user = await boot({ active: '/account' });
   if (!user) return;
   await load(false);

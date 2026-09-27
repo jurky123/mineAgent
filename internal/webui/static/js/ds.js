@@ -112,7 +112,13 @@ export function openDialog({ title, body, actions = [], width }) {
   else if (body) bodyEl.textContent = body;
   box.appendChild(bodyEl);
   const foot = h('div', 'dialog-actions');
-  const close = () => mask.remove();
+  let closing = false;
+  const close = () => {
+    if (closing) return;
+    closing = true;
+    mask.classList.add('closing');           // 退出动画（和打开对称）
+    setTimeout(() => mask.remove(), 150);
+  };
   for (const a of actions) {
     const btn = h('button', 'btn' + (a.primary ? ' primary cta' : '') + (a.danger ? ' danger' : ''), a.label);
     btn.disabled = !!a.disabled;
@@ -188,6 +194,22 @@ export function pieceImg(base, cls) {
   img.src = pieceSrc(base);
   img.alt = '';
   return img;
+}
+
+// ---------- Pending（异步按钮统一反馈）----------
+// 用法：withPending(btn, async () => { ... }) 自动 disabled + spinner + 防重复点击。
+export async function withPending(btn, fn) {
+  if (!btn || btn.dataset.pending) return;
+  btn.dataset.pending = '1';
+  btn.disabled = true;
+  btn.classList.add('pending');
+  try {
+    return await fn();
+  } finally {
+    delete btn.dataset.pending;
+    btn.disabled = false;
+    btn.classList.remove('pending');
+  }
 }
 
 // ---------- 复制 ----------

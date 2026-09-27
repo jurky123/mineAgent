@@ -82,6 +82,8 @@ function onSquare(sq) {
 }
 
 async function sendMove(move) {
+  if (state.moving) return;   // 上一次还没回，别重复落子
+  state.moving = true;
   state.selected = null;
   try {
     const res = await apiPost('/api/games/' + GAME + '/move', {
@@ -91,6 +93,8 @@ async function sendMove(move) {
   } catch (e) {
     toast(e.message, { warn: true });
     renderBoard();
+  } finally {
+    state.moving = false;
   }
 }
 
@@ -168,7 +172,7 @@ function apply(r) {
 
 // ---------- UI 预览模式（?ui=1&state=… / ?ui=motion）----------
 // 状态化假数据，供截图/录屏评审用；?ui=motion 会按时间线自动演示一遍。
-const UI_STATE = (qs.get('state') || 'playing').toLowerCase();
+const UI_STATE = (qs.get('state') || 'lobby').toLowerCase();
 const UI_MOTION = qs.get('ui') === 'motion';
 const START_PIECES = 'RNBQKBNRPPPPPPPP' + '.'.repeat(32) + 'pppppppprnbqkbnr';
 const OPENING_LEGAL = ['b1a3','b1c3','g1f3','g1h3','a2a3','b2b3','c2c3','d2d3','e2e3','f2f3','g2g3','h2h3','a2a4','b2b4','c2c4','d2d4','e2e4','f2f4','g2g4','h2h4'];
@@ -232,7 +236,7 @@ function demoSwapRequest() {
   return Object.assign(demoAfterE4E5(), { swapReq: { by: 'black', at: Date.now() } });
 }
 function demoFinished(youWin) {
-  const rows = ['6k1', '5ppp', '........', '........', '........', '........', '........', 'R6K'];
+  const rows = ['......k.', '.....ppp', '........', '........', '........', '........', '........', 'R.....K.'];
   return demoRoom({
     status: 'finished', result: youWin ? 'white' : 'black', reason: 'checkmate',
     pieces: youWin ? rows.join('') : demoPieces(['f2f3','e7e5','g2g4','d8h4']),
@@ -255,14 +259,13 @@ const DEMO_STATES = {
 // motion：按时间线自动演示一遍（给录屏用，12 秒左右）
 function runMotion() {
   const timeline = [
-    [0, null],
-    [1000, demoWaiting()],
-    [2600, demoRoom({ turn: 'white', pieces: START_PIECES, moves: [] })],
-    [4200, demoAfterE4()],
-    [5400, demoAfterE4E5()],
-    [7000, demoAfterNf3()],
-    [8400, demoUndoRequest()],
-    [10600, demoFinished(true)],
+    [0, demoWaiting()],
+    [1400, demoRoom({ turn: 'white', pieces: START_PIECES, moves: [] })],
+    [3000, demoAfterE4()],
+    [4200, demoAfterE4E5()],
+    [5800, demoAfterNf3()],
+    [7200, demoUndoRequest()],
+    [9400, demoFinished(true)],
   ];
   for (const [at, r] of timeline) {
     setTimeout(() => {
@@ -275,6 +278,7 @@ function runMotion() {
 (async () => {
   document.getElementById('room-chip').hidden = true;
   if (DEMO) {
+    await boot({ active: '/games', preview: true });   // 预览也要有顶栏（同一套 Shell）
     if (UI_MOTION) { apply(null); runMotion(); return; }
     const build = DEMO_STATES[UI_STATE] || DEMO_STATES.playing;
     apply(build());

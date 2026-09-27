@@ -295,8 +295,8 @@ function demoData() {
         details: [{ label: '内存', value: '1234 / 4096 MB' }, { label: '版本', value: '26.2' }, { label: 'TPS 5m/15m', value: '19.99 / 20.00' }],
       } },
       { id: 'games', name: '游戏', path: '/games', role: 'content', card: { type: 'games', items: [
-        { id: 'chess', name: '国际象棋', desc: '经典双人对战', path: '/games/chess', openRooms: 2, wins: 3, losses: 1, draws: 0 },
-        { id: 'gomoku', name: '五子棋', desc: '15 路棋盘 · 先连五者胜', path: '/games/gomoku', openRooms: 0, wins: 0, losses: 1, draws: 0 },
+        { id: 'chess', name: '国际象棋', desc: '经典双人对战', path: '/games/chess?ui=1&state=lobby', openRooms: 2, wins: 3, losses: 1, draws: 0 },
+        { id: 'gomoku', name: '五子棋', desc: '15 路棋盘 · 先连五者胜', path: '/games/gomoku?ui=1&state=lobby', openRooms: 0, wins: 0, losses: 1, draws: 0 },
       ] } },
       { id: 'announcements', name: '最新动态', role: 'feed', card: {
         type: 'feed', title: '最新动态', canEdit: true, items: [
@@ -321,7 +321,7 @@ async function refresh() {
 
 (async () => {
   if (!DEMO) skeleton();
-  await boot({ active: '/', requireLogin: !DEMO });
+  await boot({ active: '/', requireLogin: !DEMO, preview: DEMO });
   if (!DEMO && !shell.user) return;
   await refresh();
 })();

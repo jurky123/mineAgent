@@ -43,17 +43,25 @@ function catalogCard(game, status) {
   start.href = game.path;
   actions.appendChild(start);
   card.appendChild(actions);
+  // 整卡可点（更符合"点进去开始玩"的直觉；按钮仍是链接，键盘/中键可用）
+  if (game.enabled !== false && game.path) {
+    card.classList.add('clickable');
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('a, button')) return;
+      location.href = game.path;
+    });
+  }
   return card;
 }
 
 (async () => {
   if (DEMO) {
-    shell.user = { id: 1, name: 'jzk', admin: true };
+    await boot({ active: '/games', preview: true });
     document.getElementById('catalog').appendChild(
-      catalogCard({ id: 'chess', name: '国际象棋', desc: '经典双人对战 · 在线房间', path: '/games/chess' },
+      catalogCard({ id: 'chess', name: '国际象棋', desc: '经典双人对战 · 在线房间', path: '/games/chess?ui=1&state=lobby', enabled: true },
         { openRooms: 2, wins: 3, losses: 1, draws: 0, total: 4 }));
     document.getElementById('catalog').appendChild(
-      catalogCard({ id: 'gomoku', name: '五子棋', desc: '15 路棋盘 · 先连五者胜', path: '/games/gomoku' },
+      catalogCard({ id: 'gomoku', name: '五子棋', desc: '15 路棋盘 · 先连五者胜', path: '/games/gomoku?ui=1&state=lobby', enabled: true },
         { openRooms: 0, wins: 0, losses: 0, draws: 0, total: 0 }));
     return;
   }

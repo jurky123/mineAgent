@@ -192,29 +192,33 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
 /* 对局中：棋盘放大、单列居中（房间/着法移到棋盘下方），开局进场动画。
    等待房间保持原来的两栏布局。 */
 .board { transition: max-width .28s ease; }
-body.in-game .chess-wrap { --board-max: min(46rem, calc(100dvh - 292px)); max-width: 78rem; padding-top: 14px; padding-bottom: 20px; }
-body.in-game .crumb { display: none; }         /* 对局中收掉面包屑（离开房间回大厅） */
+body.game-focus .chess-wrap { --board-max: min(46rem, calc(100dvh - 292px)); max-width: 78rem; padding-top: 14px; padding-bottom: 20px; }
+body.game-focus .crumb { display: none; }         /* 对局中收掉面包屑（离开房间回大厅） */
 /* 对局中信息栏紧凑：房间码在右上角 chip 里（点击可复制），这里只留双方与着法 */
-body.in-game .chess-side .side-hint,
-body.in-game .chess-side .side-players { display: none; }
-body.in-game .chess-side .side-card { padding: 12px 14px; }
-body.in-game .chess-side .moves-table { max-height: 108px; }
-body.in-game .room-layout {
+body.game-focus .chess-side .side-hint,
+body.game-focus .chess-side .side-players { display: none; }
+body.game-focus .chess-side .side-card { padding: 12px 14px; }
+body.game-focus .chess-side .moves-table { max-height: 108px; }
+body.game-focus .room-layout {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-  animation: game-in .3s cubic-bezier(.2, .8, .2, 1);
 }
-body.in-game .board-col { width: min(var(--board-max), 100%); }
-body.in-game .board { margin: 0 auto; }
-body.in-game .chess-side {
+/* 进场动画只在"开始对局"那一下播放，终局不再动 */
+body.game-live .room-layout { animation: game-in .3s cubic-bezier(.2, .8, .2, 1); }
+/* 轮到的玩家：dot 高亮 + 名字加粗（文字提示交给状态行/中央 flash） */
+.player-line.acting .dot { box-shadow: 0 0 0 3px var(--brand-soft); border-color: var(--brand); }
+.player-line.acting .player-name { font-weight: 650; }
+body.game-focus .board-col { width: min(var(--board-max), 100%); }
+body.game-focus .board { margin: 0 auto; }
+body.game-focus .chess-side {
   flex-direction: row; width: min(var(--board-max), 100%);
   justify-content: center; align-items: stretch;
 }
-body.in-game .chess-side > .card { flex: 1 1 0; min-width: 0; }
-body.in-game .chess-side .moves-table { max-height: 150px; }
+body.game-focus .chess-side > .card { flex: 1 1 0; min-width: 0; }
+body.game-focus .chess-side .moves-table { max-height: 150px; }
 @keyframes game-in { from { opacity: .55; transform: translateY(8px) scale(.99); } to { opacity: 1; transform: none; } }
 @media (max-width: 900px) {
-  body.in-game .chess-side { flex-direction: column; }
+  body.game-focus .chess-side { flex-direction: column; }
 }
 .gpoint.playable { cursor: pointer; }
 .gpoint.locked { cursor: default; }

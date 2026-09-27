@@ -130,6 +130,25 @@ a { color: inherit; }
 .i.sm { width: 13px; height: 13px; }
 .spacer { flex: 1; }
 
+/* 跨页面过渡（Chrome 等支持 View Transitions 的浏览器生效；不支持就是普通跳转）。
+   顶栏用 mine-shell 保持"原地不动"，内容淡入。 */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: vt-out .12s ease both; }
+::view-transition-new(root) { animation: vt-in .17s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(4px); } }
+.topbar { view-transition-name: mine-shell; }
+
+/* 无障碍：系统开了"减弱动态效果"就关掉所有动画/过渡 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes pop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes fadein { from { opacity: 0; } }

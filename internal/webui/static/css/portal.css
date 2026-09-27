@@ -100,3 +100,7 @@
   .topbar { padding: 0 14px; }
   .nav { margin-left: 2px; overflow-x: auto; }
 }
+
+/* 目录卡整卡可点 */
+.catalog-card.clickable { cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; }
+.catalog-card.clickable:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, .05); }

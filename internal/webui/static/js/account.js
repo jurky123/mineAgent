@@ -184,7 +184,7 @@ document.getElementById('history-row').onclick = () => { location.href = '/accou
 
 (async () => {
   if (DEMO) {
-    shell.user = { id: 1, name: 'jzk', admin: true };
+    await boot({ active: '/account', preview: true });
     renderHeader(shell.user);
     renderAccountRows(shell.user, 2);
     renderSecurity();

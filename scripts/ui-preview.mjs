@@ -66,48 +66,64 @@ async function shoot(browser) {
   }
 }
 
-// 连续流程录像：Portal（切主题/账号菜单）→ Games → Chess 大厅 → 等待 → 对局 →
-// 落子 → 悔棋请求 → 终局；最后再录一段五子棋对局。
+// 连续流程录像：真点击走一遍（Portal → Games → Chess → 创建房间 → 换边），
+// 再接棋局 motion（等待→开局→落子→悔棋→终局）。
 async function motion(browser) {
   const dir = path.join(OUT, 'motion');
   const ctx = await browser.newContext({ viewport: DESKTOP, recordVideo: { dir, size: DESKTOP } });
   const page = await ctx.newPage();
   const t = (ms) => page.waitForTimeout(ms);
 
+  // Portal：主题（亮↔暗 crossfade）、账号菜单、悬停游戏卡
   await page.goto(BASE + '/?ui=1', { waitUntil: 'domcontentloaded' });
-  await t(1500);
-  await page.click('.topbar .icon-btn');            // 主题选择器
-  await t(900);
+  await t(1400);
+  await page.click('.theme-wrap .icon-btn');
+  await t(800);
   await page.click('.topbar .pop-item[data-mode="dark"]');
-  await t(1200);
+  await t(1100);
   await page.click('.topbar .pop-item[data-mode="light"]');
-  await t(600);
+  await t(700);
   await page.click('body');
-  await page.click('.account-btn').catch(() => {});
+  await page.click('.account-btn');
   await t(900);
   await page.click('body');
   await page.hover('.game-card').catch(() => {});
-  await t(900);
+  await t(800);
 
-  await page.goto(BASE + '/games?ui=1', { waitUntil: 'domcontentloaded' });
-  await t(1300);
+  // 点击顶栏"游戏"（真实导航 + view transition）
+  await page.click('.nav-item:has-text("游戏")');
+  await page.waitForLoadState('domcontentloaded');
+  await t(1200);
   await page.hover('.catalog-card').catch(() => {});
-  await t(700);
+  await t(500);
 
-  // 棋局：motion 模式自己按时间线演示（12 秒）
+  // 点击棋类卡片 → 大厅 → 创建房间 → 等待 → 换边
+  await page.click('.catalog-card');
+  await page.waitForLoadState('domcontentloaded');
+  await t(1200);
+  await page.click('#lobby .btn.primary');   // 创建房间（带 pending）
+  await t(1300);
+  await page.click('#actions button:has-text("换边")').catch(() => {});
+  await t(1100);
+
+  // 接棋局自动演示（从等待开始，和上面无缝）；终局棋盘保持不动
   await page.goto(BASE + '/games/chess?ui=motion', { waitUntil: 'domcontentloaded' });
-  await t(12500);
+  await t(11500);
   const flowVideo = await page.video().path();
   await page.close();
   await ctx.close();
   await rename(flowVideo, path.join(dir, 'full-flow.webm'));
   console.log('video', path.join(dir, 'full-flow.webm'));
 
-  // 五子棋一局
+  // 五子棋：大厅创建 → 自动演示
   const ctx2 = await browser.newContext({ viewport: DESKTOP, recordVideo: { dir, size: DESKTOP } });
   const page2 = await ctx2.newPage();
+  await page2.goto(BASE + '/games/gomoku?ui=1', { waitUntil: 'domcontentloaded' });
+  await page2.waitForTimeout(1000);
+  await page2.click('#lobby .btn.primary').catch(() => {});
+  await page2.waitForTimeout(900);
   await page2.goto(BASE + '/games/gomoku?ui=motion', { waitUntil: 'domcontentloaded' });
-  await page2.waitForTimeout(12500);
+  await page2.waitForTimeout(11000);
   const gomokuVideo = await page2.video().path();
   await page2.close();
   await ctx2.close();

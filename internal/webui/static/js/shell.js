@@ -15,6 +15,14 @@ export const shell = {
   apps: [],
 };
 
+// 预览模式（?ui=1）：走正式 Shell 渲染路径，只把数据源换成假的——
+// 这样截图/录屏里顶部导航、账号菜单、空间尺寸都与线上一致。
+export const PREVIEW_USER = { id: 1, name: 'jzk', admin: true };
+export const PREVIEW_APPS = [
+  { id: 'agent', name: 'MineAgent', nav: true, navLabel: 'Agent', path: '/agent?ui=1', icon: 'sparkle', homeRole: 'hero' },
+  { id: 'games', name: '游戏', nav: true, navLabel: '游戏', path: '/games?ui=1', icon: 'gamepad', homeRole: 'content' },
+];
+
 // pageVersion 页面注入的版本号（静态资源带版本，避免缓存混用）。
 export function pageVersion() {
   return (document.querySelector('meta[name=mineagent-version]') || {}).content || '';
@@ -39,7 +47,12 @@ export function applyTheme() {
 
 export function setTheme(mode) {
   localStorage.setItem('mineagent.theme', mode);
-  applyTheme();
+  // 整页 crossfade，避免几千个元素同时翻色（不支持的浏览器直接瞬时切换）
+  if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.startViewTransition(() => applyTheme());
+  } else {
+    applyTheme();
+  }
 }
 
 export function fmtTime(ms) {
@@ -221,7 +234,7 @@ function paintTop(active) {
   bar.appendChild(h('div', 'spacer'));
 
   // 主题选择器（明确列出三个选项，不再循环切换）
-  const themeWrap = h('div', 'pop-wrap');
+  const themeWrap = h('div', 'pop-wrap theme-wrap');
   const themeBtn = h('button', 'icon-btn');
   themeBtn.title = '外观';
   themeBtn.appendChild(icon('sun'));
@@ -242,7 +255,7 @@ function paintTop(active) {
     themePop.appendChild(item);
   }
   paintTheme();
-  themeBtn.onclick = (e) => { e.stopPropagation(); closePops(themePop); themePop.classList.toggle('on'); };
+  themeBtn.onclick = (e) => { e.stopPropagation(); closePops(themePop); togglePop(themePop); };
   themePop.onclick = (e) => e.stopPropagation();
   themeWrap.appendChild(themeBtn);
   themeWrap.appendChild(themePop);
@@ -267,7 +280,23 @@ function paintTop(active) {
       b.onclick = fn;
       accPop.appendChild(b);
     };
-    item('我的账号', 'user', () => { location.href = '/account'; });
+    item('我的账号', 'user', () => { location.href = '/account?ui=1'; });
+    // 手机上没有主题按钮：把外观放进账号菜单（三个明确选项）
+    const themeRow = h('div', 'menu-theme');
+    themeRow.appendChild(h('div', 'menu-theme-title', '外观'));
+    const seg = h('div', 'seg');
+    const paintSeg = () => {
+      seg.querySelectorAll('.seg-item').forEach((el) => el.classList.toggle('on', el.dataset.mode === themeMode()));
+    };
+    for (const m of MODES) {
+      const b = h('button', 'seg-item', m.label);
+      b.dataset.mode = m.id;
+      b.onclick = () => { setTheme(m.id); paintSeg(); };
+      seg.appendChild(b);
+    }
+    paintSeg();
+    themeRow.appendChild(seg);
+    accPop.appendChild(themeRow);
     item('退出登录', 'logout', () => logout(), 'danger-item');
   } else {
     const b = h('button', 'pop-item');
@@ -276,7 +305,7 @@ function paintTop(active) {
     b.onclick = () => location.reload();
     accPop.appendChild(b);
   }
-  accBtn.onclick = (e) => { e.stopPropagation(); closePops(accPop); accPop.classList.toggle('on'); };
+  accBtn.onclick = (e) => { e.stopPropagation(); closePops(accPop); togglePop(accPop); };
   accPop.onclick = (e) => e.stopPropagation();
   accWrap.appendChild(accBtn);
   accWrap.appendChild(accPop);
@@ -287,15 +316,36 @@ function paintTop(active) {
 }
 
 function closePops(except) {
-  document.querySelectorAll('.pop.on').forEach((el) => { if (el !== except) el.classList.remove('on'); });
+  document.querySelectorAll('.pop.on').forEach((el) => { if (el !== except) hidePop(el); });
+}
+
+// popover 退出动画（打开 120ms / 关闭 90ms，别"啪"地消失）
+function hidePop(el) {
+  if (!el || !el.classList.contains('on') || el.classList.contains('closing')) return;
+  el.classList.remove('on');
+  el.classList.add('closing');
+  setTimeout(() => el.classList.remove('closing'), 100);
+}
+
+function togglePop(el) {
+  if (el.classList.contains('on')) hidePop(el);
+  else { el.classList.remove('closing'); el.classList.add('on'); }
 }
 
 // ---------- boot ----------
 // active: 顶部导航高亮；requireLogin=false 时未登录也继续（?ui=1 演示模式）。
-export async function boot({ active = '', requireLogin = true } = {}) {
+export async function boot({ active = '', requireLogin = true, preview = false } = {}) {
   applyTheme();
   mql.addEventListener('change', () => { if (themeMode() === 'system') applyTheme(); });
   document.body.classList.add('ds');
+
+  if (preview) {
+    // 预览：不请求后端，直接用假账号/假应用，但走同一套顶栏渲染
+    shell.apps = PREVIEW_APPS;
+    saveAuth(PREVIEW_USER);
+    paintTop(active);
+    return shell.user;
+  }
 
   const loadApps = async () => {
     try { shell.apps = (await apiGet('/api/portal/apps')).apps || []; } catch (e) { /* 忽略 */ }

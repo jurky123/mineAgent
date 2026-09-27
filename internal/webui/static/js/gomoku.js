@@ -66,15 +66,19 @@ function renderBoard() {
 }
 
 async function place(i) {
+  if (state.moving) return;
   const r = state.room;
   if (!r || r.status !== 'playing' || r.turn !== r.you) return;
   const pt = pointName(i);
   if ((r.cells || '')[i] !== '.') { toast('这里已经有子了', { warn: true }); return; }
+  state.moving = true;
   try {
     const res = await apiPost('/api/games/' + GAME + '/move', { point: pt });
     apply(res.room);
   } catch (e) {
     toast(e.message, { warn: true });
+  } finally {
+    state.moving = false;
   }
 }
 
@@ -148,7 +152,7 @@ function apply(r) {
 }
 
 // ---------- UI 预览模式（?ui=1&state=… / ?ui=motion）----------
-const UI_STATE = (qs.get('state') || 'playing').toLowerCase();
+const UI_STATE = (qs.get('state') || 'lobby').toLowerCase();
 const UI_MOTION = qs.get('ui') === 'motion';
 const DEMO_PLAYERS = { black: { id: 1, name: 'jzk' }, white: { id: 2, name: '朋友' } };
 
@@ -201,14 +205,13 @@ const DEMO_STATES = {
 
 function runMotion() {
   const timeline = [
-    [0, null],
-    [1000, demoWaiting()],
-    [2600, withStones(['h8'])],
-    [3800, withStones(['h8', 'h9'])],
-    [5200, withStones(['h8', 'h9', 'i8', 'i9'])],
-    [6600, withStones(['h8', 'h9', 'i8', 'i9', 'j8', 'j9'])],
-    [8200, demoUndoRequest()],
-    [10400, demoWin()],
+    [0, demoWaiting()],
+    [1400, withStones(['h8'])],
+    [2600, withStones(['h8', 'h9'])],
+    [4000, withStones(['h8', 'h9', 'i8', 'i9'])],
+    [5400, withStones(['h8', 'h9', 'i8', 'i9', 'j8', 'j9'])],
+    [7000, demoUndoRequest()],
+    [9200, demoWin()],
   ];
   for (const [at, r] of timeline) {
     setTimeout(() => {
@@ -221,6 +224,7 @@ function runMotion() {
 (async () => {
   document.getElementById('room-chip').hidden = true;
   if (DEMO) {
+    await boot({ active: '/games', preview: true });
     if (UI_MOTION) { apply(null); runMotion(); return; }
     const build = DEMO_STATES[UI_STATE] || DEMO_STATES.playing;
     apply(build());

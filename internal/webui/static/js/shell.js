@@ -135,7 +135,7 @@ function loginView() {
     const render = (showLast) => {
       box.innerHTML = '';
       const lm = h('img', 'login-mark');
-      lm.src = '/static/' + pageVersion() + '/img/logo.svg';
+      lm.src = '/static/' + pageVersion() + '/img/logo.png';
       lm.alt = '';
       box.appendChild(lm);
       box.appendChild(h('h1', 'login-title', 'Mine'));
@@ -198,7 +198,7 @@ function paintTop(active) {
   const brand = h('a', 'brand');
   brand.href = '/';
   const mark = h('img', 'brand-logo');
-  mark.src = '/static/' + pageVersion() + '/img/logo.svg';
+  mark.src = '/static/' + pageVersion() + '/img/logo.png';
   mark.alt = '';
   brand.appendChild(mark);
   brand.appendChild(h('span', null, 'Mine'));

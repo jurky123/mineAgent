@@ -61,7 +61,7 @@ func (m *chessMatch) Play(side string, payload json.RawMessage) (PlayOutcome, er
 	m.prev = append(m.prev, before)
 	m.sans = append(m.sans, res.SAN)
 	m.ucis = append(m.ucis, res.Move.String())
-	out := PlayOutcome{Move: res.SAN, Last: res.Move.String()}
+	out := PlayOutcome{Move: res.SAN, Raw: res.Move.String(), Last: res.Move.String()}
 	switch {
 	case res.Checkmate:
 		out.Over, out.Winner, out.Reason = true, side, "checkmate"
@@ -97,9 +97,9 @@ func (m *chessMatch) CanUndo(side string) error {
 }
 
 // Undo 撤销"请求者最近一手 + 其后的对手回应"（1-2 步），回到请求者重走。
-func (m *chessMatch) Undo(side string) ([]string, string, error) {
+func (m *chessMatch) Undo(side string) ([]string, []string, string, error) {
 	if err := m.CanUndo(side); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	// 回退一步：回退后轮到走的一方就是刚被撤销的那一步的走子方。
 	m.b = m.prev[len(m.prev)-1]
@@ -117,7 +117,7 @@ func (m *chessMatch) Undo(side string) ([]string, string, error) {
 	if n := len(m.ucis); n > 0 {
 		last = m.ucis[n-1]
 	}
-	return append([]string(nil), m.sans...), last, nil
+	return append([]string(nil), m.sans...), append([]string(nil), m.ucis...), last, nil
 }
 
 func otherSide(side string) string {

@@ -6,7 +6,9 @@ cd "$(dirname "$0")/.."
 
 CONFIG="${CONFIG:-config.json}"
 LISTEN=$(python3 -c "import json;print(json.load(open('$CONFIG')).get('web',{}).get('listen',''))" 2>/dev/null || true)
-TOKEN_FILE="${TOKEN_FILE:-data/webui/deploy-token.txt}"
+# 管理员令牌默认取 config.json 里 web.dataDir 下的 deploy-token.txt（可用 TOKEN_FILE 覆盖）
+DATA_DIR=$(python3 -c "import json;print(json.load(open('$CONFIG')).get('web',{}).get('dataDir','data/webui'))" 2>/dev/null || echo "data/webui")
+TOKEN_FILE="${TOKEN_FILE:-$DATA_DIR/deploy-token.txt}"
 
 echo "==> 构建"
 make build

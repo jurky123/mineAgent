@@ -148,8 +148,8 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 | `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于 |
 
 **图标与品牌**：线性图标用 Lucide（ISC，内联在 `static/js/ds.js` 的 `ICON_PATHS`，34 个），
-品牌 mark / favicon 是自绘的 `static/img/logo.svg`（渐变方块 + 星光，`/favicon.ico` 也指向它），
-棋子是 Cburnett SVG（CC BY-SA 3.0，见 `static/img/pieces/NOTICE.txt`）；
+品牌 mark / favicon 用站点图标 `static/img/logo.png`（256px）与 `static/img/favicon.png`（64px，
+`/favicon.ico` 也指向它），棋子是 Cburnett SVG（CC BY-SA 3.0，见 `static/img/pieces/NOTICE.txt`）；
 `/static/img/NOTICE.txt` 汇总了素材来源与许可。
 
 **交互与视觉**：浅灰页面 + 白色 surface + 极细边框 + 品牌蓝（`--brand: #0a84ff`）；
@@ -266,6 +266,9 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 
 ### 配置与接口
 
+0. **数据位置**：运行数据不在代码目录里——本机放在 `/home/ubuntu/mineagent-data/`
+   （`mineagent.db` / `webui/` / `workspace/`，由 `config.json` 的 `storage.path`、
+   `web.dataDir`、`workspace.root` 绝对路径指定；`scripts/deploy.sh` 的令牌也从这里读）。
 1. `config.json` 里 `web.listen` 默认 `0.0.0.0:8766`（空字符串=禁用网页入口）；
    公网访问要在腾讯云控制台放行 TCP 8766（ufw 未启用）
 2. 浏览器打开 `http://<公网IP>:8766/` 输入名字进入

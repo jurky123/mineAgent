@@ -66,6 +66,10 @@ func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		a.handleEvents(w, r)
 		return
 	}
+	if rest == "history" { // 我的对局历史（全部游戏，分页）
+		a.auth(a.handleHistory)(w, r)
+		return
+	}
 	if rest == "active" { // 部署前检查：有没有进行中的对局
 		a.handleActive(w, r)
 		return
@@ -95,6 +99,8 @@ func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleLeave(w, r, u, id) })(w, r)
 	case "undo":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleUndo(w, r, u, id) })(w, r)
+	case "swap":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleSwap(w, r, u, id) })(w, r)
 	case "runs":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleRuns(w, r, u, id) })(w, r)
 	default:
@@ -249,6 +255,64 @@ func (a *API) handleUndo(w http.ResponseWriter, r *http.Request, u *storage.User
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+}
+
+// handleSwap 换边（等待中直接换；对局中需对手同意）：request/accept/decline/cancel。
+func (a *API) handleSwap(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "参数不是合法 JSON"})
+		return
+	}
+	var err error
+	switch req.Action {
+	case "request":
+		err = a.mgr.SwapRequest(u.ID)
+	case "accept":
+		err = a.mgr.SwapRespond(u.ID, true)
+	case "decline":
+		err = a.mgr.SwapRespond(u.ID, false)
+	case "cancel":
+		err = a.mgr.SwapCancel(u.ID)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "action 只能是 request/accept/decline/cancel"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	room := a.mgr.RoomOf(u.ID)
+	if room == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+}
+
+// handleHistory 我的对局历史（所有游戏，按 id 倒序分页）。
+func (a *API) handleHistory(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 GET"})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	list, err := a.mgr.store.ListGameRunsBefore(r.Context(), u.ID, limit, before)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	if list == nil {
+		list = []storage.GameRun{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": list})
 }
 
 func (a *API) handleRuns(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {

@@ -59,12 +59,12 @@ func (c *Channel) API() http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
 	})
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		b, err := RenderPage("img/logo.svg")
+		b, err := RenderPage("img/favicon.png")
 		if err != nil {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(b)
 	})

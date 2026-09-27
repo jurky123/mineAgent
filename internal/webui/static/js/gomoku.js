@@ -12,6 +12,14 @@ let state = { room: null };
 
 const pointName = (i) => String.fromCharCode(97 + (i % 15)) + (Math.floor(i / 15) + 1);
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, String(attrs[k]));
+  return el;
+}
+
 function renderBoard() {
   const board = document.getElementById('board');
   board.innerHTML = '';
@@ -20,7 +28,23 @@ function renderBoard() {
   const size = r.size || 15;
   const cells = r.cells || '';
   const win = new Set(r.winLine || []);
+  const myTurn = r.status === 'playing' && r.turn === r.you;
   board.style.setProperty('--gomoku-size', size);
+
+  // 网格用内联 SVG：viewBox 0..size，交叉点在 k+0.5；点位用百分比 (i+0.5)/size，两者严格一致。
+  const grid = svgEl('svg', { class: 'gomoku-grid', viewBox: '0 0 ' + size + ' ' + size, preserveAspectRatio: 'none' });
+  for (let i = 0; i < size; i++) {
+    const p = i + 0.5;
+    grid.appendChild(svgEl('line', { x1: p, y1: 0, x2: p, y2: size, 'vector-effect': 'non-scaling-stroke' }));
+    grid.appendChild(svgEl('line', { x1: 0, y1: p, x2: size, y2: p, 'vector-effect': 'non-scaling-stroke' }));
+  }
+  if (size === 15) {
+    for (const [rr, cc] of [[3, 3], [3, 11], [11, 3], [11, 11], [7, 7]]) {
+      grid.appendChild(svgEl('circle', { cx: cc + 0.5, cy: rr + 0.5, r: 0.11, class: 'gstar' }));
+    }
+  }
+  board.appendChild(grid);
+
   for (let i = 0; i < size * size; i++) {
     const row = Math.floor(i / size);
     const col = i % size;
@@ -32,19 +56,11 @@ function renderBoard() {
     const c = cells[i] || '.';
     if (c === 'b') btn.appendChild(h('span', 'stone b'));
     else if (c === 'w') btn.appendChild(h('span', 'stone w'));
-    else btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
+    else if (myTurn) btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
     if (r.lastMove === pt) btn.classList.add('last');
     if (win.has(i)) btn.classList.add('win');
     btn.addEventListener('click', () => place(i));
     board.appendChild(btn);
-  }
-  if (size === 15) {
-    for (const [rr, cc] of [[3, 3], [3, 11], [11, 3], [11, 11], [7, 7]]) {
-      const dot = h('span', 'gstar');
-      dot.style.left = (((cc + 0.5) / size) * 100) + '%';
-      dot.style.top = (((rr + 0.5) / size) * 100) + '%';
-      board.appendChild(dot);
-    }
   }
 }
 

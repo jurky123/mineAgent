@@ -359,6 +359,36 @@ func (s *Store) AddGameRun(ctx context.Context, r GameRun) (int64, error) {
 	return res.LastInsertId()
 }
 
+// ListGameRunsBefore 分页拉取某用户的对局历史（before>0 时取 id < before 的）。
+func (s *Store) ListGameRunsBefore(ctx context.Context, userID int64, limit int, before int64) ([]GameRun, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	q := `SELECT id, user_id, game_id, result, duration_ms, metadata, created_at FROM game_runs
+	      WHERE user_id=?`
+	args := []any{userID}
+	if before > 0 {
+		q += ` AND id < ?`
+		args = append(args, before)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GameRun
+	for rows.Next() {
+		var r GameRun
+		if err := rows.Scan(&r.ID, &r.UserID, &r.GameID, &r.Result, &r.DurationMS, &r.Metadata, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // ListGameRuns 某用户的最近战绩（账号页/大厅展示用）。
 func (s *Store) ListGameRuns(ctx context.Context, userID int64, gameID string, limit int) ([]GameRun, error) {
 	if limit <= 0 || limit > 100 {

@@ -50,7 +50,7 @@ func (m *gomokuMatch) Play(side string, payload json.RawMessage) (PlayOutcome, e
 	name := gomoku.PointName(row, col)
 	m.pts = append(m.pts, name)
 	m.order = append(m.order, [2]int{row, col})
-	out := PlayOutcome{Move: name, Last: name}
+	out := PlayOutcome{Move: name, Raw: name, Last: name}
 	switch {
 	case win:
 		m.line = line
@@ -71,9 +71,9 @@ func (m *gomokuMatch) CanUndo(side string) error {
 }
 
 // Undo 撤销"请求者最近一手 + 其后的对手回应"（1-2 步），回到请求者重走。
-func (m *gomokuMatch) Undo(side string) ([]string, string, error) {
+func (m *gomokuMatch) Undo(side string) ([]string, []string, string, error) {
 	if err := m.CanUndo(side); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	// 最后一步是谁落的：轮到谁走，谁就不是刚落子的一方
 	lastSide := otherSide(gomoku.SideName(m.b.Turn))
@@ -98,7 +98,8 @@ func (m *gomokuMatch) Undo(side string) ([]string, string, error) {
 	if n := len(m.pts); n > 0 {
 		last = m.pts[n-1]
 	}
-	return append([]string(nil), m.pts...), last, nil
+	raws := append([]string(nil), m.pts...)
+	return append([]string(nil), m.pts...), raws, last, nil
 }
 
 func (m *gomokuMatch) Snapshot(side string) map[string]any {

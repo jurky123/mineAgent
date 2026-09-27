@@ -35,13 +35,14 @@ type Match interface {
 	Snapshot(side string) map[string]any
 	// CanUndo 只读校验：请求者是否有可悔的棋（没走过棋就不行）。
 	CanUndo(side string) error
-	// Undo 悔棋：撤销到请求者上一手之前（通常 1-2 步），返回剩余记谱与最后一步坐标。
-	Undo(side string) (moves []string, last string, err error)
+	// Undo 悔棋：撤销到请求者上一手之前（通常 1-2 步），返回剩余记谱/原始着法与最后一步坐标。
+	Undo(side string) (moves []string, raws []string, last string, err error)
 }
 
 // PlayOutcome 是一步走完的结果。
 type PlayOutcome struct {
 	Move   string // 记谱（展示用，如 e4 / Nf3 / h8）
+	Raw    string // 原始着法（回放用：象棋 UCI e2e4，五子棋坐标 h8）
 	Last   string // 最后一步的坐标（前端高亮用，如 e2e4 / h8）
 	Over   bool   // 是否终局
 	Winner string // "white"/"black"/"draw"（Over 时有效）
@@ -134,8 +135,10 @@ type Room struct {
 	Result   string // white / black / draw
 	Reason   string
 	Moves    []string
+	RawMoves []string // 与 Moves 一一对应的原始着法（回放用）
 	LastMove string
 	UndoReq  *UndoReq
+	SwapReq  *UndoReq // 换边请求（与悔棋同样的 2 分钟有效期）
 	Started  time.Time
 	Created  time.Time
 	Updated  time.Time
@@ -188,9 +191,15 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 	if r.Status != StatusPlaying {
 		delete(m, "legalMoves")
 	}
-	// 待处理的悔棋请求（超时的不下发）
-	if r.Status == StatusPlaying && r.UndoReq.fresh(time.Now()) {
-		m["undoReq"] = map[string]any{"by": r.UndoReq.By, "at": r.UndoReq.At.UnixMilli()}
+	// 待处理的悔棋 / 换边请求（超时的不下发）
+	if r.Status == StatusPlaying {
+		now := time.Now()
+		if r.UndoReq.fresh(now) {
+			m["undoReq"] = map[string]any{"by": r.UndoReq.By, "at": r.UndoReq.At.UnixMilli()}
+		}
+		if r.SwapReq.fresh(now) {
+			m["swapReq"] = map[string]any{"by": r.SwapReq.By, "at": r.SwapReq.At.UnixMilli()}
+		}
 	}
 	return m
 }
@@ -355,8 +364,10 @@ func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 		return err
 	}
 	r.Moves = append(r.Moves, out.Move)
+	r.RawMoves = append(r.RawMoves, out.Raw)
 	r.LastMove = out.Last
-	r.UndoReq = nil // 走了新的一步，之前的悔棋请求作废
+	r.UndoReq = nil // 走了新的一步，之前的悔棋/换边请求作废
+	r.SwapReq = nil
 	r.Updated = time.Now()
 	if out.Over {
 		winner := out.Winner
@@ -423,11 +434,12 @@ func (m *Manager) UndoRespond(userID int64, accept bool) error {
 	requester := r.UndoReq.By
 	r.UndoReq = nil
 	if accept {
-		moves, last, err := r.Match.Undo(requester)
+		moves, raws, last, err := r.Match.Undo(requester)
 		if err != nil {
 			return err
 		}
 		r.Moves = moves
+		r.RawMoves = raws
 		r.LastMove = last
 		m.log.Info("undo accepted", "game", r.GameID, "room", r.ID, "by", requester, "moves", len(moves))
 	} else {
@@ -436,6 +448,91 @@ func (m *Manager) UndoRespond(userID int64, accept bool) error {
 	r.Updated = time.Now()
 	m.publishLocked(r)
 	return nil
+}
+
+// SwapRequest 请求换边：等待中直接换；对局中需要对手同意。
+func (m *Manager) SwapRequest(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	side := r.sideOf(userID)
+	if side == "" {
+		return fmt.Errorf("你不在这个房间里")
+	}
+	if r.Status == StatusWaiting {
+		m.swapSidesLocked(r)
+		m.log.Info("sides swapped (waiting)", "game", r.GameID, "room", r.ID)
+		m.publishLocked(r)
+		return nil
+	}
+	if r.Status != StatusPlaying {
+		return fmt.Errorf("对局已结束")
+	}
+	if r.SwapReq != nil && r.SwapReq.fresh(time.Now()) && r.SwapReq.By == side {
+		return fmt.Errorf("已经发过换边请求了，等对手回应")
+	}
+	r.SwapReq = &UndoReq{By: side, At: time.Now()}
+	r.Updated = time.Now()
+	m.log.Info("swap requested", "game", r.GameID, "room", r.ID, "by", side)
+	m.publishLocked(r)
+	return nil
+}
+
+// SwapRespond 回应换边请求：只有对手能同意/拒绝。
+func (m *Manager) SwapRespond(userID int64, accept bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.Status != StatusPlaying {
+		return fmt.Errorf("对局还没开始或已结束")
+	}
+	side := r.sideOf(userID)
+	if r.SwapReq == nil || !r.SwapReq.fresh(time.Now()) {
+		r.SwapReq = nil
+		return fmt.Errorf("没有待处理的换边请求")
+	}
+	if r.SwapReq.By == side {
+		return fmt.Errorf("这是你自己发的请求")
+	}
+	requester := r.SwapReq.By
+	r.SwapReq = nil
+	if accept {
+		m.swapSidesLocked(r)
+		m.log.Info("swap accepted", "game", r.GameID, "room", r.ID, "by", requester)
+	} else {
+		m.log.Info("swap declined", "game", r.GameID, "room", r.ID, "by", requester)
+	}
+	r.Updated = time.Now()
+	m.publishLocked(r)
+	return nil
+}
+
+// SwapCancel 撤回自己的换边请求。
+func (m *Manager) SwapCancel(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.SwapReq != nil && r.SwapReq.By == r.sideOf(userID) {
+		r.SwapReq = nil
+		r.Updated = time.Now()
+		m.publishLocked(r)
+	}
+	return nil
+}
+
+// swapSidesLocked 交换两侧玩家（棋局状态不变，轮到谁走就换成另一个人走）。
+func (m *Manager) swapSidesLocked(r *Room) {
+	w, bl := r.Sides["white"], r.Sides["black"]
+	r.Sides["white"], r.Sides["black"] = bl, w
 }
 
 // UndoCancel 撤回自己的悔棋请求（请求方用）。
@@ -526,6 +623,8 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 		meta, _ := json.Marshal(map[string]any{
 			"room": r.ID, "reason": reason, "moves": len(r.Moves),
 			"side": r.sideOf(p.ID), "opponent": opponentName(r, p.ID),
+			"movelist": append([]string(nil), r.RawMoves...), // 回放用（象棋 UCI / 五子棋坐标）
+			"display":  append([]string(nil), r.Moves...),    // 展示用（SAN / 坐标）
 		})
 		if _, err := m.store.AddGameRun(context.Background(), storage.GameRun{
 			UserID: p.ID, GameID: r.GameID, Result: outcome,

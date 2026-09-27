@@ -101,6 +101,8 @@ func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleUndo(w, r, u, id) })(w, r)
 	case "swap":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleSwap(w, r, u, id) })(w, r)
+	case "draw":
+		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleDraw(w, r, u, id) })(w, r)
 	case "comment":
 		a.auth(func(w http.ResponseWriter, r *http.Request, u *storage.User) { a.handleComment(w, r, u, id) })(w, r)
 	case "runs":
@@ -284,6 +286,45 @@ func (a *API) handleSwap(w http.ResponseWriter, r *http.Request, u *storage.User
 		err = a.mgr.SwapRespond(u.ID, false)
 	case "cancel":
 		err = a.mgr.SwapCancel(u.ID)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "action 只能是 request/accept/decline/cancel"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	room := a.mgr.RoomOf(u.ID)
+	if room == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+}
+
+// handleDraw 提和：request / accept / decline / cancel（同意后本局和棋）。
+func (a *API) handleDraw(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "参数不是合法 JSON"})
+		return
+	}
+	var err error
+	switch req.Action {
+	case "request":
+		err = a.mgr.DrawRequest(u.ID)
+	case "accept":
+		err = a.mgr.DrawRespond(u.ID, true)
+	case "decline":
+		err = a.mgr.DrawRespond(u.ID, false)
+	case "cancel":
+		err = a.mgr.DrawCancel(u.ID)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "action 只能是 request/accept/decline/cancel"})
 		return

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mineagent/internal/storage"
@@ -421,5 +422,121 @@ func TestSwapSides(t *testing.T) {
 	}
 	if m.RoomOf(1).Sides["white"].ID != 1 {
 		t.Fatal("拒绝后不应换边")
+	}
+}
+
+func TestChessPromptContextRich(t *testing.T) {
+	m := testManager(t)
+	r, _ := m.Create("chess", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	// 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 Nf6 5.O-O Nxe4（黑马吃白兵）
+	for _, mv := range []string{"e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6", "e1g1", "f6e4"} {
+		us := int64(1)
+		if len(m.RoomOf(1).Moves)%2 == 1 {
+			us = 2
+		}
+		playChess(t, m, us, mv)
+	}
+	got := m.RoomOf(1)
+	prompt := got.Match.PromptContext()
+	checks := []string{
+		"黑方用「马」从 f6 走到 e4", // 谁/什么子/从哪到哪
+		"吃掉了对方的「兵」",        // 吃子
+		"双方剩余子力：白方",        // 双方剩余
+		"abcdefgh",         // 当前棋盘
+		"当前局面 FEN：",        // FEN
+		"O-O",              // 对局进程（含易位）
+	}
+	for _, c := range checks {
+		if !strings.Contains(prompt, c) {
+			t.Errorf("PromptContext 缺少 %q\n--- prompt ---\n%s", c, prompt)
+		}
+	}
+	// 带上之前的解说后仍包含上下文（模拟 manager 的追加）
+	if !strings.Contains(prompt, "1.e4") && !strings.Contains(prompt, "e4 ") {
+		t.Logf("进程片段：%s", prompt[:200])
+	}
+}
+
+func TestGomokuPromptContextRich(t *testing.T) {
+	m := testManager(t)
+	r, _ := m.Create("gomoku", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	drop := func(user int64, pt string) {
+		b, _ := json.Marshal(map[string]string{"point": pt})
+		if err := m.Move(user, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drop(1, "h8")
+	drop(2, "h9")
+	prompt := m.RoomOf(1).Match.PromptContext()
+	for _, c := range []string{"刚刚：白方在 h9 落子", "双方棋子数：黑 1 子，白 1 子", "abcdefghijklmno", "1.黑h8 2.白h9"} {
+		if !strings.Contains(prompt, c) {
+			t.Errorf("PromptContext 缺少 %q\n--- prompt ---\n%s", c, prompt)
+		}
+	}
+}
+
+func TestDrawOfferFlow(t *testing.T) {
+	m := testManager(t)
+	r, _ := m.Create("chess", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	playChess(t, m, 1, "e2e4")
+	playChess(t, m, 2, "e7e5")
+	// 黑提和
+	if err := m.DrawRequest(2); err != nil {
+		t.Fatal(err)
+	}
+	if snap := m.RoomOf(1).Snapshot(1); snap["drawReq"] == nil {
+		t.Fatal("白方应看到提和请求")
+	}
+	// 自己不能同意自己的提和
+	if err := m.DrawRespond(2, true); err == nil {
+		t.Fatal("自己同意应报错")
+	}
+	// 拒绝：棋局继续
+	if err := m.DrawRespond(1, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.RoomOf(1); got.Status != StatusPlaying || got.Snapshot(1)["drawReq"] != nil {
+		t.Fatalf("拒绝后应继续对局: %+v", got.Status)
+	}
+	// 再提一次，这次同意 → 和棋
+	if err := m.DrawRequest(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DrawRespond(1, true); err != nil {
+		t.Fatal(err)
+	}
+	got := m.RoomOf(1)
+	if got.Status != StatusFinished || got.Result != "draw" || got.Reason != "agreement" {
+		t.Fatalf("应判和棋: status=%s result=%s reason=%s", got.Status, got.Result, got.Reason)
+	}
+	runsA, _ := m.store.ListGameRuns(context.Background(), 1, "chess", 5)
+	runsB, _ := m.store.ListGameRuns(context.Background(), 2, "chess", 5)
+	if len(runsA) != 1 || runsA[0].Result != "draw" || len(runsB) != 1 || runsB[0].Result != "draw" {
+		t.Fatalf("双方都应记和棋: %+v %+v", runsA, runsB)
+	}
+	// 走新的一步会让提和作废
+	r2, _ := m.Create("gomoku", &Player{ID: 1, Name: "a"})
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DrawRequest(1); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]string{"point": "h8"})
+	if err := m.Move(1, body); err != nil { // 黑刚落子，轮到白
+		t.Fatal(err)
+	}
+	if snap := m.RoomOf(1).Snapshot(1); snap["drawReq"] != nil {
+		t.Fatal("落子后提和应作废")
 	}
 }

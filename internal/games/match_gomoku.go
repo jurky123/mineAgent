@@ -104,11 +104,45 @@ func (m *gomokuMatch) Undo(side string) ([]string, []string, string, error) {
 	return append([]string(nil), m.pts...), raws, last, nil
 }
 
-// PromptContext 给解说用：15x15 盘面（●黑 ○白 ·空）+ 刚刚落子。
+// PromptContext 给解说用：刚刚谁在哪落子 + 对局进程 + 双方子数 + 当前盘面。
 func (m *gomokuMatch) PromptContext() string {
 	var sb strings.Builder
-	sb.WriteString("五子棋（15 路，黑先，连五者胜）。盘面（●黑 ○白 ·空，行 1 在最下）：\n")
+	sb.WriteString("五子棋对局（15 路，黑先，横竖斜连成 5 子或以上获胜）。\n")
+	if len(m.pts) == 0 {
+		return sb.String() + "还没有落子。"
+	}
+	// 上一步是谁落的：轮到谁走，谁就不是刚落子的一方
+	lastSide := otherSide(gomoku.SideName(m.b.Turn))
+	last := m.pts[len(m.pts)-1]
+	fmt.Fprintf(&sb, "刚刚：%s在 %s 落子（第 %d 手）。\n", sideLabelCN(lastSide), last, len(m.pts))
+
+	start := 0
+	if len(m.pts) > 16 {
+		start = len(m.pts) - 16
+	}
+	sb.WriteString("对局进程（最近 " + fmt.Sprint(len(m.pts)-start) + " 手）：")
+	for i := start; i < len(m.pts); i++ {
+		side := "黑"
+		if i%2 == 1 {
+			side = "白"
+		}
+		sb.WriteString(fmt.Sprintf(" %d.%s%s", i+1, side, m.pts[i]))
+	}
+	sb.WriteString("\n")
+
+	black, white := 0, 0
+	for _, c := range m.b.Cells {
+		switch c {
+		case gomoku.Black:
+			black++
+		case gomoku.White:
+			white++
+		}
+	}
+	fmt.Fprintf(&sb, "双方棋子数：黑 %d 子，白 %d 子。\n", black, white)
+	sb.WriteString("当前盘面（●黑 ○白 ·空，行号越大越靠上）：\n")
 	for row := gomoku.Size - 1; row >= 0; row-- {
+		fmt.Fprintf(&sb, "%2d ", row+1)
 		for col := 0; col < gomoku.Size; col++ {
 			switch m.b.Cells[row*gomoku.Size+col] {
 			case gomoku.Black:
@@ -121,15 +155,8 @@ func (m *gomokuMatch) PromptContext() string {
 		}
 		sb.WriteByte('\n')
 	}
-	last := ""
-	if n := len(m.pts); n > 0 {
-		last = m.pts[n-1]
-	}
-	tail := m.pts
-	if len(tail) > 8 {
-		tail = tail[len(tail)-8:]
-	}
-	sb.WriteString("共 " + fmt.Sprint(len(m.pts)) + " 手，刚刚落子：" + last + "\n最近： " + strings.Join(tail, " "))
+	sb.WriteString("   abcdefghijklmno\n")
+	sb.WriteString("轮到" + sideLabelCN(m.b.TurnSide()) + "走。")
 	return sb.String()
 }
 

@@ -246,6 +246,16 @@ function demoUndoRequest() {
 function demoSwapRequest() {
   return Object.assign(demoAfterE4E5(), { swapReq: { by: 'black', at: Date.now() } });
 }
+function demoDrawRequest() {
+  return Object.assign(demoAfterE4E5(), { drawReq: { by: 'black', at: Date.now() } });
+}
+function demoDraw() {
+  return demoRoom({
+    status: 'finished', result: 'draw', reason: 'agreement',
+    pieces: demoPieces(['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6']),
+    lastMove: 'a7a6', moves: ['e4','e5','Nf3','Nc6','Bb5','a6'],
+  });
+}
 function demoFinished(youWin) {
   const rows = ['......k.', '.....ppp', '........', '........', '........', '........', '........', 'R.....K.'];
   return demoRoom({
@@ -265,6 +275,8 @@ const DEMO_STATES = {
   'finished-lose': () => demoFinished(false),
   'undo-request': demoUndoRequest,
   'swap-request': demoSwapRequest,
+  'draw-request': demoDrawRequest,
+  'finished-draw': demoDraw,
 };
 
 // motion：按时间线自动演示一遍（给录屏用，12 秒左右）

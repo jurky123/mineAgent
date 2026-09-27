@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -141,6 +142,7 @@ type Room struct {
 	LastMove string
 	UndoReq  *UndoReq
 	SwapReq  *UndoReq // 换边请求（与悔棋同样的 2 分钟有效期）
+	DrawReq  *UndoReq // 提和请求（同样 2 分钟有效）
 
 	// 解说：ply -> 文案（ply = 第几手，从 1 开始）；commenting 防重复生成。
 	Comments   map[int]string
@@ -212,6 +214,9 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 		}
 		if r.SwapReq.fresh(now) {
 			m["swapReq"] = map[string]any{"by": r.SwapReq.By, "at": r.SwapReq.At.UnixMilli()}
+		}
+		if r.DrawReq.fresh(now) {
+			m["drawReq"] = map[string]any{"by": r.DrawReq.By, "at": r.DrawReq.At.UnixMilli()}
 		}
 	}
 	return m
@@ -291,6 +296,22 @@ func (m *Manager) RequestComment(ctx context.Context, userID int64) (text string
 	r.commenting[ply] = true
 	roomID := r.ID
 	prompt := r.Match.PromptContext()
+	// 带上之前的解说，让解说员延续同一套叙事（"agent 历史进程"）
+	if len(r.Comments) > 0 {
+		keys := make([]int, 0, len(r.Comments))
+		for k := range r.Comments {
+			keys = append(keys, k)
+		}
+		sort.Ints(keys)
+		if len(keys) > 6 {
+			keys = keys[len(keys)-6:]
+		}
+		var prev strings.Builder
+		for _, k := range keys {
+			prev.WriteString(fmt.Sprintf("第%d手：%s\n", k, r.Comments[k]))
+		}
+		prompt += "\n你之前的解说（保持连贯、不要重复）：\n" + prev.String()
+	}
 	side := r.sideOf(userID)
 	m.mu.Unlock()
 
@@ -473,8 +494,9 @@ func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 	r.Moves = append(r.Moves, out.Move)
 	r.RawMoves = append(r.RawMoves, out.Raw)
 	r.LastMove = out.Last
-	r.UndoReq = nil // 走了新的一步，之前的悔棋/换边请求作废
+	r.UndoReq = nil // 走了新的一步，之前的悔棋/换边/提和请求作废
 	r.SwapReq = nil
+	r.DrawReq = nil
 	r.Updated = time.Now()
 	if out.Over {
 		winner := out.Winner
@@ -636,6 +658,76 @@ func (m *Manager) SwapCancel(userID int64) error {
 	return nil
 }
 
+// DrawRequest 提议和棋（对局中，需对方同意）。
+func (m *Manager) DrawRequest(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.Status != StatusPlaying {
+		return fmt.Errorf("对局还没开始或已结束")
+	}
+	side := r.sideOf(userID)
+	if r.DrawReq != nil && r.DrawReq.fresh(time.Now()) && r.DrawReq.By == side {
+		return fmt.Errorf("已经提过和棋了，等对手回应")
+	}
+	r.DrawReq = &UndoReq{By: side, At: time.Now()}
+	r.Updated = time.Now()
+	m.log.Info("draw offered", "game", r.GameID, "room", r.ID, "by", side)
+	m.publishLocked(r)
+	return nil
+}
+
+// DrawRespond 回应提和：只有对手能同意/拒绝；同意即本局和棋。
+func (m *Manager) DrawRespond(userID int64, accept bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.Status != StatusPlaying {
+		return fmt.Errorf("对局还没开始或已结束")
+	}
+	side := r.sideOf(userID)
+	if r.DrawReq == nil || !r.DrawReq.fresh(time.Now()) {
+		r.DrawReq = nil
+		return fmt.Errorf("没有待处理的提和")
+	}
+	if r.DrawReq.By == side {
+		return fmt.Errorf("这是你自己提的和棋")
+	}
+	requester := r.DrawReq.By
+	r.DrawReq = nil
+	r.Updated = time.Now()
+	if accept {
+		m.log.Info("draw agreed", "game", r.GameID, "room", r.ID, "by", requester)
+		m.finishLocked(r, "draw", "agreement")
+		return nil
+	}
+	m.log.Info("draw declined", "game", r.GameID, "room", r.ID, "by", requester)
+	m.publishLocked(r)
+	return nil
+}
+
+// DrawCancel 撤回自己的提和。
+func (m *Manager) DrawCancel(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return fmt.Errorf("你不在任何房间里")
+	}
+	if r.DrawReq != nil && r.DrawReq.By == r.sideOf(userID) {
+		r.DrawReq = nil
+		r.Updated = time.Now()
+		m.publishLocked(r)
+	}
+	return nil
+}
+
 // swapSidesLocked 交换两侧玩家（棋局状态不变，轮到谁走就换成另一个人走）。
 func (m *Manager) swapSidesLocked(r *Room) {
 	w, bl := r.Sides["white"], r.Sides["black"]
@@ -678,6 +770,8 @@ func (m *Manager) Resign(userID int64) error {
 		other = "black"
 	}
 	r.UndoReq = nil
+	r.SwapReq = nil
+	r.DrawReq = nil
 	m.finishLocked(r, other, "resign")
 	return nil
 }
@@ -714,6 +808,8 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 	r.Result = result
 	r.Reason = reason
 	r.UndoReq = nil
+	r.SwapReq = nil
+	r.DrawReq = nil
 	r.Updated = time.Now()
 	for _, p := range r.players() {
 		if p == nil || m.store == nil {

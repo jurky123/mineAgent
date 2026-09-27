@@ -203,12 +203,23 @@ function demoWin() {
 function demoUndoRequest() {
   return Object.assign(demoPlaying(), { undoReq: { by: 'white', at: Date.now() } });
 }
+function demoDrawRequest() {
+  return Object.assign(demoPlaying(), { drawReq: { by: 'white', at: Date.now() } });
+}
+function demoDraw() {
+  return withStones(['h8', 'h9', 'i8', 'i9', 'g8', 'j8', 'g9', 'j9'], {
+    status: 'finished', result: 'draw', reason: 'agreement',
+    comments: { 1: '天元附近开局，稳。', 2: '贴身紧逼。' },
+  });
+}
 const DEMO_STATES = {
   lobby: () => null,
   waiting: demoWaiting,
   playing: demoPlaying,
   'finished-win': demoWin,
   'undo-request': demoUndoRequest,
+  'draw-request': demoDrawRequest,
+  'finished-draw': demoDraw,
 };
 
 function runMotion() {

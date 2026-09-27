@@ -7,7 +7,7 @@ import { play } from './sfx.js';
 export const SIDE_LABEL = { white: '白方', black: '黑方' };
 export const REASON_LABEL = {
   checkmate: '将杀', stalemate: '逼和', resign: '认输', leave: '对手离开',
-  five: '五连', full: '棋盘已满', timeout: '超时',
+  five: '五连', full: '棋盘已满', timeout: '超时', agreement: '和棋',
 };
 
 export function reasonLabel(r) { return REASON_LABEL[r] || r || ''; }
@@ -204,6 +204,12 @@ function notePhase(room) {
 
 // 请求类交互（悔棋 / 换边）：同一请求只弹一次模态；横幅常驻。
 const REQ_META = {
+  draw: {
+    label: '和棋',
+    reqTitle: '对方提议和棋',
+    reqText: (side) => (SIDE_LABEL[side] || '对方') + '提议和棋：同意后本局算和棋（看出谁也没法赢的时候很常见）。',
+    okText: '已同意和棋',
+  },
   undo: {
     label: '悔棋',
     reqTitle: '对方请求悔棋',
@@ -217,7 +223,7 @@ const REQ_META = {
     okText: '已同意换边',
   },
 };
-const reqModalKeys = { undo: '', swap: '' };
+const reqModalKeys = { undo: '', swap: '', draw: '' };
 
 async function respondReq(kind, room, action, onRoom, okMsg) {
   try {
@@ -349,7 +355,17 @@ function resultOverlay(room, onRoom) {
   const box = h('div', 'result-overlay');
   const card = h('div', 'result-card');
   card.appendChild(h('div', 'result-title', draw ? '和棋' : (youWin ? '胜利' : '惜败')));
-  card.appendChild(h('div', 'result-sub', room.reason === 'checkmate' ? '将杀' : (room.reason === 'five' ? '五连' : (SIDE_LABEL[room.result] || '') + '胜 · ' + reasonLabel(room.reason))));
+  let sub;
+  if (draw) {
+    sub = room.reason === 'agreement' ? '双方同意' : reasonLabel(room.reason);
+  } else if (room.reason === 'checkmate') {
+    sub = '将杀';
+  } else if (room.reason === 'five') {
+    sub = '五连';
+  } else {
+    sub = (SIDE_LABEL[room.result] || '') + '胜 · ' + reasonLabel(room.reason);
+  }
+  card.appendChild(h('div', 'result-sub', sub));
   const acts = h('div', 'result-actions');
   const again = h('button', 'btn primary cta', '再来一局');
   again.onclick = async () => { onRoom(await rematch(room.game)); };
@@ -379,6 +395,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
   if (room.status === 'playing') maybeRequestComment(room);
   maybeRequestModal(room, 'undo', onRoom);
   maybeRequestModal(room, 'swap', onRoom);
+  maybeRequestModal(room, 'draw', onRoom);
 
   if (room.status === 'playing') {
     const undo = h('button', 'btn sm');
@@ -408,6 +425,20 @@ export function actionButtons(el, room, { onRoom, onExit }) {
       } catch (e) { toast(e.message, { warn: true }); }
     });
     el.appendChild(swap);
+
+    const draw = h('button', 'btn sm');
+    draw.appendChild(icon('handshake') || icon('flag'));
+    draw.appendChild(h('span', null, '提和'));
+    draw.title = '提议和棋（需要对方同意）';
+    draw.disabled = !!room.drawReq;
+    draw.onclick = () => withPending(draw, async () => {
+      try {
+        const res = await apiPost('/api/games/' + room.game + '/draw', { action: 'request' });
+        onRoom(res.room);
+        toast('已提议和棋，等待对方同意');
+      } catch (e) { toast(e.message, { warn: true }); }
+    });
+    el.appendChild(draw);
 
     const resign = h('button', 'btn danger sm');
     resign.appendChild(icon('flag'));
@@ -441,6 +472,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
 
   requestBanner(el, room, 'undo', onRoom);
   requestBanner(el, room, 'swap', onRoom);
+  requestBanner(el, room, 'draw', onRoom);
 
   if (room.status === 'waiting' || room.status === 'finished') {
     const leave = h('button', 'btn sm');

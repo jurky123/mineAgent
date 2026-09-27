@@ -225,7 +225,7 @@ func announcementsFeed(store *storage.Store) portal.CardFunc {
 	gameName := map[string]string{"chess": "国际象棋", "gomoku": "五子棋"}
 	reasonName := map[string]string{
 		"checkmate": "将杀", "stalemate": "逼和", "resign": "认输", "leave": "对手离开",
-		"five": "五连", "full": "棋盘已满",
+		"five": "五连", "full": "棋盘已满", "agreement": "和棋",
 	}
 	return func(ctx context.Context, u *storage.User) (any, error) {
 		anns, err := store.ListAnnouncements(ctx, 4)

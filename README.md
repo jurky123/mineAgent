@@ -142,10 +142,14 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 | 页面 | UI 模式 | 说明 |
 |---|---|---|
-| `/` | Personal Hub | 首页：Agent 一级入口（最近对话 + 新对话/继续）、Minecraft 状态（谁在玩/TPS/天气，细节可展开）、游戏（开放房间 + 最近战绩）、最新动态 Feed（管理员可发布/删除） |
+| `/` | Personal Hub | 首页：Agent **Quick Composer**（直接提问，回车后跳到 `/agent` 并自动发出）、Minecraft 状态（头像堆叠的"谁在玩"+ 天气/时段/TPS，细节可展开）、游戏内容卡、最新动态 Feed；欢迎语右侧有 **在线人数（Presence）** |
 | `/agent` | Productivity App | Agent 聊天页（ChatGPT 风全屏工作区：多会话/文件收发/模型切换，见下） |
 | `/games` → `/games/chess` | Entertainment App | 游戏目录 → 国际象棋（大厅 → 房间 → 对局 三态） |
 | `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于 |
+
+**顺手就能用**：`Ctrl/Cmd + K` 打开命令面板（新建对话 / 打开棋局 / 对局历史 / 切换主题…）；
+支持安装成 PWA（`manifest.webmanifest` + 纯网络 Service Worker，手机"添加到主屏幕"后全屏运行）；
+手机端底部有 Tabbar（首页/Agent/游戏/我的）。
 
 **图标与品牌**：线性图标用 Lucide（ISC，内联在 `static/js/ds.js` 的 `ICON_PATHS`，34 个），
 品牌 mark / favicon 用站点图标 `static/img/logo.png`（256px）与 `static/img/favicon.png`（64px，
@@ -198,6 +202,8 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   SSE 实时同步，刷新/断线重连不丢对局；同时只在一个房间里（开新房或离开视为旧局认输）。
 - **大厅 / 对局**：`/games/chess` 自己管三态——没房间时是大厅（创建房间 / 输入房间码加入 /
   开放房间列表），进房间后是棋盘页（等待对手 → 对局 → 终局）。
+- **音效**：落子/吃子/轮到你/将军/胜负，全部用 Web Audio 合成（零素材）；账号页可关（`游戏音效`）。
+- **终局呈现**：棋盘上浮出「胜利/惜败/和棋 · 将杀/五连」+ [再来一局][查看棋谱]，胜利时少量粒子；棋盘几何保持不变。
 - **悔棋（需双方同意）**：点「悔棋」发出请求，对手在状态栏看到「同意 / 拒绝」；
   同意则撤销你最近一手（及其后的对手回应，回到你重走），拒绝或 2 分钟超时则继续；
   走出新的一步、认输或终局都会让请求自动作废。

@@ -136,7 +136,8 @@ function gameCard(item) {
   if (item.losses) stats.push(item.losses + ' 负');
   if (item.draws) stats.push(item.draws + ' 和');
   card.appendChild(h('div', 'game-stats', stats.length ? '最近战绩：' + stats.join(' · ') : '还没有对局记录'));
-  const start = h('a', 'btn primary cta', openRooms ? '去加入' : '开始');
+  // 首页只把 Agent 当一级操作；游戏入口降一级（进入 /games 后才是 primary）
+  const start = h('a', 'btn cta', (openRooms ? '去加入' : '开始') + ' →');
   start.href = item.path || '/games';
   card.appendChild(start);
   return card;

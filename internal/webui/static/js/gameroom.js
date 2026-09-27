@@ -222,6 +222,9 @@ function requestBanner(el, room, kind, onRoom) {
   const meta = REQ_META[kind];
   const req = room[kind + 'Req'];
   if (!req) return;
+  // 已经弹了模态就别再放横幅（两个提示同时出现会抢注意力）；
+  // 关掉模态（点了遮罩/×）后下一次渲染横幅会补上。
+  if (document.querySelector('.dialog-mask')) return;
   const banner = h('div', 'undo-banner');
   if (req.by === room.you) {
     banner.appendChild(h('span', 'undo-text', '已请求' + meta.label + '，等待对方同意…'));

@@ -104,3 +104,9 @@
 /* 目录卡整卡可点 */
 .catalog-card.clickable { cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; }
 .catalog-card.clickable:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, .05); }
+
+/* Games 目录页比 Portal 窄（避免"还差一张卡"的空旷感） */
+.wrap.games-wrap { max-width: 52rem; }
+@media (max-width: 640px) {
+  .wrap.games-wrap { max-width: 100%; }
+}

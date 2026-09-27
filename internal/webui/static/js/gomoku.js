@@ -72,6 +72,7 @@ async function place(i) {
   const pt = pointName(i);
   if ((r.cells || '')[i] !== '.') { toast('这里已经有子了', { warn: true }); return; }
   state.moving = true;
+  document.querySelector('.board-col')?.classList.add('board-pending');
   try {
     const res = await apiPost('/api/games/' + GAME + '/move', { point: pt });
     apply(res.room);
@@ -79,6 +80,7 @@ async function place(i) {
     toast(e.message, { warn: true });
   } finally {
     state.moving = false;
+    document.querySelector('.board-col')?.classList.remove('board-pending');
   }
 }
 

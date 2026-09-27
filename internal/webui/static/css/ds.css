@@ -201,3 +201,8 @@ body.ds a { color: inherit; }
 .menu-theme .seg { display: inline-flex; background: var(--surface-muted); border-radius: 9px; padding: 3px; gap: 2px; }
 .menu-theme .seg-item { border: 0; background: transparent; color: var(--text-secondary); padding: 5px 9px; border-radius: 7px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .menu-theme .seg-item.on { background: var(--surface); color: var(--text); font-weight: 600; }
+
+/* 移动端/触屏的按压反馈 + popover 不溢出 */
+.btn:active, .nav-item:active, .menu-item:active, .icon-btn:active { transform: scale(.98); }
+.pop { max-width: calc(100vw - 24px); }
+.pop-item:active { background: var(--surface-muted); }

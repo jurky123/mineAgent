@@ -59,8 +59,8 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
 .pc { width: 88%; height: 88%; pointer-events: none; position: relative; z-index: 1; }
 /* 黑子放在深色格上会看不清：给黑子描一圈 1px 浅色边（4 方向 drop-shadow） */
 .pc-b {
-  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, .88)) drop-shadow(-1px 0 0 rgba(255, 255, 255, .88))
-          drop-shadow(0 1px 0 rgba(255, 255, 255, .88)) drop-shadow(0 -1px 0 rgba(255, 255, 255, .88));
+  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, .5)) drop-shadow(-1px 0 0 rgba(255, 255, 255, .5))
+          drop-shadow(0 1px 0 rgba(255, 255, 255, .5)) drop-shadow(0 -1px 0 rgba(255, 255, 255, .5));
 }
 .coord { position: absolute; font-size: 10px; font-weight: 600; opacity: .45; pointer-events: none; }
 .coord.rank { top: 2px; left: 4px; }
@@ -222,3 +222,12 @@ body.game-focus .chess-side .moves-table { max-height: 150px; }
 }
 .gpoint.playable { cursor: pointer; }
 .gpoint.locked { cursor: default; }
+
+/* 落子提交中（棋盘角落的小 spinner，不挡操作） */
+.board-col { position: relative; }
+.board-col.board-pending::after {
+  content: ''; position: absolute; right: 6px; top: 6px;
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border-strong); border-top-color: var(--brand);
+  animation: spin .7s linear infinite;
+}

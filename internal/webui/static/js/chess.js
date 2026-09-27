@@ -84,6 +84,7 @@ function onSquare(sq) {
 async function sendMove(move) {
   if (state.moving) return;   // 上一次还没回，别重复落子
   state.moving = true;
+  setBoardPending(true);
   state.selected = null;
   try {
     const res = await apiPost('/api/games/' + GAME + '/move', {
@@ -95,7 +96,14 @@ async function sendMove(move) {
     renderBoard();
   } finally {
     state.moving = false;
+    setBoardPending(false);
   }
+}
+
+// setBoardPending 在棋盘角落显示"提交中"小 spinner（走子没回来之前）
+function setBoardPending(on) {
+  const col = document.querySelector('.board-col');
+  if (col) col.classList.toggle('board-pending', !!on);
 }
 
 // ---------- 状态栏 ----------

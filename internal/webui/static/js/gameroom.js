@@ -305,40 +305,61 @@ export function maybeRequestComment(room) {
   }).finally(() => { if (commentPendingPly === ply) commentPendingPly = 0; });
 }
 
-// 解说面板：一行一手，自动滚到最新
-export function commentaryPanel(el, room) {
-  el.innerHTML = '';
-  const head = h('div', 'side-head');
-  head.appendChild(h('span', null, 'AI 解说'));
-  const toggle = h('button', 'btn sm ghost commentary-toggle' + (commentaryOn() ? ' on' : ''), commentaryOn() ? '开' : '关');
-  toggle.title = '每一步让 AI 点评（同一个模型网关，失败不影响下棋）';
-  toggle.onclick = () => {
+// ---------- 弹幕（AI 解说以直播间弹幕形式飘过棋盘） ----------
+const DANMAKU_LANES = 5;
+const laneFreeAt = new Array(DANMAKU_LANES).fill(0);
+
+function danmakuLayer() {
+  const col = document.querySelector('.board-col');
+  if (!col) return null;
+  let layer = col.querySelector('.danmaku-layer');
+  if (!layer) {
+    layer = h('div', 'danmaku-layer');
+    layer.style.position = 'absolute';
+    col.appendChild(layer);
+  }
+  return layer;
+}
+
+// danmaku 让一条点评从右往左飘过棋盘；多条会自动错开轨道，不叠在一起。
+export function danmaku(text) {
+  if (!text || !commentaryOn()) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const layer = danmakuLayer();
+  if (!layer) return;
+  const dur = Math.min(13, 7 + text.length * 0.12);   // 长一点的弹幕飘慢些
+  const now = Date.now();
+  let lane = 0;
+  for (let i = 1; i < DANMAKU_LANES; i++) if (laneFreeAt[i] < laneFreeAt[lane]) lane = i;
+  laneFreeAt[lane] = now + dur * 1000 * 0.55;
+  const item = h('div', 'danmaku-item');
+  item.appendChild(icon('sparkle', 'sm'));
+  item.appendChild(h('span', null, text));
+  item.style.top = (6 + lane * 13) + '%';
+  item.style.transform = 'translateX(' + layer.clientWidth + 'px)';
+  layer.appendChild(item);
+  const w = item.offsetWidth;
+  requestAnimationFrame(() => {
+    item.style.transition = 'transform ' + dur + 's linear';
+    item.style.transform = 'translateX(' + (-w - 8) + 'px)';
+  });
+  setTimeout(() => item.remove(), dur * 1000 + 200);
+}
+
+// 解说开关（放在操作行；开着时每手都会飘一条弹幕）
+export function commentaryToggle(room) {
+  const btn = h('button', 'btn sm' + (commentaryOn() ? '' : ' ghost'));
+  btn.appendChild(icon('megaphone'));
+  const label = h('span', null, commentaryOn() ? '弹幕开' : '弹幕关');
+  btn.appendChild(label);
+  btn.title = '每一步让 AI 发一条弹幕（同一个模型网关，失败不影响下棋）';
+  btn.onclick = () => {
     setCommentary(!commentaryOn());
-    commentaryPanel(el, room);
+    label.textContent = commentaryOn() ? '弹幕开' : '弹幕关';
+    btn.classList.toggle('ghost', !commentaryOn());
     if (commentaryOn()) maybeRequestComment(room);
   };
-  head.appendChild(toggle);
-  el.appendChild(head);
-  const list = h('div', 'commentary-list');
-  const comments = (room && room.comments) || {};
-  const count = (room && room.moves && room.moves.length) || 0;
-  if (!commentaryOn()) {
-    list.appendChild(h('div', 'empty', '解说已关闭（点右上"开"打开）'));
-  } else if (room && room.commentary === false) {
-    list.appendChild(h('div', 'empty', '服务端未配置解说模型'));
-  } else if (!count) {
-    list.appendChild(h('div', 'empty', '走第一步后开始解说'));
-  } else {
-    for (let ply = 1; ply <= count; ply++) {
-      const row = h('div', 'commentary-row' + (comments[ply] ? '' : ' pending'));
-      row.appendChild(h('span', 'commentary-ply', ply + '.'));
-      const text = comments[ply] !== undefined && comments[ply] !== '' ? comments[ply] : (commentFailed.has(ply) ? '解说暂不可用' : '解说生成中…');
-      row.appendChild(h('span', 'commentary-text', text));
-      list.appendChild(row);
-    }
-  }
-  el.appendChild(list);
-  list.scrollTop = list.scrollHeight;
+  return btn;
 }
 
 // 动作按钮：悔棋 / 换边（对局中需对方同意）/ 认输 / 离开 / 再来一局。
@@ -398,6 +419,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
   maybeRequestModal(room, 'draw', onRoom);
 
   if (room.status === 'playing') {
+    el.appendChild(commentaryToggle(room));
     const undo = h('button', 'btn sm');
     undo.appendChild(icon('restart'));
     undo.appendChild(h('span', null, '悔棋'));

@@ -109,8 +109,23 @@ function renderStatus() {
   el.appendChild(h('span', null, '本局结束'));
 }
 
+let demoDanmakuShown = '';
+
+// 预览模式下把最新一条解说用弹幕演示出来（只飘一次）
+function demoDanmaku(r) {
+  if (!DEMO || !r || !r.comments) return;
+  const keys = Object.keys(r.comments).map(Number).sort((a, b) => a - b);
+  if (!keys.length) return;
+  const lastKey = keys[keys.length - 1];
+  const key = (r.id || '') + ':' + lastKey;
+  if (demoDanmakuShown === key) return;
+  demoDanmakuShown = key;
+  setTimeout(() => room.danmaku(r.comments[lastKey]), 400);
+}
+
 function paint() {
   const r = state.room;
+  demoDanmaku(r);
   const chip = document.getElementById('room-chip');
   const lobbyEl = document.getElementById('lobby');
   const roomEl = document.getElementById('room');
@@ -126,13 +141,7 @@ function paint() {
     renderStatus();
     room.roomInfo(document.getElementById('room-info'), r);
     room.movesTable(document.getElementById('moves'), r.moves);
-    let com = document.getElementById('commentary');
-    if (!com) {
-      com = h('div', 'card side-card');
-      com.id = 'commentary';
-      document.querySelector('.chess-side').appendChild(com);
-    }
-    room.commentaryPanel(com, r);
+
     room.actionButtons(document.getElementById('actions'), r, {
       onRoom: apply,
       onExit: () => { state.room = null; paint(); },
@@ -273,8 +282,8 @@ function runMotion() {
     onComment: (ply, text) => {
       if (state.room) {
         state.room.comments = Object.assign({}, state.room.comments, { [ply]: text });
-        paint();
       }
+      room.danmaku(text);
     },
   });
   // 解说异步返回：合并到当前房间再重绘（请求期间可能已经换过 snapshot 对象）
@@ -283,6 +292,6 @@ function runMotion() {
     if (state.room && d.ply) {
       state.room.comments = Object.assign({}, state.room.comments, { [d.ply]: d.text });
     }
-    paint();
+    if (!d.silent) room.danmaku(d.text);   // 本地拿到的解说也飘一条
   });
 })();

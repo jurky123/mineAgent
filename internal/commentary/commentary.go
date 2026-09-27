@@ -34,8 +34,10 @@ func New(baseURL, apiKey, model string, log *slog.Logger) *Client {
 // Enabled 没配模型时直接禁用（调用方据此隐藏解说入口）。
 func (c *Client) Enabled() bool { return c != nil && c.baseURL != "" && c.model != "" }
 
-const system = `你是棋局解说员。用一到两句简体中文点评刚刚这一步：说清意图、好坏或威胁，语气轻松、像朋友在旁边看棋，
-不要复述规则、不要客套、不要 Markdown、不要编号，只输出解说本身（40 字以内）。`
+const system = `你是棋局直播间的弹幕。用一句简体中文吐槽/点评刚刚这一步，像直播弹幕那样短、口语、有情绪，
+可以玩梗、可以夸张、可以起哄，但不要骂人、不要引战、不要复述局面数据（子力/FEN 之类不要念）。
+要求：20 字以内、一句话、不要 Markdown、不要 emoji、不要引号、不要编号，直接输出弹幕本身。
+例：「这步有点急啊」「稳如老狗」「白棋要凉」「好家伙，直接弃子」「这下有得看了」。`
 
 // Comment 生成一步的解说。prompt 由各游戏提供（局面 + 这一步）。
 func (c *Client) Comment(ctx context.Context, prompt string) (string, error) {

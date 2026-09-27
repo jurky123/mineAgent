@@ -293,10 +293,17 @@ body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; 
   100% { opacity: 0; transform: translate(calc(var(--dx) * 90px), calc(var(--dy) * 60px)) scale(.4); }
 }
 
-/* ---------- AI 解说面板 ---------- */
-.commentary-toggle.on { color: var(--brand); }
-.commentary-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; width: 100%; }
-.commentary-row { display: flex; gap: 8px; font-size: 13.5px; line-height: 1.55; }
-.commentary-ply { color: var(--text-tertiary); font-variant-numeric: tabular-nums; flex: none; }
-.commentary-text { color: var(--text); }
-.commentary-row.pending .commentary-text { color: var(--text-tertiary); font-style: italic; }
+/* ---------- AI 解说：直播间弹幕 ---------- */
+.danmaku-layer {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4;
+  border-radius: 12px;
+}
+.danmaku-item {
+  position: absolute; left: 0; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px; white-space: nowrap;
+  background: rgba(17, 17, 20, .78); color: #fff; font-size: 14px; line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .18); will-change: transform;
+}
+.danmaku-item .i { width: 12px; height: 12px; opacity: .8; }
+html[data-theme="dark"] .danmaku-item { background: rgba(255, 255, 255, .9); color: #111114; }
+@media (max-width: 640px) { .danmaku-item { font-size: 12.5px; padding: 4px 10px; } }

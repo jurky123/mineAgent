@@ -206,3 +206,46 @@ body.ds a { color: inherit; }
 .btn:active, .nav-item:active, .menu-item:active, .icon-btn:active { transform: scale(.98); }
 .pop { max-width: calc(100vw - 24px); }
 .pop-item:active { background: var(--surface-muted); }
+
+/* ---------- 手机底部 tabbar ---------- */
+.tabbar { display: none; }
+@media (max-width: 640px) {
+  .nav { display: none; }                 /* 顶栏只留 logo + 头像，导航交给底部 */
+  body.ds { padding-bottom: 68px; }
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    display: flex; align-items: stretch;
+    background: color-mix(in srgb, var(--page) 92%, transparent);
+    backdrop-filter: blur(14px); border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .tabbar .tab {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    padding: 9px 0 7px; color: var(--text-tertiary); font-size: 11px; text-decoration: none;
+  }
+  .tabbar .tab .i { width: 20px; height: 20px; }
+  .tabbar .tab.on { color: var(--brand); }
+}
+
+/* ---------- 命令面板 ---------- */
+.palette-mask { align-items: flex-start; padding-top: 12vh; }
+.palette {
+  width: min(92vw, 520px); background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-large); box-shadow: var(--shadow-raised); overflow: hidden;
+  animation: rise .16s cubic-bezier(.2, .8, .2, 1);
+}
+.palette-input {
+  width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 15px 18px;
+  background: transparent; color: var(--text); font: inherit; font-size: 15px;
+}
+.palette-input:focus { outline: none; }
+.palette-list { max-height: 42vh; overflow-y: auto; padding: 6px; }
+.palette-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px;
+  border: 0; border-radius: 10px; background: transparent; color: var(--text); font: inherit; font-size: 14.5px; text-align: left;
+}
+.palette-item.on { background: var(--surface-muted); }
+.palette-item .palette-label { flex: 1; }
+.palette-item .palette-hint { color: var(--text-tertiary); font-size: 12.5px; }
+.palette-empty { color: var(--text-tertiary); font-size: 13.5px; padding: 14px; text-align: center; }
+.palette-icon { width: 18px; height: 18px; }

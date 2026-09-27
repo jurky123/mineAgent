@@ -88,6 +88,28 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/api/games", s.games)
 		mux.Handle("/api/games/", s.games)
 	}
+	// PWA：manifest 与 Service Worker（注入版本号；纯网络 SW，不做离线缓存）
+	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		b, err := webui.RenderPage("manifest.webmanifest")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/manifest+json")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		b, err := webui.RenderPage("sw.js")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		_, _ = w.Write(b)
+	})
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		b, err := webui.RenderPage("img/favicon.png")
 		if err != nil {

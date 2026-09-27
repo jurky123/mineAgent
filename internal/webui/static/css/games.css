@@ -231,3 +231,63 @@ body.game-focus .chess-side .moves-table { max-height: 150px; }
   border: 2px solid var(--border-strong); border-top-color: var(--brand);
   animation: spin .7s linear infinite;
 }
+
+/* ---------- Game Stage：进入游戏后的极淡场景底色（2~4%）---------- */
+body.stage-chess::before, body.stage-gomoku::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+}
+body.stage-chess::before {
+  background:
+    radial-gradient(70rem 32rem at 50% -8%, rgba(10, 132, 255, .05), transparent 62%),
+    repeating-conic-gradient(rgba(24, 24, 27, .022) 0% 25%, transparent 0% 50%) 0 0 / 72px 72px;
+}
+body.stage-gomoku::before {
+  background:
+    radial-gradient(70rem 32rem at 50% -8%, rgba(124, 58, 237, .04), transparent 62%),
+    radial-gradient(circle at 1px 1px, rgba(24, 24, 27, .05) 1.2px, transparent 1.4px) 0 0 / 26px 26px;
+}
+body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; }
+
+/* ---------- Player Bar / 状态 pill / 终局浮层（V4-C） ---------- */
+.player-line { gap: 8px; }
+.player-line .face.sm {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  background: var(--surface-muted); color: var(--text-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 650;
+}
+.player-line.acting .face.sm { background: var(--brand-soft); color: var(--brand); }
+.player-line .side-label { color: var(--text-tertiary); font-size: 12.5px; }
+.status-bar {
+  align-self: center; width: auto; padding: 6px 16px; border-radius: 999px;
+  background: var(--surface-muted); gap: 8px; margin-top: 4px;
+}
+.status-bar.active { background: var(--brand-soft); }
+.status-bar.done { background: var(--surface-muted); }
+
+/* 终局浮层：贴在棋盘上（不改变棋盘几何），轻微粒子 */
+.result-overlay {
+  position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+  display: flex; justify-content: center; pointer-events: none; z-index: 5;
+}
+.result-card {
+  pointer-events: auto; text-align: center;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--border); border-radius: var(--radius-large);
+  box-shadow: var(--shadow-raised); padding: 18px 26px;
+  animation: result-in .26s cubic-bezier(.2, .8, .2, 1);
+  backdrop-filter: blur(2px);
+}
+.result-title { font-size: 24px; font-weight: 750; letter-spacing: .5px; }
+.result-sub { color: var(--text-secondary); font-size: 13.5px; margin: 4px 0 14px; }
+.result-actions { display: flex; gap: 10px; justify-content: center; }
+@keyframes result-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+.result-overlay .spark {
+  position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--brand); opacity: 0;
+  animation: spark-fly .5s ease-out forwards;
+}
+@keyframes spark-fly {
+  0% { opacity: .85; transform: translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translate(calc(var(--dx) * 90px), calc(var(--dy) * 60px)) scale(.4); }
+}

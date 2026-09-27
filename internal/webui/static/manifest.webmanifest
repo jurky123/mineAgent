@@ -1,0 +1,15 @@
+{
+  "name": "Mine",
+  "short_name": "Mine",
+  "description": "私人数字空间：Agent 对话、在线棋局、Minecraft 状态",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f7f8",
+  "theme_color": "#0a84ff",
+  "icons": [
+    { "src": "/static/__VER__/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/__VER__/img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/__VER__/img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="mineagent-version" content="__VER__">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#f7f7f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/static/__VER__/img/icon-192.png">
 <link rel="icon" type="image/png" href="/static/__VER__/img/favicon.png">
 <title>我的 · Mine</title>
 <link rel="stylesheet" href="/static/__VER__/css/tokens.css">
@@ -28,32 +32,36 @@
 
   <section class="section">
     <div class="section-head"><h2 class="section-title">账号</h2></div>
-    <div class="card" id="acc-rows"></div>
+    <div class="settings" id="acc-rows"></div>
   </section>
 
   <section class="section">
     <div class="section-head"><h2 class="section-title">外观</h2></div>
-    <div class="card">
+    <div class="settings">
       <div class="list-row">
         <div class="list-main"><div class="list-title">主题</div><div class="list-sub">浅色 / 深色 / 跟随系统</div></div>
         <div class="seg" id="theme-seg"></div>
+      </div>
+      <div class="list-row">
+        <div class="list-main"><div class="list-title">游戏音效</div><div class="list-sub">落子、轮到你、将军与胜负提示音</div></div>
+        <div id="acc-sfx"></div>
       </div>
     </div>
   </section>
 
   <section class="section">
     <div class="section-head"><h2 class="section-title">安全</h2></div>
-    <div class="card" id="acc-security"></div>
+    <div class="settings" id="acc-security"></div>
   </section>
 
   <section class="section">
     <div class="section-head"><h2 class="section-title">设备</h2><div class="spacer"></div><button class="btn sm" id="revoke-others">退出其他设备</button></div>
-    <div class="card" id="acc-sessions"></div>
+    <div class="settings" id="acc-sessions"></div>
   </section>
 
   <section class="section">
     <div class="section-head"><h2 class="section-title">游戏</h2></div>
-    <div class="card">
+    <div class="settings">
       <div class="list-row action" id="history-row">
         <div class="list-main"><div class="list-title">对局历史</div><div class="list-sub">和谁对战、胜负，以及逐步回放</div></div>
         <div class="right">→</div>
@@ -64,7 +72,7 @@
 
   <section class="section">
     <div class="section-head"><h2 class="section-title">关于</h2></div>
-    <div class="card">
+    <div class="settings">
       <div class="list-row">
         <div class="list-main"><div class="list-title">Mine 门户</div><div class="list-sub">自建服务 · 名字即账号</div></div>
         <div class="right" id="acc-version"></div>

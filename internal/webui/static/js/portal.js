@@ -9,6 +9,13 @@ if (FORCE_THEME === 'dark' || FORCE_THEME === 'light') localStorage.setItem('min
 
 const home = () => document.getElementById('home');
 
+// 用名字稳定地取一个低饱和度底色（无外部头像依赖）
+function tintOf(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
+  return 'hsl(' + h + ' 42% 88%)';
+}
+
 function skeleton() {
   const wrap = h('div', 'home-top');
   const a = h('div', 'card hero-card');
@@ -34,30 +41,41 @@ function heroCard(app) {
   head.appendChild(headText);
   card.appendChild(head);
 
-  const last = h('div', 'hero-last');
-  const lastTitle = (c.lastTitle || '').trim();
-  if (lastTitle) {
-    last.appendChild(h('div', 'list-sub', '继续上一次对话'));
-    last.appendChild(h('div', 'hero-conv', '“' + lastTitle + '”'));
-    last.appendChild(h('div', 'list-sub', (fmtTime(c.lastUpdated) || '刚刚') + (c.count ? ' · 共 ' + c.count + ' 个会话' : '')));
-  } else if (c.count) {
-    last.appendChild(h('div', 'list-sub', '继续上一次对话'));
-    last.appendChild(h('div', 'hero-conv', '（未命名会话）'));
-    last.appendChild(h('div', 'list-sub', (fmtTime(c.lastUpdated) || '刚刚') + ' · 共 ' + c.count + ' 个会话'));
-  } else {
-    last.appendChild(h('div', 'list-sub', '还没有对话'));
-    last.appendChild(h('div', 'hero-conv', '问我任何事：写代码、查资料、控制服务器'));
-  }
-  card.appendChild(last);
+  // 直接在首页问（不用先点"新对话"再输入）；发送后跳到 Agent 并自动发出去
+  const compose = h('div', 'hero-compose');
+  const input = h('input', 'hero-input');
+  input.type = 'text';
+  input.placeholder = '问点什么…';
+  input.maxLength = 2000;
+  const go = () => {
+    const q = input.value.trim();
+    if (!q) { input.focus(); return; }
+    location.href = '/agent?new=1&q=' + encodeURIComponent(q);
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+  const sendBtn = h('button', 'hero-send');
+  sendBtn.title = '发送';
+  sendBtn.appendChild(icon('up', 'lg'));
+  sendBtn.onclick = go;
+  compose.appendChild(input);
+  compose.appendChild(sendBtn);
+  card.appendChild(compose);
 
-  const actions = h('div', 'hero-actions');
-  const newBtn = h('a', 'btn primary cta', '新对话');
-  newBtn.href = c.newPath || '/agent?new=1';
-  actions.appendChild(newBtn);
-  const cont = h('a', 'btn', '继续');
-  cont.href = c.continuePath || '/agent';
-  actions.appendChild(cont);
-  card.appendChild(actions);
+  const lastTitle = (c.lastTitle || '').trim();
+  const last = h('a', 'hero-last' + (lastTitle || c.count ? ' clickable' : ''));
+  last.href = c.continuePath || '/agent';
+  if (lastTitle) {
+    last.appendChild(h('span', 'hero-last-label', '最近'));
+    last.appendChild(h('span', 'hero-conv', '“' + lastTitle + '”'));
+  } else if (c.count) {
+    last.appendChild(h('span', 'hero-last-label', '最近'));
+    last.appendChild(h('span', 'hero-conv', '（未命名会话）'));
+  } else {
+    last.appendChild(h('span', 'hero-last-label', '还没有对话'));
+    last.appendChild(h('span', 'hero-conv', '问我任何事：写代码、查资料、控制服务器'));
+  }
+  last.appendChild(h('span', 'hero-go', '→'));
+  card.appendChild(last);
   return card;
 }
 
@@ -84,18 +102,23 @@ function statusCard(app) {
     return card;
   }
   const players = c.players || [];
+  if (players.length) {
+    const faces = h('div', 'player-faces');
+    for (const name of players.slice(0, 6)) {
+      const a = h('span', 'face', (name[0] || '?').toUpperCase());
+      a.title = name;
+      a.style.setProperty('--tint', tintOf(name));
+      faces.appendChild(a);
+    }
+    if (players.length > 6) faces.appendChild(h('span', 'face more', '+' + (players.length - 6)));
+    card.appendChild(faces);
+  }
   card.appendChild(h('div', 'status-count',
     players.length ? players.length + ' 人正在游戏' : '现在没人，服务器正在运行'));
-  if (players.length) {
-    const chips = h('div', 'player-chips');
-    for (const name of players.slice(0, 8)) chips.appendChild(h('span', 'player-chip', name));
-    if (players.length > 8) chips.appendChild(h('span', 'player-chip', '+' + (players.length - 8)));
-    card.appendChild(chips);
-  }
   const bits = [];
-  if (c.tps) bits.push('TPS ' + Number(c.tps).toFixed(2));
   if (c.weather) bits.push(c.weather);
   if (c.period) bits.push(c.period);
+  if (c.tps) bits.push('TPS ' + Number(c.tps).toFixed(2));
   if (bits.length) card.appendChild(h('div', 'status-sub', bits.join(' · ')));
 
   if (c.details && c.details.length) {
@@ -241,7 +264,17 @@ async function publishDialog() {
 function paint(data) {
   document.getElementById('greeting').textContent = data.greeting || '你好';
   const acc = data.account || {};
-  document.getElementById('greeting-sub').textContent = '今天想做点什么？';
+  const mcCard = (apps => {
+    const st = apps.find((a) => a.id === 'minecraft');
+    return st && st.card ? st.card : null;
+  })(data.apps || []);
+  const sub = document.getElementById('greeting-sub');
+  if (mcCard && (mcCard.players || []).length) {
+    const names = mcCard.players.slice(0, 3).join('、');
+    sub.textContent = names + ' 正在 Minecraft 里';
+  } else {
+    sub.textContent = '今天想做点什么？';
+  }
   const host = home();
   host.innerHTML = '';
 

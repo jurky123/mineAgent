@@ -22,28 +22,35 @@ async function gameStatus(gameId) {
 
 function catalogCard(game, status) {
   const card = h('article', 'card catalog-card');
+  card.dataset.game = game.id;
+
+  // 视觉头：棋盘/点阵 pattern + 大棋子（纯 CSS + 已有棋子图，不用插画）
+  const art = h('a', 'catalog-art art-' + game.id);
+  art.href = game.path;
+  art.setAttribute('aria-hidden', 'true');
+  const big = h('img', 'catalog-art-piece');
+  big.src = gameIcon(game.id).src;
+  big.alt = '';
+  art.appendChild(big);
+  card.appendChild(art);
+  if (game.enabled !== false && game.path) art.style.viewTransitionName = 'game-' + game.id;
+
+  const body = h('div', 'catalog-body');
   const head = h('div', 'catalog-head');
-  const ic = h('span', 'game-icon');
-  ic.appendChild(gameIcon(game.id, 'game-icon-img'));
-  head.appendChild(ic);
-  const t = h('div');
-  t.appendChild(h('div', 'catalog-title', game.name));
-  head.appendChild(t);
-  card.appendChild(head);
+  head.appendChild(h('div', 'catalog-title', game.name));
+  if (status && status.openRooms) head.appendChild(h('span', 'badge brand', status.openRooms + ' 个房间等待'));
+  body.appendChild(head);
 
   const bits = [];
-  if (status) {
-    if (status.openRooms) bits.push(status.openRooms + ' 个开放房间');
-    if (status.total) bits.push('最近 ' + status.wins + ' 胜 ' + status.losses + ' 负' + (status.draws ? ' ' + status.draws + ' 和' : ''));
-  }
-  card.appendChild(h('div', 'game-stats', bits.length ? bits.join(' · ') : '还没有对局记录'));
+  if (status && status.total) bits.push('最近 ' + status.wins + ' 胜 ' + status.losses + ' 负' + (status.draws ? ' ' + status.draws + ' 和' : ''));
+  body.appendChild(h('div', 'game-stats', bits.length ? bits.join(' · ') : '还没有对局记录'));
 
-  const actions = h('div', 'catalog-actions');
-  const start = h('a', 'btn primary cta', status && status.openRooms ? '去加入' : '开始');
-  start.href = game.path;
-  actions.appendChild(start);
-  card.appendChild(actions);
-  // 整卡可点（更符合"点进去开始玩"的直觉；按钮仍是链接，键盘/中键可用）
+  const go = h('a', 'catalog-go', '进入游戏 →');
+  go.href = game.path;
+  body.appendChild(go);
+  card.appendChild(body);
+
+  // 整卡可点（更符合"点进去开始玩"的直觉；箭头仍是链接，键盘/中键可用）
   if (game.enabled !== false && game.path) {
     card.classList.add('clickable');
     card.addEventListener('click', (e) => {

@@ -189,12 +189,21 @@ async function applyURLTarget() {
   const q = new URLSearchParams(location.search);
   const wantConv = q.get('conv');
   const wantNew = q.has('new');
-  if (wantNew) {
+  const ask = q.get('q');           // 首页 Quick Composer 带过来的问题
+  if (wantNew || ask) {
     conversations.newChat();
   } else if (wantConv && S.conversations.some((c) => c.conv === wantConv)) {
     await conversations.switchTo(wantConv);
   }
-  if (wantNew || wantConv) {
+  if (ask) {
+    // 首页直接提问：填进输入框并立刻发出去
+    const box = document.getElementById('text');
+    box.value = ask;
+    composer.autoGrow();
+    composer.updateSendBtn();
+    await composer.sendMsg();
+  }
+  if (wantNew || wantConv || ask) {
     history.replaceState(null, '', location.pathname);
   }
 }

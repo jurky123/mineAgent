@@ -2,7 +2,10 @@
 // 页面约定：<div id="shell-top"></div> + 自己的内容 + 调 shell.boot(active)。
 // 未登录时渲染整页登录态（不是弹窗），登录后才进入门户。
 
-import { h, icon, toast } from './ds.js';
+import { h, icon, toast, gameIcon } from './ds.js';
+
+// 命令面板里的棋类图标（用真实棋子/石图）
+function gameIconEl(id, cls) { return gameIcon(id, cls); }
 
 const TOKEN_KEY = 'mineagent.token';
 const LOGIN_SLOGAN = '欢迎━(*｀∀´*)ノ亻!';
@@ -265,7 +268,11 @@ function paintTop(active) {
   const accWrap = h('div', 'pop-wrap');
   const accBtn = h('button', 'icon-btn account-btn');
   accBtn.title = shell.user ? shell.user.name : '登录';
-  if (shell.user) accBtn.appendChild(h('span', 'avatar', (shell.user.name[0] || '?')));
+  if (shell.user) {
+    const av = h('span', 'avatar', (shell.user.name[0] || '?'));
+    av.style.viewTransitionName = 'user-avatar';   // Portal → Account 的头像共享元素
+    accBtn.appendChild(av);
+  }
   else accBtn.appendChild(icon('user'));
   const accPop = h('div', 'pop');
   if (shell.user) {
@@ -312,7 +319,30 @@ function paintTop(active) {
   bar.appendChild(accWrap);
 
   host.appendChild(bar);
+  paintTabbar(active);
   document.addEventListener('click', () => closePops());
+}
+
+// 手机底部 tabbar：拇指可达；≤640px 显示（顶栏导航同时隐藏）
+function paintTabbar(active) {
+  const old = document.getElementById('tabbar');
+  if (old) old.remove();
+  const items = [
+    { label: '首页', path: '/', icon: 'home' },
+    { label: 'Agent', path: '/agent', icon: 'sparkle' },
+    { label: '游戏', path: '/games', icon: 'gamepad' },
+    { label: '我的', path: '/account', icon: 'user' },
+  ];
+  const bar = h('nav', 'tabbar');
+  bar.id = 'tabbar';
+  for (const it of items) {
+    const a = h('a', 'tab' + (it.path === active || (it.path !== '/' && active.startsWith(it.path)) ? ' on' : ''));
+    a.href = it.path;
+    a.appendChild(icon(it.icon));
+    a.appendChild(h('span', null, it.label));
+    bar.appendChild(a);
+  }
+  document.body.appendChild(bar);
 }
 
 function closePops(except) {
@@ -332,10 +362,78 @@ function togglePop(el) {
   else { el.classList.remove('closing'); el.classList.add('on'); }
 }
 
+// ---------- 命令面板（Ctrl/Cmd+K）----------
+function openPalette() {
+  const actions = [
+    { icon: 'sparkle', label: '新建 Agent 对话', hint: 'Agent', run: () => { location.href = '/agent?new=1'; } },
+    { el: () => gameIconEl('chess', 'palette-icon'), label: '打开国际象棋', hint: '游戏', run: () => { location.href = '/games/chess'; } },
+    { el: () => gameIconEl('gomoku', 'palette-icon'), label: '打开五子棋', hint: '游戏', run: () => { location.href = '/games/gomoku'; } },
+    { icon: 'megaphone', label: '查看最新动态', hint: '门户', run: () => { location.href = '/'; } },
+    { icon: 'user', label: '我的账号', hint: '设置', run: () => { location.href = '/account'; } },
+    { icon: 'clock', label: '对局历史与回放', hint: '设置', run: () => { location.href = '/account/history'; } },
+    { icon: 'sun', label: '切换主题', hint: '外观', run: () => { setTheme(themeMode() === 'dark' ? 'light' : 'dark'); } },
+  ];
+  const box = h('div', 'palette');
+  const input = h('input', 'palette-input');
+  input.placeholder = '搜索或执行操作…';
+  const list = h('div', 'palette-list');
+  box.appendChild(input);
+  box.appendChild(list);
+  const mask = h('div', 'dialog-mask palette-mask');
+  mask.appendChild(box);
+  document.body.appendChild(mask);
+
+  let filtered = actions.slice();
+  let cursor = 0;
+  const close = () => mask.remove();
+  const paint = () => {
+    list.innerHTML = '';
+    filtered.forEach((a, i) => {
+      const row = h('button', 'palette-item' + (i === cursor ? ' on' : ''));
+      row.appendChild(a.el ? a.el() : icon(a.icon));
+      row.appendChild(h('span', 'palette-label', a.label));
+      row.appendChild(h('span', 'palette-hint', a.hint || ''));
+      row.onclick = () => { close(); a.run(); };
+      list.appendChild(row);
+    });
+    if (!filtered.length) list.appendChild(h('div', 'palette-empty', '没有匹配的操作'));
+  };
+  const filter = () => {
+    const q = input.value.trim().toLowerCase();
+    filtered = actions.filter((a) => !q || a.label.toLowerCase().includes(q) || (a.hint || '').toLowerCase().includes(q));
+    cursor = 0;
+    paint();
+  };
+  input.addEventListener('input', filter);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { cursor = Math.min(cursor + 1, filtered.length - 1); paint(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { cursor = Math.max(cursor - 1, 0); paint(); e.preventDefault(); }
+    else if (e.key === 'Enter' && filtered[cursor]) { const a = filtered[cursor]; close(); a.run(); }
+    else if (e.key === 'Escape') close();
+  });
+  mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
+  paint();
+  input.focus();
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      if (document.querySelector('.palette-mask')) document.querySelector('.palette-mask').remove();
+      else openPalette();
+    }
+  });
+}
+
 // ---------- boot ----------
 // active: 顶部导航高亮；requireLogin=false 时未登录也继续（?ui=1 演示模式）。
 export async function boot({ active = '', requireLogin = true, preview = false } = {}) {
   applyTheme();
+  // PWA：注册 Service Worker（仅"可安装"用，不做离线缓存）
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
   mql.addEventListener('change', () => { if (themeMode() === 'system') applyTheme(); });
   document.body.classList.add('ds');
 

@@ -1,6 +1,7 @@
 // account.js — 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于。
 import { shell, boot, apiGet, apiPost, logout, themeMode, setTheme, applyTheme } from './shell.js';
 import { h, icon, toast, confirmDialog } from './ds.js';
+import { sfxEnabled, setSfxEnabled } from './sfx.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -46,7 +47,9 @@ function decorateSections() {
 }
 
 function renderHeader(u) {
-  document.getElementById('acc-avatar').textContent = (u.name[0] || '?').toUpperCase();
+  const av = document.getElementById('acc-avatar');
+  av.textContent = (u.name[0] || '?').toUpperCase();
+  av.style.viewTransitionName = 'user-avatar';
   document.getElementById('acc-name').textContent = u.name;
   const meta = document.getElementById('acc-meta');
   meta.innerHTML = '';
@@ -169,6 +172,26 @@ async function reload() {
     renderStats(games);
   } catch (e) { /* 没有战绩就不显示 */ }
 }
+
+// 游戏音效开关（A/B 之外最实用的设置；默认开）
+(function bindSfxToggle() {
+  const box = document.getElementById('acc-sfx');
+  if (!box) return;
+  const paint = () => {
+    box.innerHTML = '';
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    for (const [val, label] of [[true, '开'], [false, '关']]) {
+      const b = document.createElement('button');
+      b.className = 'seg-item' + (sfxEnabled() === val ? ' on' : '');
+      b.textContent = label;
+      b.onclick = () => { setSfxEnabled(val); paint(); };
+      seg.appendChild(b);
+    }
+    box.appendChild(seg);
+  };
+  paint();
+})();
 
 document.getElementById('revoke-others').onclick = async () => {
   const ok = await confirmDialog({

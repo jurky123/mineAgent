@@ -2,6 +2,7 @@
 // 国际象棋与五子棋共用；各游戏只负责自己的棋盘渲染与走子交互。
 import { shell, apiGet, apiPost } from './shell.js';
 import { h, icon, toast, confirmDialog, copyText, openDialog, withPending } from './ds.js';
+import { play } from './sfx.js';
 
 export const SIDE_LABEL = { white: '白方', black: '黑方' };
 export const REASON_LABEL = {
@@ -71,10 +72,11 @@ export function playerBar(room, side) {
   const p = room.players && room.players[side];
   const you = room.you === side;
   const turn = room.turn === side && room.status === 'playing';
-  const line = h('div', 'player-line' + (turn ? ' turn' : ''));
-  line.appendChild(h('span', 'dot ' + side[0]));
+  const line = h('div', 'player-line' + (turn ? ' acting' : ''));
+  line.appendChild(h('span', 'face sm', (p && p.name ? p.name[0] : '?').toUpperCase()));
   line.appendChild(h('span', 'player-name', p ? p.name + (you ? '（你）' : '') : '等待加入…'));
-  if (turn) line.classList.add('acting');   // 轮到谁：dot 高亮 + 名字加粗
+  line.appendChild(h('span', 'spacer'));
+  line.appendChild(h('span', 'side-label', SIDE_LABEL[side] || side));
   if (room.status === 'finished' && room.result === side) line.appendChild(h('span', 'badge brand', '胜'));
   return line;
 }
@@ -131,7 +133,7 @@ function ownMoveCount(room) {
 }
 
 // ---------- 开局 / 轮次提示 + 棋盘动效 ----------
-let phase = { key: '', status: '', turn: '', inCheck: false };
+let phase = { key: '', status: '', turn: '', inCheck: false, lastMove: '', pieces: 0, cells: 0 };
 let flashTimer = null;
 
 // boardFlash 在棋盘上方居中弹一条短提示（对局开始 / 轮到你 / 将军）。
@@ -154,7 +156,10 @@ export function boardFlash(text, ms = 1300) {
 // notePhase 记录房间状态：状态从等待变对局时给"开局"提示；轮到自己/被将军时给短提示。
 function notePhase(room) {
   const key = room.id + ':' + room.game;
-  const next = { key, status: room.status, turn: room.turn, inCheck: !!room.inCheck };
+  const pieceCount = room.pieces ? (room.pieces.match(/[a-zA-Z]/g) || []).length : 0;
+  const stoneCount = room.cells ? (room.cells.match(/[bw]/g) || []).length : 0;
+  const next = { key, status: room.status, turn: room.turn, inCheck: !!room.inCheck,
+    lastMove: room.lastMove || '', pieces: pieceCount, cells: stoneCount };
   const prev = phase;
   phase = next;
   // 几何布局绑定 game-focus（对局中 + 终局都保持大棋盘居中，终局不塌回去）；
@@ -162,6 +167,11 @@ function notePhase(room) {
   document.body.classList.toggle('game-focus', room.status === 'playing' || room.status === 'finished');
   document.body.classList.toggle('game-live', room.status === 'playing');
   document.body.classList.toggle('game-finished', room.status === 'finished');
+  // 新的一手：落子音（象棋吃子时更沉一点）
+  if (prev.key === key && next.lastMove && next.lastMove !== prev.lastMove) {
+    const capture = (next.pieces && prev.pieces && next.pieces < prev.pieces);
+    play(capture ? 'capture' : 'move');
+  }
   if (prev.key !== key) return; // 刚进页面/换房间：不补提示，避免噪音
   const started = prev.status !== 'playing' && next.status === 'playing';
   if (started) {
@@ -171,6 +181,11 @@ function notePhase(room) {
   }
   if (next.status === 'playing' && prev.turn !== next.turn && next.turn === room.you) {
     boardFlash(next.inCheck ? '将军！轮到你' : '轮到你', 1100);
+    play(next.inCheck ? 'check' : 'yourTurn');
+  }
+  if (prev.status !== 'finished' && next.status === 'finished') {
+    if (room.result === 'draw') play('yourTurn');
+    else play(room.result === room.you ? 'win' : 'lose');
   }
 }
 
@@ -247,9 +262,45 @@ function requestBanner(el, room, kind, onRoom) {
 
 // 动作按钮：悔棋 / 换边（对局中需对方同意）/ 认输 / 离开 / 再来一局。
 // onRoom 更新局面；onExit 返回大厅。
+// 终局浮层：棋盘结果的"最精致一次状态变化"（含轻微粒子）
+function resultOverlay(room, onRoom) {
+  const col = document.querySelector('.board-col');
+  if (!col) return;
+  const existing = col.querySelector('.result-overlay');
+  if (room.status !== 'finished') { if (existing) existing.remove(); return; }
+  if (existing) return;
+  const youWin = room.result === room.you;
+  const draw = room.result === 'draw';
+  const box = h('div', 'result-overlay');
+  const card = h('div', 'result-card');
+  card.appendChild(h('div', 'result-title', draw ? '和棋' : (youWin ? '胜利' : '惜败')));
+  card.appendChild(h('div', 'result-sub', room.reason === 'checkmate' ? '将杀' : (room.reason === 'five' ? '五连' : (SIDE_LABEL[room.result] || '') + '胜 · ' + reasonLabel(room.reason))));
+  const acts = h('div', 'result-actions');
+  const again = h('button', 'btn primary cta', '再来一局');
+  again.onclick = async () => { onRoom(await rematch(room.game)); };
+  acts.appendChild(again);
+  const replay = h('a', 'btn cta', '查看棋谱');
+  replay.href = '/account/history';
+  acts.appendChild(replay);
+  card.appendChild(acts);
+  box.appendChild(card);
+  col.appendChild(box);
+  if (youWin) {
+    for (let i = 0; i < 10; i++) {
+      const p = h('span', 'spark');
+      const a = (Math.PI * 2 * i) / 10 + Math.random() * 0.4;
+      p.style.setProperty('--dx', Math.cos(a).toFixed(2));
+      p.style.setProperty('--dy', Math.sin(a).toFixed(2));
+      p.style.animationDelay = (i * 14) + 'ms';
+      box.appendChild(p);
+    }
+  }
+}
+
 export function actionButtons(el, room, { onRoom, onExit }) {
   el.innerHTML = '';
   notePhase(room);
+  resultOverlay(room, onRoom);
   maybeRequestModal(room, 'undo', onRoom);
   maybeRequestModal(room, 'swap', onRoom);
 
@@ -310,13 +361,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     el.appendChild(swap);
   }
 
-  if (room.status === 'finished') {
-    const again = h('button', 'btn primary cta');
-    again.appendChild(icon('restart'));
-    again.appendChild(h('span', null, '再来一局'));
-    again.onclick = async () => { onRoom(await rematch(room.game)); };
-    el.appendChild(again);
-  }
+  // 终局：再来一局放在棋盘浮层里，这里只保留"离开房间"
 
   requestBanner(el, room, 'undo', onRoom);
   requestBanner(el, room, 'swap', onRoom);
@@ -345,6 +390,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   el.innerHTML = '';
   const hero = h('div', 'lobby-hero');
   const tile = h('span', 'lobby-icon');
+  tile.style.viewTransitionName = 'game-' + gameId;   // 与目录卡的视觉头配对（共享元素转场）
   tile.appendChild(iconEl || icon('gamepad', 'lg'));
   hero.appendChild(tile);
   const txt = h('div');

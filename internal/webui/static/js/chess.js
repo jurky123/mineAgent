@@ -130,12 +130,7 @@ function renderStatus() {
     return;
   }
   el.className = 'status-bar done';
-  const why = room.reasonLabel(r.reason);
-  if (r.result === 'draw') el.appendChild(h('span', null, '和棋（' + why + '）'));
-  else {
-    const winner = r.result === 'white' ? '白方' : '黑方';
-    el.appendChild(h('span', null, winner + '胜（' + why + '）' + (r.you === r.result ? '，恭喜！' : '')));
-  }
+  el.appendChild(h('span', null, '本局结束'));   // 结果细节交给棋盘上的浮层
 }
 
 function paint() {

@@ -106,12 +106,7 @@ function renderStatus() {
     return;
   }
   el.className = 'status-bar done';
-  const why = room.reasonLabel(r.reason);
-  if (r.result === 'draw') el.appendChild(h('span', null, '和棋（' + why + '）'));
-  else {
-    const winner = room.SIDE_LABEL[r.result] || r.result;
-    el.appendChild(h('span', null, winner + '胜（' + why + '），' + (r.you === r.result ? '恭喜！' : '再接再厉')));
-  }
+  el.appendChild(h('span', null, '本局结束'));
 }
 
 function paint() {

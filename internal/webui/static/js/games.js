@@ -28,7 +28,6 @@ function catalogCard(game, status) {
   head.appendChild(ic);
   const t = h('div');
   t.appendChild(h('div', 'catalog-title', game.name));
-  t.appendChild(h('div', 'game-desc', game.desc || ''));
   head.appendChild(t);
   card.appendChild(head);
 

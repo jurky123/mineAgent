@@ -128,7 +128,7 @@ function gameCard(item) {
   const t = h('div');
   t.appendChild(h('div', 'game-title', item.name));
   const openRooms = item.openRooms || 0;
-  t.appendChild(h('div', 'game-desc', openRooms ? openRooms + ' 个开放房间' : (item.desc || '')));
+  if (openRooms) t.appendChild(h('div', 'game-desc', openRooms + ' 个开放房间'));
   head.appendChild(t);
   card.appendChild(head);
   const stats = [];

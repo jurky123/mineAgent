@@ -266,13 +266,15 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 
 ### 配置与接口
 
-0. **数据位置**：运行数据不在代码目录里——本机放在 `/home/ubuntu/mineagent-data/`
+0. **访问入口**：本机域名 `http://zkun.art/`（80 端口，与企微回调共用——`/wecom` 仍走回调，
+   其它路径转发给门户），也可以走 `http://<公网IP>:8766/`（DNS 只解析了 IPv4）。
+1. **数据位置**：运行数据不在代码目录里——本机放在 `/home/ubuntu/mineagent-data/`
    （`mineagent.db` / `webui/` / `workspace/`，由 `config.json` 的 `storage.path`、
    `web.dataDir`、`workspace.root` 绝对路径指定；`scripts/deploy.sh` 的令牌也从这里读）。
-1. `config.json` 里 `web.listen` 默认 `0.0.0.0:8766`（空字符串=禁用网页入口）；
+2. `config.json` 里 `web.listen` 默认 `0.0.0.0:8766`（空字符串=禁用网页入口）；
    公网访问要在腾讯云控制台放行 TCP 8766（ufw 未启用）
-2. 浏览器打开 `http://<公网IP>:8766/` 输入名字进入
-3. 想用 workspace 写代码/跑代码，把名字填进 `web.adminUsers`（`/myid` 可看自己身份）
+3. 浏览器打开 `http://zkun.art/` 或 `http://<公网IP>:8766/` 输入名字进入
+4. 想用 workspace 写代码/跑代码，把名字填进 `web.adminUsers`（`/myid` 可看自己身份）
 
 接口一览（`/api/auth/*`、`/api/portal/*` 是门户新路径；旧路径保留为别名）：
 

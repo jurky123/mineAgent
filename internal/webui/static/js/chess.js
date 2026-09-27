@@ -55,7 +55,7 @@ function renderBoard() {
       if (col === 0) cell.appendChild(h('span', 'coord rank', String(rank + 1)));
       if (row === 7) cell.appendChild(h('span', 'coord file', name[0]));
       if (p) {
-        const img = h('img', 'pc');
+        const img = h('img', 'pc ' + (p === p.toUpperCase() ? 'pc-w' : 'pc-b'));
         img.src = pieceSrc(p);
         img.alt = p;
         img.draggable = false;

@@ -17,22 +17,35 @@ function renderBoard() {
   board.innerHTML = '';
   const r = state.room;
   if (!r) return;
-  const cells = r.cells || '';
   const size = r.size || 15;
+  const cells = r.cells || '';
   const win = new Set(r.winLine || []);
-  for (let i = 0; i < size * size; i++) {
-    const c = cells[i] || '.';
-    const cell = h('button', 'gcell');
-    cell.dataset.point = pointName(i);
-    if (c === 'b' || c === 'w') cell.classList.add('has');
-    if (r.lastMove === pointName(i)) cell.classList.add('last');
-    if (win.has(i)) cell.classList.add('win');
-    if (c === 'b') cell.appendChild(h('span', 'stone b'));
-    else if (c === 'w') cell.appendChild(h('span', 'stone w'));
-    cell.addEventListener('click', () => place(i));
-    board.appendChild(cell);
-  }
   board.style.setProperty('--gomoku-size', size);
+  for (let i = 0; i < size * size; i++) {
+    const row = Math.floor(i / size);
+    const col = i % size;
+    const pt = pointName(i);
+    const btn = h('button', 'gpoint');
+    btn.dataset.point = pt;
+    btn.style.left = (((col + 0.5) / size) * 100) + '%';
+    btn.style.top = (((row + 0.5) / size) * 100) + '%';
+    const c = cells[i] || '.';
+    if (c === 'b') btn.appendChild(h('span', 'stone b'));
+    else if (c === 'w') btn.appendChild(h('span', 'stone w'));
+    else btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
+    if (r.lastMove === pt) btn.classList.add('last');
+    if (win.has(i)) btn.classList.add('win');
+    btn.addEventListener('click', () => place(i));
+    board.appendChild(btn);
+  }
+  if (size === 15) {
+    for (const [rr, cc] of [[3, 3], [3, 11], [11, 3], [11, 11], [7, 7]]) {
+      const dot = h('span', 'gstar');
+      dot.style.left = (((cc + 0.5) / size) * 100) + '%';
+      dot.style.top = (((rr + 0.5) / size) * 100) + '%';
+      board.appendChild(dot);
+    }
+  }
 }
 
 async function place(i) {

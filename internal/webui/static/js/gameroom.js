@@ -1,7 +1,7 @@
 // gameroom.js — 棋类房间的公共部分（大厅 / 房间信息 / 着法 / SSE / 动作按钮）。
 // 国际象棋与五子棋共用；各游戏只负责自己的棋盘渲染与走子交互。
 import { shell, apiGet, apiPost } from './shell.js';
-import { h, icon, toast, confirmDialog, copyText } from './ds.js';
+import { h, icon, toast, confirmDialog, copyText, openDialog } from './ds.js';
 
 export const SIDE_LABEL = { white: '白方', black: '黑方' };
 export const REASON_LABEL = {
@@ -132,10 +132,40 @@ function ownMoveCount(room) {
   return room.you === first ? Math.ceil(n / 2) : Math.floor(n / 2);
 }
 
+// 悔棋请求的模态提醒（同一个请求只弹一次）
+let undoModalKey = '';
+
+function maybeUndoModal(room, onRoom) {
+  const req = room.undoReq;
+  const key = req ? req.by + ':' + req.at : '';
+  if (!req || req.by === room.you) { if (!req) undoModalKey = ''; return; }
+  if (key === undoModalKey) return;
+  undoModalKey = key;
+  const body = h('div', 'undo-dialog-body');
+  body.appendChild(h('div', null, (SIDE_LABEL[req.by] || '对方') + '想悔棋：撤销最近一手（含其后的回应），回到对方重走。'));
+  openDialog({
+    title: '对方请求悔棋',
+    body,
+    actions: [
+      { label: '拒绝', onClick: () => respondUndo(room, 'decline', onRoom, '已拒绝') },
+      { label: '同意', primary: true, onClick: () => respondUndo(room, 'accept', onRoom, '已同意悔棋') },
+    ],
+  });
+}
+
+async function respondUndo(room, action, onRoom, okMsg) {
+  try {
+    const res = await undoAction(room.game, action);
+    if (res.room) onRoom(res.room);
+    if (okMsg) toast(okMsg);
+  } catch (e) { toast(e.message, { warn: true }); }
+}
+
 // 动作按钮：悔棋（需对方同意）/ 认输 / 离开 / 再来一局。
 // onRoom 更新局面；onExit 返回大厅。
 export function actionButtons(el, room, { onRoom, onExit }) {
   el.innerHTML = '';
+  maybeUndoModal(room, onRoom);
   if (room.status === 'playing') {
     const undo = h('button', 'btn sm');
     undo.appendChild(icon('restart'));
@@ -172,22 +202,18 @@ export function actionButtons(el, room, { onRoom, onExit }) {
   if (room.undoReq) {
     const banner = h('div', 'undo-banner');
     if (room.undoReq.by === room.you) {
-      banner.appendChild(h('span', null, '已请求悔棋，等待对方同意…'));
+      banner.appendChild(h('span', 'undo-text', '已请求悔棋，等待对方同意…'));
+      banner.appendChild(h('div', 'spacer'));
       const cancel = h('button', 'btn sm ghost', '撤回');
-      cancel.onclick = async () => {
-        try { const res = await undoAction(room.game, 'cancel'); onRoom(res.room); } catch (e) { toast(e.message, { warn: true }); }
-      };
+      cancel.onclick = () => respondUndo(room, 'cancel', onRoom, '');
       banner.appendChild(cancel);
     } else {
-      banner.appendChild(h('span', null, (SIDE_LABEL[room.undoReq.by] || '对方') + '请求悔棋'));
+      banner.appendChild(h('span', 'undo-text', (SIDE_LABEL[room.undoReq.by] || '对方') + '请求悔棋'));
+      banner.appendChild(h('div', 'spacer'));
       const ok = h('button', 'btn sm primary', '同意');
-      ok.onclick = async () => {
-        try { const res = await undoAction(room.game, 'accept'); onRoom(res.room); toast('已同意悔棋'); } catch (e) { toast(e.message, { warn: true }); }
-      };
+      ok.onclick = () => respondUndo(room, 'accept', onRoom, '已同意悔棋');
       const no = h('button', 'btn sm ghost', '拒绝');
-      no.onclick = async () => {
-        try { const res = await undoAction(room.game, 'decline'); onRoom(res.room); toast('已拒绝'); } catch (e) { toast(e.message, { warn: true }); }
-      };
+      no.onclick = () => respondUndo(room, 'decline', onRoom, '已拒绝');
       banner.appendChild(ok);
       banner.appendChild(no);
     }

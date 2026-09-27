@@ -55,6 +55,7 @@
   --brand: #0a84ff;
   --brand-hover: #0077e6;
   --brand-soft: rgba(10, 132, 255, .09);
+  --grid-line: #d9d9de;
   --radius-control: 10px;
   --radius-cta: 12px;
   --radius-card: 16px;
@@ -102,6 +103,7 @@ html[data-theme="dark"] {
   --brand: #0a84ff;
   --brand-hover: #2f97ff;
   --brand-soft: rgba(10, 132, 255, .16);
+  --grid-line: #3a3a40;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .3);
   --shadow-raised: 0 12px 32px rgba(0, 0, 0, .5);
   color-scheme: dark;

@@ -44,12 +44,12 @@
   box-shadow: var(--shadow-card);
 }
 .sq { position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; }
-.sq.light { background: #f0e9dd; }
-.sq.dark { background: #b9a184; }
-html[data-theme="dark"] .sq.light { background: #726b62; }
-html[data-theme="dark"] .sq.dark { background: #45403a; }
-.sq.last::before { content: ''; position: absolute; inset: 0; background: rgba(10, 132, 255, .18); }
-.sq.sel::before { content: ''; position: absolute; inset: 0; background: rgba(10, 132, 255, .30); }
+.sq.light { background: #f4f4f6; }
+.sq.dark { background: #38383f; }
+html[data-theme="dark"] .sq.light { background: #d6d6db; }
+html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
+.sq.last::before { content: ''; position: absolute; inset: 0; background: rgba(10, 132, 255, .28); }
+.sq.sel::before { content: ''; position: absolute; inset: 0; background: rgba(10, 132, 255, .42); }
 .sq.target::after {
   content: ''; position: absolute; width: 26%; height: 26%; border-radius: 50%;
   background: rgba(10, 132, 255, .42);
@@ -57,11 +57,16 @@ html[data-theme="dark"] .sq.dark { background: #45403a; }
 .sq.target:has(.pc)::after { width: 82%; height: 82%; background: transparent; box-shadow: inset 0 0 0 4px rgba(10, 132, 255, .42); border-radius: 50%; }
 .sq.check::before { content: ''; position: absolute; inset: 0; background: radial-gradient(circle, rgba(217, 45, 32, .55), transparent 72%); }
 .pc { width: 88%; height: 88%; pointer-events: none; position: relative; z-index: 1; }
+/* 黑子放在深色格上会看不清：给黑子描一圈 1px 浅色边（4 方向 drop-shadow） */
+.pc-b {
+  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, .88)) drop-shadow(-1px 0 0 rgba(255, 255, 255, .88))
+          drop-shadow(0 1px 0 rgba(255, 255, 255, .88)) drop-shadow(0 -1px 0 rgba(255, 255, 255, .88));
+}
 .coord { position: absolute; font-size: 10px; font-weight: 600; opacity: .45; pointer-events: none; }
 .coord.rank { top: 2px; left: 4px; }
 .coord.file { bottom: 1px; right: 4px; }
-.sq.light .coord { color: #6b5b46; }
-.sq.dark .coord { color: #f0e9dd; }
+.sq.light .coord { color: #9a9aa0; }
+.sq.dark .coord { color: #b9b9c0; }
 
 .status-bar { display: flex; align-items: center; gap: 10px; padding: 10px 0 0; color: var(--text-secondary); font-size: 14.5px; min-height: 26px; }
 .status-bar.active { color: var(--brand); font-weight: 650; }
@@ -99,46 +104,50 @@ html[data-theme="dark"] .sq.dark { background: #45403a; }
   .wrap.chess-wrap { max-width: 66rem; }
 }
 
-/* ---------- 五子棋棋盘（简约：白底 + 发丝网格 + 圆子） ---------- */
+/* ---------- 五子棋棋盘（落子在交叉点上：白底 + 发丝线 + 圆子） ---------- */
 .gomoku-board {
-  width: 100%; max-width: var(--board-max); aspect-ratio: 1 / 1;
-  display: grid; grid-template-columns: repeat(var(--gomoku-size, 15), 1fr);
-  background: var(--surface); border: 1px solid var(--border-strong);
-  border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-card);
+  position: relative; width: 100%; max-width: var(--board-max); aspect-ratio: 1 / 1;
+  background-color: var(--surface);
+  background-image:
+    repeating-linear-gradient(to right, var(--grid-line) 0 1px, transparent 1px calc(100% / var(--gomoku-size, 15))),
+    repeating-linear-gradient(to bottom, var(--grid-line) 0 1px, transparent 1px calc(100% / var(--gomoku-size, 15)));
+  background-position: calc(100% / (var(--gomoku-size, 15) * 2)) calc(100% / (var(--gomoku-size, 15) * 2));
+  border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-card);
 }
-.gcell {
-  position: relative; display: flex; align-items: center; justify-content: center;
-  border: 0; background: transparent; padding: 0; cursor: pointer; border-radius: 0;
+.gpoint {
+  position: absolute; transform: translate(-50%, -50%);
+  width: calc(100% / var(--gomoku-size, 15) * 0.94); aspect-ratio: 1 / 1;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; background: transparent; padding: 0; cursor: pointer; border-radius: 50%;
+  z-index: 1;
 }
-.gcell::after {
-  content: ''; position: absolute; inset: 0;
-  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
-  pointer-events: none;
-}
-.gcell:nth-child(15n)::after { border-right: 0; }
-.gcell:nth-last-child(-n+15)::after { border-bottom: 0; }
-.gcell:hover { background: var(--surface-muted); }
-.stone {
-  width: 84%; height: 84%; border-radius: 50%; position: relative; z-index: 1;
-}
+.gpoint .stone { width: 100%; height: 100%; border-radius: 50%; position: relative; }
 .stone.b { background: radial-gradient(circle at 32% 28%, #4c4c55, #16161a 72%); }
 .stone.w { background: radial-gradient(circle at 32% 28%, #ffffff, #dcdce1 78%); box-shadow: inset 0 0 0 1px #c9c9cf; }
-.gcell.last::before {
-  content: ''; position: absolute; inset: 10%; border-radius: 50%;
-  box-shadow: inset 0 0 0 2px var(--brand); z-index: 2;
+.stone.ghost { opacity: 0; transition: opacity .12s; }
+.stone.ghost.b { background: radial-gradient(circle at 32% 28%, rgba(76,76,85,.6), rgba(22,22,26,.6) 72%); }
+.stone.ghost.w { background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.9), rgba(220,220,225,.9) 78%); }
+.gpoint:hover .stone.ghost { opacity: .35; }
+.gpoint.last .stone { box-shadow: 0 0 0 2.5px var(--brand); }
+.gpoint.win .stone { box-shadow: 0 0 0 3px var(--brand); }
+.gpoint.win::before {
+  content: ''; position: absolute; inset: -22%; border-radius: 50%;
+  background: var(--brand-soft); z-index: -1;
 }
-.gcell.win { background: var(--brand-soft); }
-.gcell.win .stone { box-shadow: 0 0 0 3px var(--brand); }
+.gstar { position: absolute; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--text-tertiary); transform: translate(-50%, -50%); opacity: .55; }
 
 /* 大厅游戏图标（棋类用棋子/石图） */
 .lobby-icon { width: 46px; height: 46px; border-radius: 14px; background: var(--brand-soft); display: inline-flex; align-items: center; justify-content: center; }
 .lobby-icon .lobby-piece { width: 26px; height: 26px; }
 .lobby-icon img { width: 26px; height: 26px; }
 
-/* 悔棋请求横幅（需双方同意） */
+/* 悔棋请求横幅（需双方同意）：通栏、醒目；不要覆盖 .btn 自己的配色 */
 .undo-banner {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: var(--brand-soft); color: var(--brand);
-  border-radius: 10px; padding: 5px 6px 5px 12px; font-size: 13.5px;
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: var(--brand-soft); color: var(--text);
+  border: 1px solid var(--interactive-border);
+  border-radius: 12px; padding: 10px 12px; font-size: 14px; font-weight: 550;
 }
-.undo-banner .btn { background: var(--surface); }
+.undo-banner .spacer { flex: 1; }
+.undo-banner .undo-text { color: var(--brand); }

@@ -22,7 +22,7 @@ func (a *API) UploadImage(ctx context.Context, workspaceRoot, relPath string) (s
 	if filepath.IsAbs(relPath) || relPath == ".." || strings.HasPrefix(relPath, "../") {
 		return "", fmt.Errorf("只允许 workspace 内相对路径")
 	}
-	full := filepath.Join(workspaceRoot, filepath.Clean("/"+relPath)[1:])
+	full := filepath.Join(workspaceRoot, filepath.Clean("/" + relPath)[1:])
 	ext := strings.ToLower(filepath.Ext(full))
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
 		return "", fmt.Errorf("企微图片只支持 jpg/png（%q 不行，转完再发）", ext)

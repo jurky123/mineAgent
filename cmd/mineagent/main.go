@@ -278,6 +278,10 @@ func main() {
 			WithMCStatus(mcStatusFn)
 
 		portalSrv = portal.New(log, cfg, store, acct, webCh)
+		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
+		if wecomCh != nil {
+			wecomCh.WithFallback(portalSrv.Handler())
+		}
 		gamesMgr := games.NewManager(log, store)
 		portalSrv.WithGames(games.NewAPI(log, gamesMgr, acct, portalSrv.Auth()).Handler())
 		registerPortalApps(portalSrv, store, gw, gamesMgr)

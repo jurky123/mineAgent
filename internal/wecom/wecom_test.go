@@ -113,8 +113,8 @@ func TestCallbackPOSTDispatch(t *testing.T) {
 	token := "tok123"
 	var got *InboundMessage
 	srv := &CallbackServer{
-		cfg: Config{CorpID: corpID, Token: token, EncodingAES: key},
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		cfg:       Config{CorpID: corpID, Token: token, EncodingAES: key},
+		log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		onMessage: func(m InboundMessage) { got = &m },
 	}
 	ts := httptest.NewServer(http.HandlerFunc(srv.handle))
@@ -153,8 +153,8 @@ func TestCallbackPOSTSkipsNonText(t *testing.T) {
 	token := "tok"
 	called := 0
 	srv := &CallbackServer{
-		cfg: Config{CorpID: corpID, Token: token, EncodingAES: key},
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		cfg:       Config{CorpID: corpID, Token: token, EncodingAES: key},
+		log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		onMessage: func(m InboundMessage) { called++ },
 	}
 	ts := httptest.NewServer(http.HandlerFunc(srv.handle))

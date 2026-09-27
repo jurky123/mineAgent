@@ -3,6 +3,7 @@ package wecom
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,6 +89,14 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 }
 
 func (c *Channel) Name() string { return "wecom" }
+
+// WithFallback 把 80 端口上非 /wecom 的请求交给 handler（门户页面共用域名裸访问）。
+func (c *Channel) WithFallback(h http.Handler) *Channel {
+	if c.cb != nil {
+		c.cb.WithFallback(h)
+	}
+	return c
+}
 
 // Start 起回调 HTTP 服务（阻塞式调用方自己 go）。
 func (c *Channel) Start() error { return c.cb.Start() }

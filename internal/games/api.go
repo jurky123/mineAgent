@@ -114,10 +114,12 @@ func (a *API) handleRooms(w http.ResponseWriter, r *http.Request, u *storage.Use
 		list := a.mgr.OpenRooms(gameID)
 		out := make([]map[string]any, 0, len(list))
 		for _, room := range list {
-			host := room.Sides[room.First]
 			name := ""
-			if host != nil {
-				name = host.Name
+			for _, side := range []string{"white", "black"} {
+				if p := room.Sides[side]; p != nil {
+					name = p.Name
+					break
+				}
 			}
 			out = append(out, map[string]any{
 				"id": room.ID, "host": name, "createdAt": room.Created.UnixMilli(),

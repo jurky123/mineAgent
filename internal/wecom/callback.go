@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,13 +24,22 @@ import (
 // 只监听 POST/GET /wecom，其它路径 404。微信只允许 80/443 端口回调，
 // 所以 cfg.WeCom.Port 默认 80；本机需要腾讯云控制台放行该端口。
 type CallbackServer struct {
-	cfg  Config
-	log  *slog.Logger
-	srv  *http.Server
+	cfg Config
+	log *slog.Logger
+	srv *http.Server
 
 	onMessage func(InboundMessage)
 	// onCorpID 学到 corpId 时回调（首次配置只有 Secret/Token/AESKey 时靠它自动补全）。
 	onCorpID func(string)
+
+	// fallback 是 80 端口上非 /wecom 路径的处理器（门户页面）。
+	// 企微回调必须占 80，站点也想用域名裸访问，就让两者共用这个端口。
+	fallback atomic.Value // http.Handler
+}
+
+// WithFallback 设置 80 端口非 /wecom 路径的处理器（门户）。可在 Start 之后调用。
+func (s *CallbackServer) WithFallback(h http.Handler) {
+	s.fallback.Store(h)
 }
 
 type Config struct {
@@ -67,11 +77,25 @@ func (s *CallbackServer) decrypt(encrypt string) (string, error) {
 	return msg, nil
 }
 
-func (s *CallbackServer) Start() error {
+// handler 组装 80 端口路由：/wecom 走企微回调，其它路径交给 fallback（门户）。
+func (s *CallbackServer) handler() http.Handler {
 	mux := http.NewServeMux()
-	// 用 catch-all 接所有请求：路径不对也能在日志里看到（企微保存回调时
-	// URL 填错是最常见的"回调不通过"原因，不记日志就没法排查）。
-	mux.HandleFunc("/", s.handle)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wecom" || r.URL.Path == "/wecom/" {
+			s.handle(w, r)
+			return
+		}
+		if h, ok := s.fallback.Load().(http.Handler); ok && h != nil {
+			h.ServeHTTP(w, r)
+			return
+		}
+		s.handle(w, r) // 没设 fallback：维持旧行为（记日志 + 404）
+	})
+	return mux
+}
+
+func (s *CallbackServer) Start() error {
+	mux := s.handler()
 	s.srv = &http.Server{
 		Addr:              fmt.Sprintf(":%d", s.cfg.Port),
 		Handler:           mux,

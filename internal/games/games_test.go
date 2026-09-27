@@ -358,3 +358,68 @@ func TestUndoGomokuRemovesTwoPly(t *testing.T) {
 }
 
 const gomokuSize = 15
+
+func TestSwapSides(t *testing.T) {
+	m := testManager(t)
+	// 等待中换边：直接生效，后加入的人自动坐空着的一边
+	r, err := m.Create("chess", &Player{ID: 1, Name: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Sides["white"] == nil {
+		t.Fatal("象棋房主默认执白")
+	}
+	if err := m.SwapRequest(1); err != nil {
+		t.Fatal(err)
+	}
+	got := m.RoomOf(1)
+	if got.Sides["black"] == nil || got.Sides["black"].ID != 1 || got.Sides["white"] != nil {
+		t.Fatalf("等待中换边应把房主换到黑方: %+v", got.Sides)
+	}
+	if _, err := m.Join(&Player{ID: 2, Name: "b"}, got.ID); err != nil {
+		t.Fatal(err)
+	}
+	got = m.RoomOf(1)
+	if got.Sides["white"] == nil || got.Sides["white"].ID != 2 {
+		t.Fatalf("后加入者应坐空着的白方: %+v", got.Sides)
+	}
+	// 对局中换边：需要对方同意
+	playChess(t, m, 2, "e2e4") // 白走一步
+	if err := m.SwapRequest(1); err != nil {
+		t.Fatal(err) // 黑方请求
+	}
+	if snap := m.RoomOf(2).Snapshot(2); snap["swapReq"] == nil {
+		t.Fatal("白方应看到换边请求")
+	}
+	// 自己不能同意自己的请求
+	if err := m.SwapRespond(1, true); err == nil {
+		t.Fatal("自己同意应报错")
+	}
+	if err := m.SwapRespond(2, true); err != nil {
+		t.Fatal(err)
+	}
+	got = m.RoomOf(1)
+	if got.Sides["white"] == nil || got.Sides["white"].ID != 1 || got.Sides["black"] == nil || got.Sides["black"].ID != 2 {
+		t.Fatalf("换边后双方应交换: %+v", got.Sides)
+	}
+	// 换边不改变棋局：白刚走完 e4，轮到黑（现在是 b=ID2）走
+	if got.Match.Turn() != "black" || len(got.Moves) != 1 {
+		t.Fatalf("换边不应改变棋局: turn=%s moves=%v", got.Match.Turn(), got.Moves)
+	}
+	// 换边后可以继续走（交换后 a 执白、b 执黑）
+	playChess(t, m, 2, "e7e5")
+	playChess(t, m, 1, "g1f3")
+	if n := len(m.RoomOf(1).Moves); n != 3 {
+		t.Fatalf("换边后应能继续走: %d", n)
+	}
+	// 拒绝分支
+	if err := m.SwapRequest(2); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SwapRespond(1, false); err != nil {
+		t.Fatal(err)
+	}
+	if m.RoomOf(1).Sides["white"].ID != 1 {
+		t.Fatal("拒绝后不应换边")
+	}
+}

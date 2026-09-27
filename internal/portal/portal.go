@@ -95,7 +95,8 @@ func (s *Server) Handler() http.Handler {
 var pages = map[string]string{
 	"/":        "portal/index.html",
 	"/agent":   "chat/index.html",
-	"/account": "account/index.html",
+	"/account":         "account/index.html",
+	"/account/history": "account/history/index.html",
 	"/games":   "games/index.html",
 }
 

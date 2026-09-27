@@ -272,12 +272,19 @@ func (m *Manager) Join(p *Player, roomID string) (*Room, error) {
 	if r.Status != StatusWaiting {
 		return nil, fmt.Errorf("房间已在对局中")
 	}
-	if host := r.Sides[r.First]; host != nil && host.ID == p.ID {
+	if r.sideOf(p.ID) != "" {
 		return nil, fmt.Errorf("这是你自己的房间")
 	}
-	other := "black"
-	if r.First == "black" {
-		other = "white"
+	// 后手方取"空着的那一侧"（房主等待中可能换过边，不一定是 First 侧）
+	other := ""
+	for _, side := range []string{"white", "black"} {
+		if r.Sides[side] == nil {
+			other = side
+			break
+		}
+	}
+	if other == "" {
+		return nil, fmt.Errorf("房间已满")
 	}
 	m.detachLocked(p.ID)
 	r.Sides[other] = &Player{ID: p.ID, Name: p.Name}

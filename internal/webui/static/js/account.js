@@ -139,10 +139,9 @@ function renderSessions(list) {
 }
 
 function renderStats(games) {
-  if (!games || !games.length) return;
-  document.getElementById('stats-section').hidden = false;
   const box = document.getElementById('acc-stats');
   box.innerHTML = '';
+  if (!games || !games.length) return;
   const names = { chess: '国际象棋' };
   for (const g of games) {
     const rate = g.total ? Math.round((g.wins / g.total) * 100) : 0;
@@ -181,6 +180,7 @@ document.getElementById('revoke-others').onclick = async () => {
   reload();
 };
 document.getElementById('logout-row').onclick = () => logout();
+document.getElementById('history-row').onclick = () => { location.href = '/account/history'; };
 
 (async () => {
   if (DEMO) {

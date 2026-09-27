@@ -18,14 +18,14 @@ import (
 // corpID 支持后置学习（SetCorpID）：首次只填 Secret/Token/AESKey 时，
 // gettoken 还拿不到 token，学到 corpId 后即可用。
 type TokenSource struct {
-	corpID  string
-	secret  string
-	base    string
-	log     *slog.Logger
-	client  *http.Client
-	mu      sync.Mutex
-	token   string
-	expires time.Time
+	corpID   string
+	secret   string
+	base     string
+	log      *slog.Logger
+	client   *http.Client
+	mu       sync.Mutex
+	token    string
+	expires  time.Time
 	inflight chan struct{}
 }
 

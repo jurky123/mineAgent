@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mineagent-version" content="__VER__">
+<link rel="icon" type="image/png" href="/static/__VER__/img/favicon.png">
+<title>对局历史 · Mine</title>
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/ds.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/games.css">
+</head>
+<body>
+<div id="shell-top"></div>
+
+<main class="wrap narrow">
+  <nav class="crumb">
+    <a class="crumb-link" href="/account">
+      <svg viewBox="0 0 24 24" class="i sm" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg>
+      我的账号
+    </a>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-title">对局历史</span>
+    <span class="spacer"></span>
+    <span class="badge" id="summary"></span>
+  </nav>
+
+  <div id="list-view">
+    <div class="card" id="runs"><div class="empty">加载中…</div></div>
+    <div style="text-align:center;margin-top:14px">
+      <button class="btn sm ghost" id="more" hidden>加载更多</button>
+    </div>
+  </div>
+
+  <div id="replay-view" hidden>
+    <div class="replay-head">
+      <button class="btn sm ghost" id="back">← 返回列表</button>
+      <span class="replay-title" id="replay-title"></span>
+    </div>
+    <div class="replay-layout">
+      <div class="replay-board-col">
+        <div class="player-line" id="replay-top"></div>
+        <div id="replay-board"></div>
+        <div class="player-line" id="replay-bottom"></div>
+        <div class="replay-controls">
+          <button class="btn sm" id="first" title="回到开头">首</button>
+          <button class="btn sm" id="prev">◀</button>
+          <span class="replay-step" id="step">0 / 0</span>
+          <button class="btn sm" id="next">▶</button>
+          <button class="btn sm" id="last" title="跳到末尾">末</button>
+          <input type="range" id="slider" min="0" max="0" value="0" class="replay-slider">
+        </div>
+      </div>
+      <aside class="chess-side">
+        <div class="card side-card">
+          <div class="side-head">着法</div>
+          <div class="moves-table" id="replay-moves"><div class="empty">暂无</div></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<script type="module" src="/static/__VER__/js/history.js"></script>
+</body>
+</html>

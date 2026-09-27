@@ -149,3 +149,19 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
 }
 .undo-banner .spacer { flex: 1; }
 .undo-banner .undo-text { color: var(--brand); }
+
+/* ---------- 对局历史 / 回放 ---------- */
+.replay-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.replay-title { color: var(--text); font-size: 14.5px; font-weight: 600; }
+.replay-layout { display: grid; grid-template-columns: minmax(0, 32rem) minmax(14rem, 1fr); gap: 22px; align-items: start; }
+.replay-board-col { display: flex; flex-direction: column; gap: 8px; }
+.replay-board-chess { width: 100%; max-width: 32rem; }
+.replay-board-gomoku { width: 100%; max-width: 32rem; }
+.replay-stone { position: absolute; width: 6%; aspect-ratio: 1 / 1; height: auto; transform: translate(-50%, -50%); border-radius: 50%; z-index: 1; }
+.replay-stone.replay-last { box-shadow: 0 0 0 2.5px var(--brand); }
+.replay-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.replay-step { color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: center; }
+.replay-slider { flex: 1; min-width: 8rem; accent-color: var(--brand); }
+@media (max-width: 900px) {
+  .replay-layout { grid-template-columns: 1fr; }
+}

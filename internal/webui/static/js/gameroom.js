@@ -132,40 +132,81 @@ function ownMoveCount(room) {
   return room.you === first ? Math.ceil(n / 2) : Math.floor(n / 2);
 }
 
-// 悔棋请求的模态提醒（同一个请求只弹一次）
-let undoModalKey = '';
+// 请求类交互（悔棋 / 换边）：同一请求只弹一次模态；横幅常驻。
+const REQ_META = {
+  undo: {
+    label: '悔棋',
+    reqTitle: '对方请求悔棋',
+    reqText: (side) => (SIDE_LABEL[side] || '对方') + '想悔棋：撤销最近一手（含其后的回应），回到对方重走。',
+    okText: '已同意悔棋',
+  },
+  swap: {
+    label: '换边',
+    reqTitle: '对方请求换边',
+    reqText: (side) => (SIDE_LABEL[side] || '对方') + '想换边：双方交换执子（棋局不变，轮到谁走就换成另一个人走）。',
+    okText: '已同意换边',
+  },
+};
+const reqModalKeys = { undo: '', swap: '' };
 
-function maybeUndoModal(room, onRoom) {
-  const req = room.undoReq;
-  const key = req ? req.by + ':' + req.at : '';
-  if (!req || req.by === room.you) { if (!req) undoModalKey = ''; return; }
-  if (key === undoModalKey) return;
-  undoModalKey = key;
-  const body = h('div', 'undo-dialog-body');
-  body.appendChild(h('div', null, (SIDE_LABEL[req.by] || '对方') + '想悔棋：撤销最近一手（含其后的回应），回到对方重走。'));
-  openDialog({
-    title: '对方请求悔棋',
-    body,
-    actions: [
-      { label: '拒绝', onClick: () => respondUndo(room, 'decline', onRoom, '已拒绝') },
-      { label: '同意', primary: true, onClick: () => respondUndo(room, 'accept', onRoom, '已同意悔棋') },
-    ],
-  });
-}
-
-async function respondUndo(room, action, onRoom, okMsg) {
+async function respondReq(kind, room, action, onRoom, okMsg) {
   try {
-    const res = await undoAction(room.game, action);
+    const res = await apiPost('/api/games/' + room.game + '/' + kind, { action });
     if (res.room) onRoom(res.room);
     if (okMsg) toast(okMsg);
   } catch (e) { toast(e.message, { warn: true }); }
 }
 
-// 动作按钮：悔棋（需对方同意）/ 认输 / 离开 / 再来一局。
+function maybeRequestModal(room, kind, onRoom) {
+  const meta = REQ_META[kind];
+  const req = room[kind + 'Req'];
+  const key = req ? req.by + ':' + req.at : '';
+  if (!req || req.by === room.you) { if (!req) reqModalKeys[kind] = ''; return; }
+  if (key === reqModalKeys[kind]) return;
+  reqModalKeys[kind] = key;
+  const body = h('div', 'req-dialog-body');
+  body.appendChild(h('div', null, meta.reqText(req.by)));
+  openDialog({
+    title: meta.reqTitle,
+    body,
+    actions: [
+      { label: '拒绝', onClick: () => respondReq(kind, room, 'decline', onRoom, '已拒绝') },
+      { label: '同意', primary: true, onClick: () => respondReq(kind, room, 'accept', onRoom, meta.okText) },
+    ],
+  });
+}
+
+function requestBanner(el, room, kind, onRoom) {
+  const meta = REQ_META[kind];
+  const req = room[kind + 'Req'];
+  if (!req) return;
+  const banner = h('div', 'undo-banner');
+  if (req.by === room.you) {
+    banner.appendChild(h('span', 'undo-text', '已请求' + meta.label + '，等待对方同意…'));
+    banner.appendChild(h('div', 'spacer'));
+    const cancel = h('button', 'btn sm ghost', '撤回');
+    cancel.onclick = () => respondReq(kind, room, 'cancel', onRoom, '');
+    banner.appendChild(cancel);
+  } else {
+    banner.appendChild(h('span', 'undo-text', (SIDE_LABEL[req.by] || '对方') + '请求' + meta.label));
+    banner.appendChild(h('div', 'spacer'));
+    const ok = h('button', 'btn sm primary', '同意');
+    ok.onclick = () => respondReq(kind, room, 'accept', onRoom, meta.okText);
+    const no = h('button', 'btn sm ghost', '拒绝');
+    no.onclick = () => respondReq(kind, room, 'decline', onRoom, '已拒绝');
+    banner.appendChild(ok);
+    banner.appendChild(no);
+  }
+  el.appendChild(banner);
+}
+
+// 动作按钮：悔棋 / 换边（对局中需对方同意）/ 认输 / 离开 / 再来一局。
 // onRoom 更新局面；onExit 返回大厅。
 export function actionButtons(el, room, { onRoom, onExit }) {
   el.innerHTML = '';
-  maybeUndoModal(room, onRoom);
+  maybeRequestModal(room, 'undo', onRoom);
+  maybeRequestModal(room, 'swap', onRoom);
+
   if (room.status === 'playing') {
     const undo = h('button', 'btn sm');
     undo.appendChild(icon('restart'));
@@ -174,12 +215,26 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     undo.disabled = ownMoveCount(room) === 0 || !!room.undoReq;
     undo.onclick = async () => {
       try {
-        const res = await undoAction(room.game, 'request');
+        const res = await apiPost('/api/games/' + room.game + '/undo', { action: 'request' });
         onRoom(res.room);
         toast('已请求悔棋，等待对方同意');
       } catch (e) { toast(e.message, { warn: true }); }
     };
     el.appendChild(undo);
+
+    const swap = h('button', 'btn sm');
+    swap.appendChild(icon('refresh'));
+    swap.appendChild(h('span', null, '换边'));
+    swap.title = '请求换边（需要对方同意）';
+    swap.disabled = !!room.swapReq;
+    swap.onclick = async () => {
+      try {
+        const res = await apiPost('/api/games/' + room.game + '/swap', { action: 'request' });
+        onRoom(res.room);
+        toast('已请求换边，等待对方同意');
+      } catch (e) { toast(e.message, { warn: true }); }
+    };
+    el.appendChild(swap);
 
     const resign = h('button', 'btn danger sm');
     resign.appendChild(icon('flag'));
@@ -192,6 +247,23 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     };
     el.appendChild(resign);
   }
+
+  if (room.status === 'waiting') {
+    // 等待中换边不需要对手同意（另一侧还没人）
+    const swap = h('button', 'btn sm');
+    swap.appendChild(icon('refresh'));
+    swap.appendChild(h('span', null, '换边'));
+    swap.title = '换到另一方（' + (room.you === 'white' ? '执黑' : '执白') + '，等待对手加入）';
+    swap.onclick = async () => {
+      try {
+        const res = await apiPost('/api/games/' + room.game + '/swap', { action: 'request' });
+        onRoom(res.room);
+        toast('已换到' + (res.room && res.room.you === 'white' ? '白方' : '黑方'));
+      } catch (e) { toast(e.message, { warn: true }); }
+    };
+    el.appendChild(swap);
+  }
+
   if (room.status === 'finished') {
     const again = h('button', 'btn primary cta');
     again.appendChild(icon('restart'));
@@ -199,26 +271,10 @@ export function actionButtons(el, room, { onRoom, onExit }) {
     again.onclick = async () => { onRoom(await rematch(room.game)); };
     el.appendChild(again);
   }
-  if (room.undoReq) {
-    const banner = h('div', 'undo-banner');
-    if (room.undoReq.by === room.you) {
-      banner.appendChild(h('span', 'undo-text', '已请求悔棋，等待对方同意…'));
-      banner.appendChild(h('div', 'spacer'));
-      const cancel = h('button', 'btn sm ghost', '撤回');
-      cancel.onclick = () => respondUndo(room, 'cancel', onRoom, '');
-      banner.appendChild(cancel);
-    } else {
-      banner.appendChild(h('span', 'undo-text', (SIDE_LABEL[room.undoReq.by] || '对方') + '请求悔棋'));
-      banner.appendChild(h('div', 'spacer'));
-      const ok = h('button', 'btn sm primary', '同意');
-      ok.onclick = () => respondUndo(room, 'accept', onRoom, '已同意悔棋');
-      const no = h('button', 'btn sm ghost', '拒绝');
-      no.onclick = () => respondUndo(room, 'decline', onRoom, '已拒绝');
-      banner.appendChild(ok);
-      banner.appendChild(no);
-    }
-    el.appendChild(banner);
-  }
+
+  requestBanner(el, room, 'undo', onRoom);
+  requestBanner(el, room, 'swap', onRoom);
+
   if (room.status === 'waiting' || room.status === 'finished') {
     const leave = h('button', 'btn sm');
     leave.appendChild(icon('logout'));

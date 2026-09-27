@@ -71,7 +71,8 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
 .status-bar { display: flex; align-items: center; gap: 10px; padding: 10px 0 0; color: var(--text-secondary); font-size: 14.5px; min-height: 26px; }
 .status-bar.active { color: var(--brand); font-weight: 650; }
 .status-bar.done { color: var(--text); font-weight: 650; }
-.chess-actions { display: flex; gap: 10px; padding-top: 12px; flex-wrap: wrap; }
+.chess-actions { display: flex; gap: 10px; padding-top: 12px; flex-wrap: wrap; align-items: center; }
+.chess-actions .btn.danger { margin-left: auto; }   /* 危险操作靠右，和辅助操作分开 */
 
 .chess-side { display: flex; flex-direction: column; gap: 14px; }
 .side-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
@@ -191,7 +192,7 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
 
 /* 对局中：棋盘放大、单列居中（房间/着法移到棋盘下方），开局进场动画。
    等待房间保持原来的两栏布局。 */
-.board { transition: max-width .28s ease; }
+.board { transition: max-width var(--motion-layout) var(--ease-standard); }
 body.game-focus .chess-wrap { --board-max: min(46rem, calc(100dvh - 292px)); max-width: 78rem; padding-top: 14px; padding-bottom: 20px; }
 body.game-focus .crumb { display: none; }         /* 对局中收掉面包屑（离开房间回大厅） */
 /* 对局中信息栏紧凑：房间码在右上角 chip 里（点击可复制），这里只留双方与着法 */

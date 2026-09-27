@@ -56,6 +56,12 @@
   --brand-hover: #0077e6;
   --brand-soft: rgba(10, 132, 255, .09);
   --grid-line: #d9d9de;
+  --motion-fast: 100ms;
+  --motion-ui: 150ms;
+  --motion-enter: 180ms;
+  --motion-layout: 280ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-spring: cubic-bezier(.2, 1.4, .5, 1);
   --radius-control: 10px;
   --radius-cta: 12px;
   --radius-card: 16px;
@@ -70,6 +76,12 @@ html[data-theme="dark"] {
   --bg: #212121;
   --sidebar: #171717;
   --surface: #212121;
+  --page: #111113;
+  --surface-muted: #18181b;
+  --border: rgba(255, 255, 255, .09);
+  --border-subtle: rgba(255, 255, 255, .06);
+  --border-strong: rgba(255, 255, 255, .16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 40px rgba(20, 100, 255, .02);
   --control-bg: #2a2a2a;
   --control-hover: #2f2f2f;
   --control-active: #303030;

@@ -115,6 +115,19 @@ func (c *Channel) WithMCStatus(fn func(ctx context.Context) (string, error)) *Ch
 	return c
 }
 
+// OnlineUsers 当前有活动 SSE 连接的网页账号（Portal Presence 用）。
+func (c *Channel) OnlineUsers() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, 0, len(c.subs))
+	for name, set := range c.subs {
+		if len(set) > 0 {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // WebStatus 供 /status：监听地址 + 当前在线浏览器数。
 func (c *Channel) WebStatus() string {
 	if c.srv == nil {

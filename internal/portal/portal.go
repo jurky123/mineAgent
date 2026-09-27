@@ -82,6 +82,7 @@ func (s *Server) Handler() http.Handler {
 	// Portal API
 	mux.HandleFunc("/api/portal/apps", s.handleApps)
 	mux.HandleFunc("/api/portal/home", s.requireUser(s.handleHome))
+	mux.HandleFunc("/api/portal/presence", s.requireUser(s.handlePresence))
 	mux.HandleFunc("/api/portal/announcements", s.handleAnnouncements) // GET 公开；POST/DELETE 管理员
 
 	if s.games != nil {

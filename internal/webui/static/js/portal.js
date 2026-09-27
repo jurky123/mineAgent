@@ -275,6 +275,19 @@ function paint(data) {
   } else {
     sub.textContent = '今天想做点什么？';
   }
+  if (DEMO) {   // 预览里也展示在线 chip（真实路径由 renderPresence 拉取）
+    const chip = h('span', 'presence');
+    chip.appendChild(h('span', 'presence-dot'));
+    chip.appendChild(h('span', null, '3 人在线'));
+    const faces = h('span', 'player-faces');
+    for (const n of ['J', 'S', 'A']) {
+      const a = h('span', 'face', n);
+      a.style.setProperty('--tint', tintOf(n + 'x'));
+      faces.appendChild(a);
+    }
+    chip.appendChild(faces);
+    sub.appendChild(chip);
+  }
   const host = home();
   host.innerHTML = '';
 
@@ -353,9 +366,31 @@ async function refresh() {
   }
 }
 
+// 现在在线（Portal Presence）：欢迎语右边一个小 chip
+async function renderPresence() {
+  try {
+    const d = await apiGet('/api/portal/presence');
+    const host = document.getElementById('greeting-sub');
+    if (!host || !d || !d.users || d.users.length <= 1) return;
+    const chip = h('span', 'presence');
+    chip.appendChild(h('span', 'presence-dot'));
+    chip.appendChild(h('span', null, d.count + ' 人在线'));
+    const faces = h('span', 'player-faces');
+    for (const name of d.users.slice(0, 4)) {
+      const a = h('span', 'face', (name[0] || '?').toUpperCase());
+      a.title = name;
+      a.style.setProperty('--tint', tintOf(name));
+      faces.appendChild(a);
+    }
+    chip.appendChild(faces);
+    host.appendChild(chip);
+  } catch (e) { /* 未登录等 */ }
+}
+
 (async () => {
   if (!DEMO) skeleton();
   await boot({ active: '/', requireLogin: !DEMO, preview: DEMO });
   if (!DEMO && !shell.user) return;
   await refresh();
+  if (!DEMO) renderPresence();
 })();

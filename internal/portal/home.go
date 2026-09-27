@@ -98,6 +98,15 @@ func greeting(name string) string {
 	}
 }
 
+// handlePresence 现在有哪些人开着网页（Portal Presence：让"私人空间"有陪伴感）。
+func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	users := s.web.OnlineUsers()
+	if users == nil {
+		users = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users, "count": len(users)})
+}
+
 // handleAccountStats 账号页的"游戏"分区：按游戏聚合的战绩（没有记录就没有数据）。
 func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	if r.Method != http.MethodGet {

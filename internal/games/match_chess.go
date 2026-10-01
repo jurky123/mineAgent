@@ -131,12 +131,18 @@ func (m *chessMatch) Undo(side string) ([]string, []string, string, error) {
 	m.prev = m.prev[:len(m.prev)-1]
 	m.sans = m.sans[:len(m.sans)-1]
 	m.ucis = m.ucis[:len(m.ucis)-1]
+	if len(m.plies) > 0 {
+		m.plies = m.plies[:len(m.plies)-1]
+	}
 	if m.Turn() != side && len(m.prev) > 0 {
 		// 最后一步是对手走的、且自己之前也走过：再退一步
 		m.b = m.prev[len(m.prev)-1]
 		m.prev = m.prev[:len(m.prev)-1]
 		m.sans = m.sans[:len(m.sans)-1]
 		m.ucis = m.ucis[:len(m.ucis)-1]
+		if len(m.plies) > 0 {
+			m.plies = m.plies[:len(m.plies)-1]
+		}
 	}
 	last := ""
 	if n := len(m.ucis); n > 0 {

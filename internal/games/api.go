@@ -115,28 +115,14 @@ func (a *API) handleDispatch(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleRooms(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
 	switch r.Method {
 	case http.MethodGet:
-		list := a.mgr.OpenRooms(gameID)
-		out := make([]map[string]any, 0, len(list))
-		for _, room := range list {
-			name := ""
-			for _, side := range []string{"white", "black"} {
-				if p := room.Sides[side]; p != nil {
-					name = p.Name
-					break
-				}
-			}
-			out = append(out, map[string]any{
-				"id": room.ID, "host": name, "createdAt": room.Created.UnixMilli(),
-			})
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"rooms": out})
+		writeJSON(w, http.StatusOK, map[string]any{"rooms": a.mgr.OpenRoomSummaries(gameID)})
 	case http.MethodPost:
-		room, err := a.mgr.Create(gameID, &Player{ID: u.ID, Name: u.Username})
+		snap, err := a.mgr.CreateSnapshot(gameID, &Player{ID: u.ID, Name: u.Username})
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+		writeJSON(w, http.StatusOK, map[string]any{"room": snap})
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "只支持 GET/POST"})
 	}
@@ -154,26 +140,30 @@ func (a *API) handleJoin(w http.ResponseWriter, r *http.Request, u *storage.User
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "参数不是合法 JSON"})
 		return
 	}
-	room, err := a.mgr.Join(&Player{ID: u.ID, Name: u.Username}, strings.ToUpper(strings.TrimSpace(req.Room)))
+	room, err := a.mgr.JoinSnapshot(&Player{ID: u.ID, Name: u.Username}, strings.ToUpper(strings.TrimSpace(req.Room)))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	if room.GameID != gameID {
+	if game, _ := room["game"].(string); game != gameID {
 		// 加入了另一个游戏的房间：如实返回，让前端跳转
-		writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID), "redirect": "/games/" + room.GameID})
+		writeJSON(w, http.StatusOK, map[string]any{"room": room, "redirect": "/games/" + game})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]any{"room": room})
 }
 
 func (a *API) handleRoom(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
-	room := a.mgr.RoomOf(u.ID)
-	if room == nil || room.GameID != gameID {
+	snap := a.mgr.RoomSnapshot(u.ID)
+	if snap == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	if game, _ := snap["game"].(string); game != gameID {
+		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"room": snap})
 }
 
 func (a *API) handleMove(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
@@ -190,12 +180,7 @@ func (a *API) handleMove(w http.ResponseWriter, r *http.Request, u *storage.User
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	room := a.mgr.RoomOf(u.ID)
-	if room == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]any{"room": a.mgr.RoomSnapshot(u.ID)})
 }
 
 func (a *API) handleResign(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
@@ -207,12 +192,7 @@ func (a *API) handleResign(w http.ResponseWriter, r *http.Request, u *storage.Us
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	room := a.mgr.RoomOf(u.ID)
-	if room == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]any{"room": a.mgr.RoomSnapshot(u.ID)})
 }
 
 func (a *API) handleLeave(w http.ResponseWriter, r *http.Request, u *storage.User, gameID string) {
@@ -255,12 +235,7 @@ func (a *API) handleUndo(w http.ResponseWriter, r *http.Request, u *storage.User
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	room := a.mgr.RoomOf(u.ID)
-	if room == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]any{"room": a.mgr.RoomSnapshot(u.ID)})
 }
 
 // handleSwap 换边（等待中直接换；对局中需对手同意）：request/accept/decline/cancel。
@@ -294,12 +269,7 @@ func (a *API) handleSwap(w http.ResponseWriter, r *http.Request, u *storage.User
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	room := a.mgr.RoomOf(u.ID)
-	if room == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]any{"room": a.mgr.RoomSnapshot(u.ID)})
 }
 
 // handleDraw 提和：request / accept / decline / cancel（同意后本局和棋）。
@@ -333,12 +303,7 @@ func (a *API) handleDraw(w http.ResponseWriter, r *http.Request, u *storage.User
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	room := a.mgr.RoomOf(u.ID)
-	if room == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"room": nil})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"room": room.Snapshot(u.ID)})
+	writeJSON(w, http.StatusOK, map[string]any{"room": a.mgr.RoomSnapshot(u.ID)})
 }
 
 // handleComment 请求"最后一手"的 AI 解说（每个 ply 只生成一次）。

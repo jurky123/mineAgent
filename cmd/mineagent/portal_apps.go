@@ -209,7 +209,7 @@ func gamesCard(store *storage.Store, mgr *games.Manager) portal.CardFunc {
 			}
 			item := map[string]any{
 				"id": g.ID, "name": g.Name, "desc": g.Desc, "path": g.Path,
-				"openRooms": len(mgr.OpenRooms(g.ID)),
+				"openRooms": len(mgr.OpenRoomSummaries(g.ID)),
 			}
 			if st, ok := stats[g.ID]; ok {
 				item["wins"], item["losses"], item["draws"], item["total"] = st.Wins, st.Losses, st.Draws, st.Total

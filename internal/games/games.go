@@ -145,8 +145,10 @@ type Room struct {
 	DrawReq  *UndoReq // 提和请求（同样 2 分钟有效）
 
 	// 解说：ply -> 文案（ply = 第几手，从 1 开始）；commenting 防重复生成。
+	// CommentGen 是历史代数：悔棋会改写历史并 +1，用来丢弃在途解说结果。
 	Comments   map[int]string
 	commenting map[int]bool
+	CommentGen int
 	// CommentaryEnabled 服务端是否配置了解说模型（前端据此显示/隐藏解说面板）。
 	CommentaryEnabled bool
 	Started           time.Time
@@ -185,7 +187,7 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 		"reason":    r.Reason,
 		"turn":      r.Match.Turn(),
 		"first":     r.First,
-		"moves":     r.Moves,
+		"moves":     append([]string(nil), r.Moves...),
 		"lastMove":  r.LastMove,
 		"startedAt": r.Started.UnixMilli(),
 		"players": map[string]any{
@@ -204,7 +206,7 @@ func (r *Room) Snapshot(forUser int64) map[string]any {
 	// 解说（ply -> 文案），便于刷新/重连后还能看到
 	m["commentary"] = r.CommentaryEnabled
 	if len(r.Comments) > 0 {
-		m["comments"] = r.Comments
+		m["comments"] = cloneIntMap(r.Comments)
 	}
 	// 待处理的悔棋 / 换边请求（超时的不下发）
 	if r.Status == StatusPlaying {
@@ -295,6 +297,7 @@ func (m *Manager) RequestComment(ctx context.Context, userID int64) (text string
 	}
 	r.commenting[ply] = true
 	roomID := r.ID
+	gen := r.CommentGen
 	prompt := r.Match.PromptContext()
 	// 带上之前的解说，让解说员延续同一套叙事（"agent 历史进程"）
 	if len(r.Comments) > 0 {
@@ -324,6 +327,12 @@ func (m *Manager) RequestComment(ctx context.Context, userID int64) (text string
 	r = m.rooms[roomID]
 	if r == nil {
 		return "", false, genErr
+	}
+	if gen != r.CommentGen {
+		// 生成期间发生了悔棋/回退：这版解说的局面已过期，直接丢弃。
+		// 不复位 commenting（悔棋已清空它），避免清掉悔棋后新发起的任务标记。
+		m.log.Info("commentary dropped (stale generation)", "game", r.GameID, "room", r.ID, "ply", ply, "gen", gen)
+		return "", false, nil
 	}
 	delete(r.commenting, ply)
 	if genErr != nil {
@@ -357,12 +366,27 @@ func (m *Manager) publishEventLocked(r *Room, v any) {
 }
 
 func (m *Manager) Create(gameID string, p *Player) (*Room, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.createLocked(gameID, p)
+}
+
+// CreateSnapshot 建房并返回脱离内部状态的响应快照（HTTP 层用，避免锁外读 *Room）。
+func (m *Manager) CreateSnapshot(gameID string, p *Player) (map[string]any, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, err := m.createLocked(gameID, p)
+	if err != nil {
+		return nil, err
+	}
+	return r.Snapshot(p.ID), nil
+}
+
+func (m *Manager) createLocked(gameID string, p *Player) (*Room, error) {
 	g, ok := ByID(gameID)
 	if !ok || !g.Enabled {
 		return nil, fmt.Errorf("游戏不存在或未开放")
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.detachLocked(p.ID) // 同时只在一个房间里
 	r := &Room{
 		ID:                m.newRoomIDLocked(),
@@ -386,6 +410,21 @@ func (m *Manager) Create(gameID string, p *Player) (*Room, error) {
 func (m *Manager) Join(p *Player, roomID string) (*Room, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.joinLocked(p, roomID)
+}
+
+// JoinSnapshot 加入房间并返回脱离内部状态的响应快照（HTTP 层用）。
+func (m *Manager) JoinSnapshot(p *Player, roomID string) (map[string]any, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, err := m.joinLocked(p, roomID)
+	if err != nil {
+		return nil, err
+	}
+	return r.Snapshot(p.ID), nil
+}
+
+func (m *Manager) joinLocked(p *Player, roomID string) (*Room, error) {
 	r := m.rooms[roomID]
 	if r == nil {
 		return nil, fmt.Errorf("房间不存在或已解散")
@@ -425,6 +464,25 @@ func (m *Manager) RoomOf(userID int64) *Room {
 	return m.rooms[m.byUser[userID]]
 }
 
+// RoomSnapshot 用户当前房间的脱离快照（HTTP 层用）；没有返回 nil。
+func (m *Manager) RoomSnapshot(userID int64) map[string]any {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.rooms[m.byUser[userID]]
+	if r == nil {
+		return nil
+	}
+	return r.Snapshot(userID)
+}
+
+// OpenRoom 是等待加入房间的脱敏摘要（HTTP 列表用，不暴露内部 *Room）。
+type OpenRoom struct {
+	ID        string `json:"id"`
+	Host      string `json:"host"`
+	Game      string `json:"game,omitempty"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
 // OpenRooms 某游戏等待加入的房间（新→旧）；gameID 为空 = 全部。
 func (m *Manager) OpenRooms(gameID string) []*Room {
 	m.mu.Lock()
@@ -440,6 +498,31 @@ func (m *Manager) OpenRooms(gameID string) []*Room {
 		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
+	return out
+}
+
+// OpenRoomSummaries 等待加入房间的脱离摘要（HTTP 层用）。
+func (m *Manager) OpenRoomSummaries(gameID string) []OpenRoom {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]OpenRoom, 0)
+	for _, r := range m.rooms {
+		if r.Status != StatusWaiting {
+			continue
+		}
+		if gameID != "" && r.GameID != gameID {
+			continue
+		}
+		host := ""
+		for _, side := range []string{"white", "black"} {
+			if p := r.Sides[side]; p != nil {
+				host = p.Name
+				break
+			}
+		}
+		out = append(out, OpenRoom{ID: r.ID, Host: host, Game: r.GameID, CreatedAt: r.Created.UnixMilli()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
 	return out
 }
 
@@ -570,6 +653,14 @@ func (m *Manager) UndoRespond(userID int64, accept bool) error {
 		r.Moves = moves
 		r.RawMoves = raws
 		r.LastMove = last
+		// 历史被改写：代数 +1 丢弃在途解说，清掉已撤销步的解说与进行中标记。
+		r.CommentGen++
+		for ply := range r.Comments {
+			if ply > len(r.Moves) {
+				delete(r.Comments, ply)
+			}
+		}
+		r.commenting = map[int]bool{}
 		m.log.Info("undo accepted", "game", r.GameID, "room", r.ID, "by", requester, "moves", len(moves))
 	} else {
 		m.log.Info("undo declined", "game", r.GameID, "room", r.ID, "by", requester)

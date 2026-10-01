@@ -166,7 +166,7 @@ func (m *gomokuMatch) Snapshot(side string) map[string]any {
 		"cells": m.b.CellsString(),
 	}
 	if len(m.line) > 0 {
-		snap["winLine"] = m.line
+		snap["winLine"] = append([]int(nil), m.line...)
 	}
 	return snap
 }

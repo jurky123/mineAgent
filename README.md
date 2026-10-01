@@ -229,6 +229,8 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   不做禁手/三三）；棋盘是简约白底发丝网格 + 圆子，最后一手有描边、获胜连线高亮；
   棋盘满了算和棋。悔棋规则与象棋一致（两个游戏共用 `gameroom.js` 的请求/同意交互）。
 - **记录**：每局结束给双方各写一条 `game_runs`（胜/负/和 + 原因/颜色/回合数），
+  房间锁内捕获不可变记录、解锁后由终局请求同步写库；数据库繁忙不会阻塞其它房间，
+  该请求返回前完成写入尝试，失败记录警告日志（不自动重试）。
   只在"我的最近战绩"里展示；积分与排行榜模型仍未定，等游戏类型稳定后再设计。
 - **加新游戏**：`internal/games/<id>` 写规则 → `internal/games/match_<id>.go` 适配
   （Turn/Play/Snapshot）→ 在 `internal/games/games.go` 的注册表加一条 →

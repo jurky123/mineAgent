@@ -240,6 +240,7 @@ type Manager struct {
 	rooms       map[string]*Room
 	byUser      map[int64]string
 	subs        map[int64]map[chan []byte]struct{}
+	pendingRuns []storage.GameRun // 终局持锁捕获，解锁后由当前请求同步落库。
 	seq         int
 	commentator func(ctx context.Context, prompt string) (string, error)
 }
@@ -367,14 +368,14 @@ func (m *Manager) publishEventLocked(r *Room, v any) {
 
 func (m *Manager) Create(gameID string, p *Player) (*Room, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	return m.createLocked(gameID, p)
 }
 
 // CreateSnapshot 建房并返回脱离内部状态的响应快照（HTTP 层用，避免锁外读 *Room）。
 func (m *Manager) CreateSnapshot(gameID string, p *Player) (map[string]any, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	r, err := m.createLocked(gameID, p)
 	if err != nil {
 		return nil, err
@@ -409,14 +410,14 @@ func (m *Manager) createLocked(gameID string, p *Player) (*Room, error) {
 // Join 加入房间（执后手）。
 func (m *Manager) Join(p *Player, roomID string) (*Room, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	return m.joinLocked(p, roomID)
 }
 
 // JoinSnapshot 加入房间并返回脱离内部状态的响应快照（HTTP 层用）。
 func (m *Manager) JoinSnapshot(p *Player, roomID string) (map[string]any, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	r, err := m.joinLocked(p, roomID)
 	if err != nil {
 		return nil, err
@@ -558,7 +559,7 @@ func (m *Manager) ActiveRooms() []ActiveRoom {
 // Move 走一步（服务端校验：轮次/合法性由 Match 负责）。
 func (m *Manager) Move(userID int64, payload json.RawMessage) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	r := m.rooms[m.byUser[userID]]
 	if r == nil {
 		return fmt.Errorf("你不在任何房间里")
@@ -774,7 +775,7 @@ func (m *Manager) DrawRequest(userID int64) error {
 // DrawRespond 回应提和：只有对手能同意/拒绝；同意即本局和棋。
 func (m *Manager) DrawRespond(userID int64, accept bool) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	r := m.rooms[m.byUser[userID]]
 	if r == nil {
 		return fmt.Errorf("你不在任何房间里")
@@ -844,7 +845,7 @@ func (m *Manager) UndoCancel(userID int64) error {
 // Resign 认输。
 func (m *Manager) Resign(userID int64) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	r := m.rooms[m.byUser[userID]]
 	if r == nil {
 		return fmt.Errorf("你不在任何房间里")
@@ -870,7 +871,7 @@ func (m *Manager) Resign(userID int64) error {
 // Leave 离开：等待中解散房间；对局中算认输（对手还能看到终局）。
 func (m *Manager) Leave(userID int64) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	defer m.unlockAndSave()
 	if r := m.rooms[m.byUser[userID]]; r != nil && r.Status == StatusPlaying {
 		other := "white"
 		if r.sideOf(userID) == "white" {
@@ -893,7 +894,20 @@ func (m *Manager) detachLocked(userID int64) {
 	m.leaveLocked(userID)
 }
 
-// finishLocked 结束对局并落库（调用方持锁）。
+// unlockAndSave 保持请求返回前完成落库，但 SQLite 等待不会占住房间锁。
+// finishLocked 已捕获完整值；其它请求可以离开/重建房间而不影响记录。
+func (m *Manager) unlockAndSave() {
+	runs := m.pendingRuns
+	m.pendingRuns = nil
+	m.mu.Unlock()
+	for _, run := range runs {
+		if _, err := m.store.AddGameRun(context.Background(), run); err != nil {
+			m.log.Warn("save game run", "game", run.GameID, "user", run.UserID, "err", err)
+		}
+	}
+}
+
+// finishLocked 结束对局并捕获待写记录（调用方持锁，退出时必须 unlockAndSave）。
 func (m *Manager) finishLocked(r *Room, result, reason string) {
 	r.Status = StatusFinished
 	r.Result = result
@@ -921,13 +935,11 @@ func (m *Manager) finishLocked(r *Room, result, reason string) {
 			"display":  append([]string(nil), r.Moves...),    // 展示用（SAN / 坐标）
 			"comments": cloneIntMap(r.Comments),              // AI 解说（回放页可显示）
 		})
-		if _, err := m.store.AddGameRun(context.Background(), storage.GameRun{
+		m.pendingRuns = append(m.pendingRuns, storage.GameRun{
 			UserID: p.ID, GameID: r.GameID, Result: outcome,
 			DurationMS: r.Updated.Sub(r.Started).Milliseconds(),
-			Metadata:   string(meta), CreatedAt: time.Now().UnixMilli(),
-		}); err != nil {
-			m.log.Warn("save game run", "game", r.GameID, "room", r.ID, "user", p.Name, "err", err)
-		}
+			Metadata:   string(meta), CreatedAt: r.Updated.UnixMilli(),
+		})
 	}
 	m.publishLocked(r)
 	m.log.Info("game room finished", "game", r.GameID, "room", r.ID, "result", result, "reason", reason, "moves", len(r.Moves))

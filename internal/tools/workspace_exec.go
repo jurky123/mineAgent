@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,55 +29,61 @@ import (
 //   - npm/yarn：本机没装 node，装包无意义，一律禁（要装先手动装 node）。
 //   - go install/run：会写外部目录，禁；go build/test/vet/fmt 放行（见下）。
 //   - shell 反弹关键字（nc、/dev/tcp、base64 -d 管道 sh、fork 炸弹等）：禁。
+//
 // 允许（静态层）：python3、venv 内 python/pip、go build 等、git、常规命令，
 // 以及 && / || / ; 连接的组合命令（逐段检查）。
 // 注意：首词匹配用 basename（/usr/bin/curl 按 curl 算），防绝对路径绕过。
 var blockedCommands = map[string]string{
-	"rm": "删除文件请用服务器命令行手动操作，workspace 里删文件用 write 空内容覆盖或联系管理员",
-	"rmdir": "删除目录请手动操作",
-	"shutdown": "关机命令被禁止",
-	"reboot": "重启命令被禁止",
-	"poweroff": "关机命令被禁止",
-	"halt": "关机命令被禁止",
-	"mkfs": "磁盘操作被禁止",
-	"dd": "裸盘操作被禁止",
-	"fdisk": "分区操作被禁止",
-	"parted": "分区操作被禁止",
-	"systemctl": "系统服务请在服务器命令行管理",
-	"service": "系统服务请在服务器命令行管理",
-	"init": "系统命令被禁止",
-	"iptables": "防火墙请手动管理",
-	"ufw": "防火墙请手动管理",
+	"rm":           "删除文件请用服务器命令行手动操作，workspace 里删文件用 write 空内容覆盖或联系管理员",
+	"rmdir":        "删除目录请手动操作",
+	"shutdown":     "关机命令被禁止",
+	"reboot":       "重启命令被禁止",
+	"poweroff":     "关机命令被禁止",
+	"halt":         "关机命令被禁止",
+	"mkfs":         "磁盘操作被禁止",
+	"dd":           "裸盘操作被禁止",
+	"fdisk":        "分区操作被禁止",
+	"parted":       "分区操作被禁止",
+	"systemctl":    "系统服务请在服务器命令行管理",
+	"service":      "系统服务请在服务器命令行管理",
+	"init":         "系统命令被禁止",
+	"iptables":     "防火墙请手动管理",
+	"ufw":          "防火墙请手动管理",
 	"firewall-cmd": "防火墙请手动管理",
-	"chmod": "改权限请手动操作",
-	"chown": "改属主请手动操作",
-	"setfacl": "改 ACL 请手动操作",
-	"su": "提权命令被禁止",
-	"sudo": "提权命令被禁止",
-	"doas": "提权命令被禁止",
-	"passwd": "账号命令被禁止",
-	"useradd": "账号命令被禁止",
-	"usermod": "账号命令被禁止",
-	"userdel": "账号命令被禁止",
-	"curl": "出网下载 v1 暂不允许，需要装依赖请联系管理员手动装",
-	"wget": "出网下载 v1 暂不允许，需要装依赖请联系管理员手动装",
-	"ssh": "连别的机器被禁止",
-	"scp": "传文件到别的机器被禁止",
-	"sftp": "传文件被禁止",
-	"rsync": "同步文件到别处被禁止",
-	"docker": "容器命令被禁止",
-	"podman": "容器命令被禁止",
-	"kill": "杀进程请手动操作（容易误杀服务器进程）",
-	"killall": "杀进程请手动操作",
-	"pkill": "杀进程请手动操作",
-	"crontab": "定时任务请手动配置",
-	"at": "定时任务请手动配置",
-	"nc": "网络命令被禁止",
-	"ncat": "网络命令被禁止",
-	"socat": "网络命令被禁止",
-	"npm": "本机没装 node，npm 一律禁；要装先手动装 node",
-	"yarn": "本机没装 node，yarn 一律禁；要装先手动装 node",
-	"go": "",
+	"chmod":        "改权限请手动操作",
+	"chown":        "改属主请手动操作",
+	"setfacl":      "改 ACL 请手动操作",
+	"su":           "提权命令被禁止",
+	"sudo":         "提权命令被禁止",
+	"doas":         "提权命令被禁止",
+	"passwd":       "账号命令被禁止",
+	"useradd":      "账号命令被禁止",
+	"usermod":      "账号命令被禁止",
+	"userdel":      "账号命令被禁止",
+	"curl":         "出网下载 v1 暂不允许，需要装依赖请联系管理员手动装",
+	"wget":         "出网下载 v1 暂不允许，需要装依赖请联系管理员手动装",
+	"ssh":          "连别的机器被禁止",
+	"scp":          "传文件到别的机器被禁止",
+	"sftp":         "传文件被禁止",
+	"rsync":        "同步文件到别处被禁止",
+	"docker":       "容器命令被禁止",
+	"podman":       "容器命令被禁止",
+	"kill":         "杀进程请手动操作（容易误杀服务器进程）",
+	"killall":      "杀进程请手动操作",
+	"pkill":        "杀进程请手动操作",
+	"crontab":      "定时任务请手动配置",
+	"at":           "定时任务请手动配置",
+	"nc":           "网络命令被禁止",
+	"ncat":         "网络命令被禁止",
+	"socat":        "网络命令被禁止",
+	"npm":          "本机没装 node，npm 一律禁；要装先手动装 node",
+	"yarn":         "本机没装 node，yarn 一律禁；要装先手动装 node",
+	"go":           "",
+	"env":          "不允许通过 env 包装命令绕过静态检查",
+	"command":      "不允许通过 command 包装命令绕过静态检查",
+	"sh":           "不允许启动嵌套 shell 绕过静态检查",
+	"bash":         "不允许启动嵌套 shell 绕过静态检查",
+	"dash":         "不允许启动嵌套 shell 绕过静态检查",
 }
 
 // reviewGated 是"静态放行但需 LLM 复核"的一组：curl / wget / pip / pip3。
@@ -221,7 +228,7 @@ func checkDownloadFlags(base string, fields []string) error {
 		"-d": true, "--data": true, "--data-raw": true, "--data-ascii": true,
 		"--data-binary": true, "--data-urlencode": true,
 		"-f": true, "--form": true, "--form-string": true,
-		"-F": true, // wget --post-file 等价外传
+		"-F":          true, // wget --post-file 等价外传
 		"--post-data": true, "--post-file": true,
 		"--method": true, "-X": true, "--request": true, // 改 POST/PUT/DELETE
 		"--proxy": true, "-x": true, "--preproxy": true, // 走代理外传
@@ -389,35 +396,19 @@ func (w *Workspace) exec(ctx context.Context, args map[string]any) (string, erro
 	ectx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ectx, "bash", "-c", cmdStr)
-	cmd.Dir = w.cfg.Root
-	// 最小环境：防代理/密钥泄露到子进程，也防子进程读到奇怪的 env。
-	// VENV_BIN 让 agent 知道 venv 的 python/pip 在哪（pip 只能装进这个 venv）。
-	cmd.Env = []string{
-		"PATH=/usr/local/bin:/usr/bin:/bin",
-		"HOME=" + w.cfg.Root,
-		"LANG=C.UTF-8",
-		"NO_COLOR=1",
-		"GIT_PAGER=cat",
-		"PIP_CONFIG_FILE=/dev/null",
-		"VENV_BIN=" + filepath.Join(w.cfg.Root, ".venv", "bin"),
+	cmd, err := newWorkspaceCommand(ectx, w.cfg.Root, cmdStr, verdict == staticReview)
+	if err != nil {
+		return "", err
 	}
-	var out bytes.Buffer
+	out := boundedOutput{limit: max(0, w.cfg.MaxOutputBytes)}
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	runErr := cmd.Run()
 
-	text := out.String()
-	truncated := false
-	if len(text) > w.cfg.MaxOutputBytes {
-		// 按字节截断可能砍半个 UTF-8，用 rune 重切。
-		r := []rune(text)
-		limit := w.cfg.MaxOutputBytes
-		if len(r) > limit {
-			r = r[:limit]
-		}
-		text = string(r) + fmt.Sprintf("\n…（输出超限，已截断，全长约 %d 字节）", len(out.String()))
-		truncated = true
+	text := strings.ToValidUTF8(out.buf.String(), "")
+	truncated := out.total > int64(out.buf.Len())
+	if truncated {
+		text += fmt.Sprintf("\n…（输出超限，已截断，全长约 %d 字节）", out.total)
 	}
 	code := 0
 	errStr := ""
@@ -443,4 +434,23 @@ func (w *Workspace) exec(ctx context.Context, args map[string]any) (string, erro
 		return "", fmt.Errorf("%s", errStr)
 	}
 	return string(payload), nil
+}
+
+// boundedOutput 在收集时限制内存，超限仍消费管道，避免子进程卡住。
+type boundedOutput struct {
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	limit int
+	total int64
+}
+
+func (b *boundedOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.total += int64(len(p))
+	n := min(len(p), b.limit-b.buf.Len())
+	if n > 0 {
+		_, _ = b.buf.Write(p[:n])
+	}
+	return len(p), nil
 }

@@ -47,11 +47,16 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
   之后 `把我传送到 Alex 身边` 这类请求会转到游戏内管理员审批；
   `解绑` 解除绑定
 - 写代码/跑代码（仅管理员）：`在 workspace 写个 hello.py 并跑一下`。
-  所有读写和执行都被限制在 `workspace/` 目录内，有超时、输出上限和全程审计。
+  文件工具的路径限制在 `workspace/` 内；执行使用 Linux **Bubblewrap** 隔离：
+  仅 workspace 可持久写入，系统运行时只读，宿主配置/其它用户文件不可见。
+  需要安装 `bwrap` 并允许非特权用户命名空间；缺失或启动失败时拒绝执行，不回退到宿主 shell。
+  有超时、输出上限和全程审计；输出在收集时限制内存，超时会终止整组进程与沙箱子进程。
   执行分三层：危险命令（rm/sudo/ssh/docker 等）直接拒绝；
   装依赖/下载（`$VENV_BIN/pip install` 装进 workspace/.venv、
   curl/wget 从公开 http(s) 下载到 workspace 内）先过静态约束再送 LLM 语义审查，
-  审查不通过或审查器不可用则拒绝；普通跑代码命令直接执行
+  审查不通过或审查器不可用则拒绝；普通跑代码命令在无网络沙箱内执行，
+  只有下载/装包命令通过审查后才开放网络。命令静态检查是额外护栏，不作为隔离边界。
+  各通道只认自己的管理员名单（QQ / 企微应用 / 智能机器人 / 个人微信 / 网页），同名不能跨通道提权。
 
 ## 高权限操作与审批
 
@@ -89,7 +94,21 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 - 服务端：Paper 26.2 插件 `MineAgent.jar`，放入 `plugins/` 即可
 - 后端：同机运行 `mineagent` 服务（默认 `127.0.0.1:8765`），负责对话、审批与记忆存储
 - 模型：需要配置一个 OpenAI 兼容的模型接口（如 opencode-go），在 `config.json` 中填写
-- 日常运维：`systemctl status|restart mineagent`，日志 `journalctl -u mineagent -f`
+- 日常运维：`systemctl status mineagent`，日志 `journalctl -u mineagent -f`；更新与重启走 `scripts/deploy.sh`，避免清空进行中的棋局。
+
+### 验证与部署
+
+验证：`go test ./...`、`go vet ./...`、`python3 scripts/deploy_test.py`。
+Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持的测试环境会显示跳过。
+部署脚本测试只在临时目录运行模拟命令，不操作真实服务。
+
+`scripts/deploy.sh` 先把二进制构建到临时目录，再查询 `/api/games/active`。
+仅 HTTP 成功、响应包含有效的 `playing: 0` 时才替换 `bin/mineagent` 并重启；
+有对局、令牌缺失/过期、网络错误、响应格式无效都会拒绝部署。
+管理员登录令牌保存到 `<web.dataDir>/deploy-token.txt`（0600，可用 `TOKEN_FILE` 覆盖）；
+令牌不会出现在 curl 参数中。`--force` 显式跳过对局检查，会清空内存房间。
+构建时可用 `make build BUILD_OUTPUT=/tmp/mineagent-check` 验证而不覆盖运行二进制。
+`config.json` 与 `config.json.bak-*` 属于私有运行配置，不提交到 Git。
 
 ## QQ 接入（官方 Bot）
 

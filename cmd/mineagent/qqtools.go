@@ -52,7 +52,7 @@ func (g *qqToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 
 	switch {
 	case strings.HasPrefix(info.Name, "workspace_"):
-		ctx = tools.WithQQAdmin(ctx, g.ws.IsAdmin(openIDs...))
+		ctx = tools.WithQQAdmin(ctx, strings.HasPrefix(requester, tools.QQRequesterPrefix) && g.ws.IsAdmin("qq", openIDs...))
 	case info.Name == "qq_bind" || info.Name == "qq_unbind":
 		ctx = tools.WithQQIdentity(ctx, openIDs)
 	case info.Name == "minecraft_teleport" || info.Name == "minecraft_give" || info.Name == "minecraft_run_command":

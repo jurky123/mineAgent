@@ -20,30 +20,33 @@ import (
 )
 
 // WorkspaceTools 返回写代码/执行代码四件套：ls / read / write / exec。
-// 沙箱约束（v1，不做容器强隔离，靠这几条防破坏）：
+// 沙箱约束：
 //   - 根目录钳制：所有路径必须落在 cfg.Workspace.Root 内，.. / 绝对路径 /
 //     符号链接逃逸全部拒绝（resolve 后再校验一次）。
 //   - 读写上限：单文件 MaxFileBytes，超出拒绝；ls 单次最多 200 条。
-//   - 执行：工作目录=Root，超时 ExecTimeoutSec，输出上限 MaxOutputBytes，
+//   - 执行：Bubblewrap 隔离文件系统/PID，仅 Root 可持久写入；超时 ExecTimeoutSec，输出上限 MaxOutputBytes，
 //     全局单并发（同一时间只跑一个命令），危险命令黑名单前置拦截。
 //   - 权限：仅 QQ adminOpenIDs 可用。MC 通道默认不可用（allowMC=false 时
 //     直接拒绝并留审计）；QQ 非管理员调用直接拒绝并留审计。
 //   - 审计：每次调用都写 tool_audit（成功/拒绝/失败全留痕）。
 type Workspace struct {
-	cfg   config.Workspace
-	admins map[string]bool
-	store *storage.Store
-	log   *slog.Logger
+	cfg      config.Workspace
+	admins   map[string]map[string]bool
+	store    *storage.Store
+	log      *slog.Logger
 	reviewer Reviewer
 
 	execMu sync.Mutex
 }
 
-func NewWorkspace(cfg config.Workspace, adminOpenIDs []string, store *storage.Store, log *slog.Logger) *Workspace {
-	admins := make(map[string]bool, len(adminOpenIDs))
-	for _, id := range adminOpenIDs {
-		if id != "" {
-			admins[id] = true
+func NewWorkspace(cfg config.Workspace, channelAdmins map[string][]string, store *storage.Store, log *slog.Logger) *Workspace {
+	admins := make(map[string]map[string]bool, len(channelAdmins))
+	for channel, ids := range channelAdmins {
+		admins[channel] = make(map[string]bool, len(ids))
+		for _, id := range ids {
+			if id != "" {
+				admins[channel][id] = true
+			}
 		}
 	}
 	return &Workspace{cfg: cfg, admins: admins, store: store, log: log}
@@ -55,10 +58,10 @@ func (w *Workspace) SetReviewer(r Reviewer) {
 	w.reviewer = r
 }
 
-// IsAdmin 供 main.go 装配时判断：QQ 消息的 union/user/member openid 任一命中即管理员。
-func (w *Workspace) IsAdmin(openIDs ...string) bool {
+// IsAdmin 只检查指定通道，不能因同名而继承其它通道的权限。
+func (w *Workspace) IsAdmin(channel string, openIDs ...string) bool {
 	for _, id := range openIDs {
-		if id != "" && w.admins[id] {
+		if id != "" && w.admins[channel][id] {
 			return true
 		}
 	}
@@ -86,7 +89,7 @@ func (w *Workspace) Tools() []tool.BaseTool {
 				"content": {Type: schema.String, Desc: "完整文件内容", Required: true},
 			}, fn: w.write},
 		&wsTool{w: w, name: "workspace_exec",
-			desc: "在 workspace 内执行一条 shell 命令（工作目录即沙箱根）。适合跑 python3/$VENV_BIN/python、$VENV_BIN/pip install 装包、curl/wget 从公开 http(s) 下载到 workspace 内并处理、查公开 API（天气/汇率等只读接口）存 workspace 再用、go 构建和小脚本。一次只做一件事，有超时和输出上限。rm/sudo/ssh/docker 等危险命令直接拒绝；curl/wget/pip 会先过静态约束再送 LLM 语义审查，审查不通过或审查器不可用则拒绝。",
+			desc: "在隔离环境里执行一条 shell 命令，只有 workspace 可持久写入，普通命令不能联网。适合跑 python3/$VENV_BIN/python、go 构建和小脚本。$VENV_BIN/pip install 装包、curl/wget 下载或查公开 API 必须先过静态约束和语义审查，通过后开放网络；拒绝或审查器不可用则不执行。一次只做一件事，有超时和输出上限。rm/sudo/ssh/docker 等危险命令直接拒绝。",
 			params: map[string]*schema.ParameterInfo{
 				"command": {Type: schema.String, Desc: "shell 命令，如 $VENV_BIN/pip install requests 或 curl -s --max-time 10 https://example.com/data.json -o data.json", Required: true},
 			}, fn: w.exec},

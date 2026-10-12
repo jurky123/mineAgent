@@ -121,6 +121,7 @@ func TestReviewerFailClosed(t *testing.T) {
 
 // 集成：受审命令 + 放行审查器 = 正常执行；拒绝审查器 = 拒绝执行且留审计。
 func TestExecWithReviewerIntegration(t *testing.T) {
+	requireWorkspaceSandbox(t)
 	newWS := func(t *testing.T, srv *httptest.Server) (*Workspace, context.Context) {
 		t.Helper()
 		w := testWorkspace(t, "ADMIN1")

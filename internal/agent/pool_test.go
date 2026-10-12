@@ -136,3 +136,32 @@ func TestPoolQueueFull(t *testing.T) {
 	}
 	close(release)
 }
+
+func TestPoolEnqueueDuringIdleEviction(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	p := newSessionPool(1, time.Microsecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for i := 0; i < 10000; i++ {
+		done := make(chan struct{})
+		if !p.enqueue(ctx, "same-session", func() { close(done) }) {
+			t.Fatalf("task %d rejected unexpectedly", i)
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatalf("accepted task %d was stranded during idle eviction", i)
+		}
+	}
+}
+
+func TestPoolRejectsCanceledEnqueue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := newSessionPool(1, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if p.enqueue(ctx, "s", func() { t.Error("canceled task ran") }) {
+		t.Fatal("accepted a canceled request")
+	}
+	if len(p.queues) != 0 {
+		t.Fatal("created a worker for canceled request")
+	}
+}

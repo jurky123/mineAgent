@@ -181,23 +181,63 @@ func isPublicIP(ip net.IP) bool {
 	return true
 }
 
-func checkPublicHost(ctx context.Context, host string) error {
+func publicHostIPs(ctx context.Context, host string) ([]net.IP, error) {
 	if host == "" {
-		return fmt.Errorf("URL 缺少主机名")
+		return nil, fmt.Errorf("URL 缺少主机名")
 	}
 	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
-		return fmt.Errorf("域名解析失败：%w", err)
+		return nil, fmt.Errorf("域名解析失败：%w", err)
 	}
 	if len(ips) == 0 {
-		return fmt.Errorf("域名解析没有结果")
+		return nil, fmt.Errorf("域名解析没有结果")
 	}
 	for _, ip := range ips {
 		if !isPublicIP(ip) {
-			return fmt.Errorf("目标地址不是公网地址，已拒绝")
+			return nil, fmt.Errorf("目标地址不是公网地址，已拒绝")
 		}
 	}
-	return nil
+	return ips, nil
+}
+
+func checkPublicHost(ctx context.Context, host string) error {
+	_, err := publicHostIPs(ctx, host)
+	return err
+}
+
+// dialPublicContext 校验本次连接实际使用的 IP，并直接拨 IP；不再让传输层重新解析域名。
+func dialPublicContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	ips, err := publicHostIPs(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	dialer := net.Dialer{Timeout: 10 * time.Second}
+	for _, ip := range ips {
+		var conn net.Conn
+		conn, err = dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	return nil, err
+}
+
+// 专用传输层禁用环境代理，避免代理自行解析目标而绕过 IP 校验。
+// URL 中仍保留原域名，Host/TLS SNI 与证书校验不会因 IP 固定而改变。
+var webFetchTransport = &http.Transport{
+	DialContext:           dialPublicContext,
+	ForceAttemptHTTP2:     true,
+	TLSHandshakeTimeout:   10 * time.Second,
+	ResponseHeaderTimeout: 15 * time.Second,
+	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConns:          10,
 }
 
 func (t *webFetchTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
@@ -220,7 +260,8 @@ func (t *webFetchTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 	}
 	redirects := 0
 	client := &http.Client{
-		Timeout: 20 * time.Second,
+		Timeout:   20 * time.Second,
+		Transport: webFetchTransport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			redirects++
 			if redirects > 3 {

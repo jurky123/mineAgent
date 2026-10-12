@@ -1,38 +1,82 @@
 #!/usr/bin/env bash
-# 安全部署：先构建，再检查有没有进行中的对局；有人在下棋就拒绝重启（除非 --force）。
-# 用法：scripts/deploy.sh [--force]
+# 安全部署：暂存构建 → 成功查询对局 → 原子替换二进制 → 重启。
+# 用法：scripts/deploy.sh [--force]；查询失败也必须显式 --force 才能绕过。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONFIG="${CONFIG:-config.json}"
-LISTEN=$(python3 -c "import json;print(json.load(open('$CONFIG')).get('web',{}).get('listen',''))" 2>/dev/null || true)
-# 管理员令牌默认取 config.json 里 web.dataDir 下的 deploy-token.txt（可用 TOKEN_FILE 覆盖）
-DATA_DIR=$(python3 -c "import json;print(json.load(open('$CONFIG')).get('web',{}).get('dataDir','data/webui'))" 2>/dev/null || echo "data/webui")
-TOKEN_FILE="${TOKEN_FILE:-$DATA_DIR/deploy-token.txt}"
+if [[ $# -gt 1 || ($# -eq 1 && "$1" != "--force") ]]; then
+  echo "用法：scripts/deploy.sh [--force]" >&2
+  exit 1
+fi
 
-echo "==> 构建"
-make build
+CONFIG="${CONFIG:-config.json}"
+DEPLOY_BUILD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/mineagent-deploy.XXXXXX")
+trap 'rm -rf "$DEPLOY_BUILD_DIR"' EXIT
+
+echo "==> 构建（暂存，不覆盖运行中的二进制）"
+make build BUILD_OUTPUT="$DEPLOY_BUILD_DIR/mineagent"
 
 if [[ "${1:-}" == "--force" ]]; then
   echo "==> --force：跳过对局检查"
 else
-  if [[ -z "$LISTEN" || ! -f "$TOKEN_FILE" ]]; then
-    echo "==> 提示：未配置 $TOKEN_FILE（管理员登录令牌），跳过对局检查"
-    echo "    创建方法：在门户登录后把 data/webui/tokens.json 里自己的令牌写入该文件（0600）"
-  else
-    HOST="${LISTEN/0.0.0.0/127.0.0.1}"; HOST="${HOST/\[::\]/127.0.0.1}"
-    ACTIVE=$(curl -s -m 5 -H "Authorization: Bearer $(cat "$TOKEN_FILE")" "http://$HOST/api/games/active" || echo '')
-    PLAYING=$(printf '%s' "$ACTIVE" | python3 -c "import json,sys;print(json.load(sys.stdin).get('playing',0))" 2>/dev/null || echo "?")
-    if [[ "$PLAYING" == "?" ]]; then
-      echo "==> 警告：查不到对局状态（接口未上线或令牌无效），继续部署"
-    elif [[ "$PLAYING" != "0" ]]; then
-      echo "==> 有 $PLAYING 局进行中，拒绝重启（会清空房间）。确认要重启用：scripts/deploy.sh --force"
-      exit 1
-    fi
-    echo "==> 没有进行中的对局，可以重启"
+  if ! WEB_SETTINGS=$(python3 - "$CONFIG" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    web = json.load(f).get('web', {})
+listen = web.get('listen', '')
+data_dir = web.get('dataDir', 'data/webui')
+if not isinstance(listen, str) or not listen or not isinstance(data_dir, str) or not data_dir:
+    raise ValueError('web.listen / web.dataDir 无效')
+print(listen)
+print(data_dir)
+PY
+  ); then
+    echo "==> 无法读取网页监听配置，拒绝部署；确认要跳过检查用 --force" >&2
+    exit 1
   fi
+  LISTEN="${WEB_SETTINGS%%$'\n'*}"
+  DATA_DIR="${WEB_SETTINGS#*$'\n'}"
+  TOKEN_FILE="${TOKEN_FILE:-$DATA_DIR/deploy-token.txt}"
+  if ! python3 - "$TOKEN_FILE" "$DEPLOY_BUILD_DIR/auth-header" <<'PY'
+import sys
+with open(sys.argv[1]) as f:
+    token = f.read().strip()
+if not token or '\n' in token or '\r' in token:
+    raise ValueError('部署令牌为空或格式无效')
+with open(sys.argv[2], 'w') as f:
+    f.write('Authorization: Bearer ' + token + '\n')
+PY
+  then
+    echo "==> 无法读取部署令牌，拒绝部署；将有效管理员登录令牌保存到 $TOKEN_FILE（0600）" >&2
+    exit 1
+  fi
+  HOST="${LISTEN/0.0.0.0/127.0.0.1}"
+  HOST="${HOST/\[::\]/127.0.0.1}"
+  if [[ "$HOST" == :* ]]; then HOST="127.0.0.1$HOST"; fi
+  if ! ACTIVE=$(curl -fsS -m 5 -H "@$DEPLOY_BUILD_DIR/auth-header" "http://$HOST/api/games/active"); then
+    echo "==> 对局查询失败（网络/HTTP/令牌错误），拒绝部署；确认要跳过检查用 --force" >&2
+    exit 1
+  fi
+  if ! PLAYING=$(printf '%s' "$ACTIVE" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+if not isinstance(data, dict) or type(data.get("playing")) is not int or data["playing"] < 0:
+    raise ValueError("缺少有效的 playing 数量")
+print(data["playing"])
+'); then
+    echo "==> 对局状态响应无效，拒绝部署；确认要跳过检查用 --force" >&2
+    exit 1
+  fi
+  if [[ "$PLAYING" != "0" ]]; then
+    echo "==> 有 $PLAYING 局进行中，拒绝重启（会清空房间）。确认要重启用：scripts/deploy.sh --force" >&2
+    exit 1
+  fi
+  echo "==> 没有进行中的对局，可以重启"
 fi
 
+mkdir -p bin
+install -m 755 "$DEPLOY_BUILD_DIR/mineagent" bin/.mineagent.new
+mv -f bin/.mineagent.new bin/mineagent
 echo "==> 重启 mineagent"
 sudo systemctl restart mineagent
 sleep 2

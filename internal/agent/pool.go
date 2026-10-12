@@ -39,13 +39,16 @@ func newSessionPool(concurrency int, idle time.Duration, log *slog.Logger) *sess
 // enqueue 投递任务。队列满/ctx 结束返回 false（调用方按"忙不过来"处理）。
 func (p *sessionPool) enqueue(ctx context.Context, key string, fn func()) bool {
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
 	q := p.queues[key]
 	if q == nil {
 		q = make(chan func(), 16)
 		p.queues[key] = q
 		go p.worker(ctx, key, q)
 	}
-	p.mu.Unlock()
 	select {
 	case q <- fn:
 		return true
@@ -59,6 +62,13 @@ func (p *sessionPool) enqueue(ctx context.Context, key string, fn func()) bool {
 func (p *sessionPool) worker(ctx context.Context, key string, q chan func()) {
 	timer := time.NewTimer(p.idle)
 	defer timer.Stop()
+	defer func() {
+		p.mu.Lock()
+		if p.queues[key] == q {
+			delete(p.queues, key)
+		}
+		p.mu.Unlock()
+	}()
 	for {
 		select {
 		case <-ctx.Done():

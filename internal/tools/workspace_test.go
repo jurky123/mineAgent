@@ -30,7 +30,7 @@ func testWorkspace(t *testing.T, admins ...string) *Workspace {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	cfg := testWorkspaceConfig(filepath.Join(t.TempDir(), "ws"))
-	return NewWorkspace(cfg, admins, store, testLogger(t))
+	return NewWorkspace(cfg, map[string][]string{"qq": admins}, store, testLogger(t))
 }
 
 func TestWorkspaceResolveBlocksEscape(t *testing.T) {
@@ -150,6 +150,7 @@ func TestWorkspaceLsReadWrite(t *testing.T) {
 }
 
 func TestWorkspaceExecAllowsAndBlocks(t *testing.T) {
+	requireWorkspaceSandbox(t)
 	w := testWorkspace(t, "ADMIN1")
 	ctx := WithQQAdmin(context.Background(), true)
 	out, err := w.exec(ctx, map[string]any{"command": "echo hi"})
@@ -204,6 +205,7 @@ func TestWorkspaceExecAllowsAndBlocks(t *testing.T) {
 }
 
 func TestWorkspaceExecTimeout(t *testing.T) {
+	requireWorkspaceSandbox(t)
 	w := testWorkspace(t, "ADMIN1")
 	w.cfg.ExecTimeoutSec = 1
 	ctx := WithQQAdmin(context.Background(), true)

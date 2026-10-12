@@ -23,6 +23,7 @@ import (
 //   - 只读工具：直接透传。
 type wecomToolGate struct {
 	inner    tool.BaseTool
+	channel  string
 	ws       *tools.Workspace
 	store    *storage.Store
 	sender   func(ctx context.Context, sess *session.Session, target, text string) error
@@ -42,7 +43,7 @@ func (g *wecomToolGate) InvokableRun(ctx context.Context, argsJSON string, opts 
 
 	switch {
 	case strings.HasPrefix(info.Name, "workspace_"):
-		ctx = tools.WithQQAdmin(ctx, g.ws.IsAdmin(userID))
+		ctx = tools.WithQQAdmin(ctx, strings.HasPrefix(tools.RequesterFromContext(ctx), tools.WeComRequesterPrefix) && g.ws.IsAdmin(g.channel, userID))
 	case info.Name == "qq_bind" || info.Name == "qq_unbind":
 		ctx = tools.WithQQIdentity(ctx, []string{userID})
 	case info.Name == "minecraft_teleport" || info.Name == "minecraft_give" || info.Name == "minecraft_run_command":

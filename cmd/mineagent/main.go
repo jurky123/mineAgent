@@ -145,11 +145,12 @@ func main() {
 	// 注意 workspace_exec 的管理员门禁不在工具里写死，而是在 Submit 前按消息身份
 	// 动态放进 ctx（WithQQAdmin），这样同一套工具对管理员/普通群友表现不同。
 	// qq_bind/qq_unbind 的身份同样走 ctx（WithQQIdentity）。
-	// workspace 的管理员名单：四个 IM 通道的 admin 列表取并集
-	//（同一个人在不同通道有不同 ID：QQ openid / 企微 userid / 网页名字）。
-	adminIDs := append(append(append([]string{}, cfg.QQ.AdminOpenIDs...), cfg.WeCom.AdminUserIDs...), cfg.AIBot.AdminUserIDs...)
-	adminIDs = append(adminIDs, cfg.Web.AdminUsers...)
-	wsTools := tools.NewWorkspace(cfg.Workspace, adminIDs, store, log)
+	// ID 的命名空间属于各通道：跨通道同名不能继承管理员权限。
+	wsTools := tools.NewWorkspace(cfg.Workspace, map[string][]string{
+		"qq": cfg.QQ.AdminOpenIDs, "wecom": cfg.WeCom.AdminUserIDs,
+		"aibot": cfg.AIBot.AdminUserIDs, "wechat": cfg.WeChat.AdminUserIDs,
+		"web": cfg.Web.AdminUsers,
+	}, store, log)
 	// workspace_exec 的 LLM 二审：默认复用主模型（省一个配置），
 	// 想用更便宜/更严的模型就填 workspace.review.baseURL/apiKey/model。
 	// enabled=false 或主模型都没配 = 无审查器，review 类命令 fail-closed 全拒。
@@ -226,7 +227,7 @@ func main() {
 		wecomTokens := wecom.NewTokenSource(cfg.WeCom.CorpID, cfg.WeCom.Secret, log)
 		wecomAPI := wecom.NewAPI(wecomTokens, cfg.WeCom.AgentID, log)
 		wecomCh = wecom.NewChannel(log, cfg, hub, store, ag, wecomAPI,
-			wrapWeComTools(wecomBaseTools, wsTools, store, sessionsFn, senderFn)).
+			wrapWeComTools("wecom", wecomBaseTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
 		go func() {
 			if err := wecomCh.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -248,7 +249,7 @@ func main() {
 		aibotTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
 			append(append(wsTools.Tools(), bindTools.Tools()...), remindTools...)...)
 		aibotCh = aibot.NewChannel(log, cfg, hub, store, ag,
-			wrapWeComTools(aibotTools, wsTools, store, sessionsFn, senderFn)).
+			wrapWeComTools("aibot", aibotTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
 		aibotCh.Start()
 		defer aibotCh.Stop()
@@ -263,7 +264,7 @@ func main() {
 	wechatTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...),
 		append(append(wsTools.Tools(), bindTools.Tools()...), remindTools...)...)
 	wechatCh, err = wechat.NewChannel(log, cfg, wechatStatePath, hub, store, ag,
-		wrapWeComTools(wechatTools, wsTools, store, sessionsFn, senderFn))
+		wrapWeComTools("wechat", wechatTools, wsTools, store, sessionsFn, senderFn))
 	if err != nil {
 		log.Error("init wechat channel", "err", err)
 		wechatCh = nil
@@ -505,12 +506,12 @@ func wrapQQTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.
 }
 
 // wrapWeComTools 与 wrapQQTools 同构，只是识别 wecom: 前缀与 wecom_* 发送工具。
-func wrapWeComTools(base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store,
+func wrapWeComTools(channel string, base []tool.BaseTool, wsTools *tools.Workspace, store *storage.Store,
 	sessions func(ctx context.Context, sessionKey string) (*session.Session, error),
 	sender func(ctx context.Context, sess *session.Session, target, text string) error) []tool.BaseTool {
 	out := make([]tool.BaseTool, 0, len(base))
 	for _, tl := range base {
-		out = append(out, &wecomToolGate{inner: tl, ws: wsTools, store: store, sessions: sessions, sender: sender})
+		out = append(out, &wecomToolGate{inner: tl, channel: channel, ws: wsTools, store: store, sessions: sessions, sender: sender})
 	}
 	return out
 }

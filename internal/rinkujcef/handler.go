@@ -29,6 +29,10 @@ import (
 type Handler struct {
 	// Dir 是本地存放目录，布局为 Dir/<tag>/<asset>。
 	Dir string
+	// RedirectBase 非空时把请求 302 到 <RedirectBase>/<tag>/<asset>
+	//（如 GitHub 加速站），保持 /rinku-jcef 这个稳定地址、切源不用改客户端。
+	// 只接受 https 前缀，非法值忽略并回源本机文件。
+	RedirectBase string
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +50,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 路径形状收紧：tag 与 asset 只允许安全字符，防路径逃逸。
 	if !safeSegment(tag) || !safeAsset(asset) {
 		http.NotFound(w, r)
+		return
+	}
+	// 加速源重定向：保持客户端 download-mirror 不变，服务端换源。
+	// 只有 https 目标才能被 Rinku 接受（它拒绝重定向到非 https）。
+	if base := strings.TrimRight(h.RedirectBase, "/"); strings.HasPrefix(base, "https://") {
+		w.Header().Set("Cache-Control", "no-store")
+		http.Redirect(w, r, base+"/"+tag+"/"+asset, http.StatusFound)
 		return
 	}
 	path := filepath.Join(h.Dir, tag, asset)

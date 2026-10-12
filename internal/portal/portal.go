@@ -54,9 +54,10 @@ func (s *Server) WithGames(h http.Handler) *Server {
 }
 
 // WithRinkuJCEF 挂上 JCEF 内核镜像（/rinku-jcef/*，供 Rinku download-mirror 用）。
-func (s *Server) WithRinkuJCEF(dir string) *Server {
-	if dir != "" {
-		s.rinkuJcef = &rinkujcef.Handler{Dir: dir}
+// redirectBase 非空时 302 到该前缀对应路径（加速源），本地 dir 作为回源。
+func (s *Server) WithRinkuJCEF(dir, redirectBase string) *Server {
+	if dir != "" || redirectBase != "" {
+		s.rinkuJcef = &rinkujcef.Handler{Dir: dir, RedirectBase: redirectBase}
 	}
 	return s
 }

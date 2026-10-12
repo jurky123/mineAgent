@@ -55,6 +55,26 @@ func TestServeAndVerify(t *testing.T) {
 		t.Fatalf("非法后缀应 404，实际 %d", rec.Code)
 	}
 
+	// 重定向：https 前缀生效（拼同一路径），http/非法前缀忽略回源。
+	hRedirect := &Handler{Dir: dir, RedirectBase: "https://ghfast.top/https://github.com/Keksuccino/jcef-rinku/releases/download/"}
+	req = httptest.NewRequest(http.MethodGet, "/rinku-jcef/"+tag+"/windows_amd64.tar.gz", nil)
+	rec = httptest.NewRecorder()
+	hRedirect.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("重定向应 302，实际 %d", rec.Code)
+	}
+	want := "https://ghfast.top/https://github.com/Keksuccino/jcef-rinku/releases/download/" + tag + "/windows_amd64.tar.gz"
+	if loc := rec.Header().Get("Location"); loc != want {
+		t.Fatalf("重定向地址不对: %s", loc)
+	}
+	hInsecure := &Handler{Dir: dir, RedirectBase: "http://insecure.example/"}
+	req = httptest.NewRequest(http.MethodGet, "/rinku-jcef/"+tag+"/windows_amd64.tar.gz", nil)
+	rec = httptest.NewRecorder()
+	hInsecure.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("非 https 重定向应忽略回源，实际 %d", rec.Code)
+	}
+
 	// Verify：正确摘要通过。
 	if err := os.WriteFile(filepath.Join(dir, tag, "ok.tar.gz"), []byte("test"), 0o644); err != nil {
 		t.Fatal(err)

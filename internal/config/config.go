@@ -156,6 +156,11 @@ type Web struct {
 	CertDir string `json:"certDir"`
 	// ACME 账号邮箱（可选，Let's Encrypt 到期提醒用）。
 	ACMEEmail string `json:"acmeEmail"`
+	// JCEF 内核镜像重定向前缀（Rinku download-mirror 加速）：
+	// 非空时 /rinku-jcef/<tag>/<asset> 302 到 <前缀>/<tag>/<asset>，
+	// 例如 GitHub 加速站 https://ghfast.top/https://github.com/Keksuccino/jcef-rinku/releases/download；
+	// 留空则回源本机 dataDir/rinku-jcef 的已同步文件。
+	RinkuJcefRedirect string `json:"rinkuJcefRedirect"`
 	// 快捷指令（+ 菜单的"技能"）：点一下把 prompt 填进输入框。
 	// 留空用内置默认（见 DefaultSkills）。
 	Skills []Skill `json:"skills"`
@@ -498,6 +503,7 @@ func applyEnv(cfg *Config) {
 	set(&cfg.AIBot.BotID, "MINEAGENT_AIBOT_BOTID")
 	set(&cfg.AIBot.Secret, "MINEAGENT_AIBOT_SECRET")
 	set(&cfg.Web.Listen, "MINEAGENT_WEB_LISTEN")
+	set(&cfg.Web.RinkuJcefRedirect, "MINEAGENT_RINKU_JCEF_REDIRECT")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")

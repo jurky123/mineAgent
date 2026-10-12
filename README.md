@@ -145,6 +145,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 | `/` | Personal Hub | 首页：Agent **Quick Composer**（直接提问，回车后跳到 `/agent` 并自动发出）、Minecraft 状态（头像堆叠的"谁在玩"+ 天气/时段/TPS，细节可展开）、游戏内容卡、最新动态 Feed（公告 + 最近对局结果的时间轴）；欢迎语右侧有 **在线人数（Presence）** |
 | `/agent` | Productivity App | Agent 聊天页（ChatGPT 风全屏工作区：多会话/文件收发/模型切换，见下） |
 | `/games` → `/games/chess` | Entertainment App | 游戏目录 → 国际象棋（大厅 → 房间 → 对局 三态） |
+| `/screens` | Control App | **显示屏**（MineDisplay）：世界里的浏览器屏列表/开屏/换网址/关屏 + 导航白名单（开关/增删/一键加常用站）；写操作限管理员。服务端代理到 MineDisplay 本地控制 API（`web.displayApi` + `web.displayTokenFile`，插件自动生成令牌） |
 | `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于 |
 
 **顺手就能用**：`Ctrl/Cmd + K` 打开命令面板（新建对话 / 打开棋局 / 对局历史 / 切换主题…）；

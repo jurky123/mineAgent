@@ -637,9 +637,15 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	if err != nil {
 		return nil, "", fmt.Errorf("init middlewares: %w", err)
 	}
+	// MC 走这条路径 = 管理员给 minecraft 配了提示词覆盖；保持短平快（8 步），
+	// 其余（QQ/企微/网页）用 QQMaxIterations。
+	agentName, agentDesc, maxIter := "mineagent-qq", "QQ 聊天助手", a.cfg.QQMaxIterations
+	if req.SessionKey == a.sessionKey && len(req.Tools) == 0 {
+		agentName, agentDesc, maxIter = "mineagent", "Minecraft 服务器聊天助手", 8
+	}
 	chatAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        "mineagent-qq",
-		Description: "QQ 聊天助手",
+		Name:        agentName,
+		Description: agentDesc,
 		Instruction: instruction,
 		Model:       cm,
 		ToolsConfig: adk.ToolsConfig{
@@ -649,7 +655,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 			},
 		},
 		Handlers:      middlewares,
-		MaxIterations: a.cfg.QQMaxIterations,
+		MaxIterations: maxIter,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("init qq chat model agent: %w", err)

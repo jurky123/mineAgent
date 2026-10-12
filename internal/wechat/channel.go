@@ -12,6 +12,7 @@ import (
 
 	"mineagent/internal/agent"
 	"mineagent/internal/config"
+	"mineagent/internal/prompts"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -252,7 +253,7 @@ func (c *Channel) onMessage(m WeixinMessage) {
 		TriggerMessageID:  stored.ID,
 		ReplyTarget:       target,
 		Tools:             c.weTools,
-		SystemInstruction: wechatInstruction,
+		SystemInstruction: prompts.Resolve("wechat", "", wechatInstruction),
 	}) {
 		_ = sess.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", target)
 		return

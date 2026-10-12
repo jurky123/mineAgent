@@ -11,6 +11,7 @@ import (
 
 	"mineagent/internal/agent"
 	"mineagent/internal/config"
+	"mineagent/internal/prompts"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -254,7 +255,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		TriggerMessageID:  stored.ID,
 		ReplyTarget:       target,
 		Tools:             c.tools,
-		SystemInstruction: aibotInstruction,
+		SystemInstruction: prompts.Resolve("aibot", "", aibotInstruction),
 	}) {
 		_ = sess.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", target)
 		return

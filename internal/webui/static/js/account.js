@@ -1,6 +1,6 @@
 // account.js — 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于。
 import { shell, boot, apiGet, apiPost, logout, themeMode, setTheme, applyTheme } from './shell.js';
-import { h, icon, toast, confirmDialog, notifyEnabled, setNotifyEnabled, segThumb, reveal } from './ds.js';
+import { h, icon, toast, confirmDialog, openDialog, notifyEnabled, setNotifyEnabled, segThumb, reveal } from './ds.js';
 import { sfxEnabled, setSfxEnabled } from './sfx.js';
 
 const qs = new URLSearchParams(location.search);
@@ -36,6 +36,7 @@ function decorateSections() {
   const map = {
     '账号': 'user', '外观': 'sun', '安全': 'shield', '设备': 'devices',
     '游戏': 'gamepad', '关于': 'info',
+    '系统提示词': 'settings', '我的追加提示词': 'pencil',
   };
   document.querySelectorAll('.section-title').forEach((el) => {
     const name = map[el.textContent.trim()];
@@ -171,6 +172,126 @@ function renderStats(games) {
   }
 }
 
+// ---------- 系统提示词（管理员全局替换 + 本人网页追加） ----------
+
+async function renderPrompts() {
+  let data;
+  try {
+    data = await apiGet('/api/prompts');
+  } catch (e) {
+    return; // 接口不可用时静默，不影响设置页其它部分
+  }
+  const adminSection = document.getElementById('prompts-admin-section');
+  if (data.admin) {
+    adminSection.hidden = false;
+    const box = document.getElementById('prompts-admin');
+    box.innerHTML = '';
+    for (const svc of data.services || []) box.appendChild(promptServiceRow(svc));
+  } else {
+    adminSection.hidden = true;
+  }
+  const ta = document.getElementById('prompt-user-web');
+  if (ta) ta.value = (data.user && data.user.web) || '';
+}
+
+function promptServiceRow(svc) {
+  const g = svc.global || {};
+  const custom = !!(g.enabled && (g.text || '').trim());
+  const row = h('div', 'list-row');
+  const main = h('div', 'list-main');
+  main.appendChild(h('div', 'list-title', svc.name));
+  if (svc.desc) main.appendChild(h('div', 'list-sub', svc.desc));
+  row.appendChild(main);
+  row.appendChild(h('span', 'badge' + (custom ? ' brand' : ''), custom ? '已自定义' : '内置默认'));
+  const btn = h('button', 'btn sm', '编辑');
+  btn.onclick = () => openPromptEditor(svc);
+  row.appendChild(btn);
+  return row;
+}
+
+function openPromptEditor(svc) {
+  const g = svc.global || {};
+  let enabled = !!(g.enabled && (g.text || '').trim());
+
+  const body = h('div');
+  const ta = h('textarea', 'textarea');
+  ta.value = g.text || '';
+  ta.rows = 12;
+  ta.placeholder = '留空并保存 = 恢复内置默认';
+
+  const seg = h('div', 'seg');
+  seg.style.marginBottom = '10px';
+  const bOff = h('button', 'seg-item', '用内置默认');
+  const bOn = h('button', 'seg-item', '使用自定义');
+  const sync = () => {
+    bOff.classList.toggle('on', !enabled);
+    bOn.classList.toggle('on', enabled);
+    ta.style.display = enabled ? '' : 'none';
+  };
+  bOff.onclick = () => { enabled = false; sync(); };
+  bOn.onclick = () => { enabled = true; sync(); };
+  seg.appendChild(bOff);
+  seg.appendChild(bOn);
+  body.appendChild(seg);
+
+  if (svc.default) {
+    const det = h('details');
+    det.style.margin = '0 0 10px';
+    det.appendChild(h('summary', 'list-sub', '查看内置默认提示词'));
+    const pre = h('pre', 'list-sub', svc.default);
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.style.maxHeight = '180px';
+    pre.style.overflow = 'auto';
+    det.appendChild(pre);
+    body.appendChild(det);
+  }
+  body.appendChild(ta);
+  sync();
+
+  openDialog({
+    title: '编辑提示词 · ' + svc.name,
+    width: 640,
+    body,
+    actions: [
+      {
+        label: '恢复默认', danger: true,
+        onClick: async () => {
+          await apiPost('/api/prompts', { scope: 'global', id: svc.id, text: '' });
+          toast('已恢复内置默认');
+          renderPrompts();
+        },
+      },
+      {
+        label: '保存', primary: true,
+        onClick: async () => {
+          try {
+            await apiPost('/api/prompts', { scope: 'global', id: svc.id, enabled, text: ta.value });
+            toast('已保存');
+            renderPrompts();
+          } catch (e) {
+            toast(e.message || '保存失败', { warn: true });
+            return false; // 失败不关弹窗
+          }
+        },
+      },
+    ],
+  });
+}
+
+(function bindUserPromptSave() {
+  const btn = document.getElementById('prompt-user-save');
+  if (!btn) return;
+  btn.onclick = async () => {
+    const ta = document.getElementById('prompt-user-web');
+    try {
+      await apiPost('/api/prompts', { scope: 'user', id: 'web', text: ta.value });
+      toast('已保存');
+    } catch (e) {
+      toast(e.message || '保存失败', { warn: true });
+    }
+  };
+})();
+
 let firstLoad = true;   // 只有首次加载做淡入，之后刷新（如退出其他设备）直接替换
 const kids = (...ids) => ids.flatMap((id) => [...document.getElementById(id).children]);
 
@@ -184,6 +305,7 @@ async function reload() {
   renderAccountRows(me, sessions.length);
   renderSessions(sessions);
   if (stats) renderStats(stats.games);
+  await renderPrompts();
   if (firstLoad) reveal(kids('acc-rows', 'acc-sessions', 'acc-stats'));
   firstLoad = false;
 }

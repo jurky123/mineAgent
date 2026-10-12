@@ -25,6 +25,7 @@ import (
 	"mineagent/internal/config"
 	"mineagent/internal/games"
 	"mineagent/internal/portal"
+	"mineagent/internal/prompts"
 	"mineagent/internal/protocol"
 	"mineagent/internal/qq"
 	"mineagent/internal/reminder"
@@ -102,6 +103,22 @@ func main() {
 	} else if n > 0 {
 		log.Info("cleared stale checkpoints", "count", n)
 	}
+
+	// 系统提示词覆盖：默认常量注册进 prompts，管理员可在「我的」页全局替换、用户可追加。
+	dataDir := cfg.Web.DataDir
+	if dataDir == "" {
+		dataDir = "data/webui"
+	}
+	pm, err := prompts.Init(filepath.Join(dataDir, "prompts.json"))
+	if err != nil {
+		log.Warn("load prompts override", "err", err)
+	}
+	pm.Register(prompts.Service{ID: "web", Name: "网页聊天", Desc: "门户 /agent 网页对话", DefaultText: webui.DefaultInstruction})
+	pm.Register(prompts.Service{ID: "qq", Name: "QQ 机器人", Desc: "QQ 官方机器人", DefaultText: qq.DefaultInstruction})
+	pm.Register(prompts.Service{ID: "wecom", Name: "企业微信", Desc: "企微应用回调", DefaultText: wecom.DefaultInstruction})
+	pm.Register(prompts.Service{ID: "aibot", Name: "企微智能机器人", Desc: "企微长连接机器人", DefaultText: aibot.DefaultInstruction})
+	pm.Register(prompts.Service{ID: "wechat", Name: "个人微信", Desc: "ClawBot 直连", DefaultText: wechat.DefaultInstruction})
+	pm.Register(prompts.Service{ID: "minecraft", Name: "Minecraft", Desc: "服内聊天助手", DefaultText: agent.DefaultMCInstruction})
 
 	hub := session.NewHub(store, log)
 	sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
@@ -268,10 +285,6 @@ func main() {
 	if cfg.Web.Listen != "" {
 		acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
 		// 旧版 tokens.json 惰性导入：老浏览器不用重新登录（幂等，可回滚）。
-		dataDir := cfg.Web.DataDir
-		if dataDir == "" {
-			dataDir = "data/webui"
-		}
 		acct.ImportLegacyTokens(ctx, filepath.Join(dataDir, "tokens.json"))
 
 		webCh = webui.NewChannel(log, cfg, acct, hub, store, ag,
@@ -404,12 +417,18 @@ func main() {
 					return
 				}
 				log.Info("agent trigger", "player", chat.Player, "query", query, "messageId", msg.ID)
+				// MC 默认走预建 runner；只有管理员给 minecraft 配了全局覆盖时才改提示词。
+				mcInstruction := ""
+				if prompts.GlobalEnabled("minecraft") {
+					mcInstruction = prompts.Resolve("minecraft", "", agent.DefaultMCInstruction())
+				}
 				if !ag.Submit(agent.Request{
-					Session:          sess,
-					Player:           chat.Player,
-					RequesterID:      chat.UUID,
-					Query:            query,
-					TriggerMessageID: msg.ID,
+					Session:           sess,
+					Player:            chat.Player,
+					RequesterID:       chat.UUID,
+					Query:             query,
+					TriggerMessageID:  msg.ID,
+					SystemInstruction: mcInstruction,
 				}) {
 					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}

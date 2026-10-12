@@ -101,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/account/sessions", s.requireUser(s.handleSessions))
 	mux.HandleFunc("/api/account/stats", s.requireUser(s.handleAccountStats))
 	mux.HandleFunc("/api/account/sessions/revoke", s.requireUser(s.handleSessionsRevoke))
+	mux.HandleFunc("/api/prompts", s.requireUser(s.handlePrompts))
 
 	// Portal API
 	mux.HandleFunc("/api/portal/apps", s.handleApps)

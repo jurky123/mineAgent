@@ -18,6 +18,7 @@ import (
 	"mineagent/internal/account"
 	"mineagent/internal/agent"
 	"mineagent/internal/config"
+	"mineagent/internal/prompts"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -502,7 +503,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		TriggerMessageID:  stored.ID,
 		ReplyTarget:       target,
 		Tools:             c.webTools,
-		SystemInstruction: webInstruction,
+		SystemInstruction: prompts.Resolve("web", name, webInstruction),
 		Model:             prefs.Model,
 		ReasoningEffort:   prefs.Effort,
 		Progress: func(text string) {

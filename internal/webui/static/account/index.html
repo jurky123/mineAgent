@@ -85,6 +85,27 @@
     </div>
   </section>
 
+  <section class="section" id="prompts-admin-section" hidden>
+    <div class="section-head">
+      <h2 class="section-title">系统提示词</h2>
+      <div class="spacer"></div>
+      <span class="badge brand">管理员</span>
+    </div>
+    <p class="field-hint">替换各服务的内置提示词（启用后**完全替换**默认）。保存即时生效，正在进行的对话下次提问时生效。</p>
+    <div class="settings" id="prompts-admin"></div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2 class="section-title">我的追加提示词</h2></div>
+    <p class="field-hint">只对你在网页端的对话生效，追加在内置/全局提示词之后（上限 4000 字）。</p>
+    <div class="settings">
+      <textarea id="prompt-user-web" class="textarea" maxlength="4000" rows="4" placeholder="例如：回答先给结论再给步骤；画图优先用 PIL；不确定就先问一句"></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px">
+        <button class="btn primary" id="prompt-user-save">保存</button>
+      </div>
+    </div>
+  </section>
+
   <section class="section">
     <div class="section-head"><h2 class="section-title">关于</h2></div>
     <div class="settings">

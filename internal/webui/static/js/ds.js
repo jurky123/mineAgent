@@ -1,8 +1,8 @@
 // ds.js — 交互原语：元素构造 / 图标 / Dialog / ConfirmDialog / Toast / 复制。
 // 门户类页面统一用它，禁止再用 alert/prompt/confirm。
 
-// 门户类页面统一用 ds 的 body 样式（页面无需自己加 class）
-document.body.classList.add('ds');
+// 门户页面使用 ds 的 body 样式；Agent 只复用交互原语，保持原有聊天布局。
+if (!document.body.classList.contains('agent-page')) document.body.classList.add('ds');
 
 export function h(tag, cls, text) {
   const el = document.createElement(tag);
@@ -100,13 +100,19 @@ export function toast(msg, { warn = false, ms = 2600 } = {}) {
 
 // ---------- Dialog ----------
 // body: Node | string；actions: [{label, kind, primary, danger, onClick(close)}]
-export function openDialog({ title, body, actions = [], width }) {
+export function openDialog({ title, body, actions = [], width, className = '', beforeClose, onClose }) {
+  const previousFocus = document.activeElement;
   const mask = h('div', 'dialog-mask');
-  const box = h('div', 'dialog');
+  const box = h('div', 'dialog' + (className ? ' ' + className : ''));
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-label', title || '对话框');
+  box.tabIndex = -1;
   if (width) box.style.width = 'min(94vw, ' + width + 'px)';
   const head = h('div', 'dialog-head');
   head.appendChild(h('h2', 'dialog-title', title || ''));
   const closeBtn = h('button', 'icon-btn sm');
+  closeBtn.setAttribute('aria-label', '关闭');
   closeBtn.appendChild(icon('x'));
   closeBtn.onclick = () => close();
   head.appendChild(closeBtn);
@@ -117,11 +123,23 @@ export function openDialog({ title, body, actions = [], width }) {
   box.appendChild(bodyEl);
   const foot = h('div', 'dialog-actions');
   let closing = false;
-  const close = () => {
+  let checkingClose = false;
+  const close = async () => {
     if (closing) return;
+    if (checkingClose) return;
+    if (beforeClose) {
+      checkingClose = true;
+      try { if (await beforeClose() === false) return; }
+      finally { checkingClose = false; }
+    }
     closing = true;
+    document.removeEventListener('keydown', onKey);
     mask.classList.add('closing');           // 退出动画（和打开对称）
-    setTimeout(() => mask.remove(), 170);
+    setTimeout(() => {
+      mask.remove();
+      if (onClose) onClose();
+      if (previousFocus?.isConnected) previousFocus.focus();
+    }, 170);
   };
   for (const a of actions) {
     const btn = h('button', 'btn' + (a.primary ? ' primary cta' : '') + (a.danger ? ' danger' : ''), a.label);
@@ -138,12 +156,24 @@ export function openDialog({ title, body, actions = [], width }) {
   box.appendChild(foot);
   mask.appendChild(box);
   mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
-  document.addEventListener('keydown', function esc(e) {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
-  });
+  const onKey = (e) => {
+    if ([...document.querySelectorAll('.dialog-mask')].at(-1) !== mask) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Tab') {
+      const focusable = [...box.querySelectorAll('button, a[href], input, select, textarea, summary, [tabindex]')]
+        .filter((el) => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
+      const first = focusable[0], last = focusable.at(-1);
+      if (!first) { e.preventDefault(); box.focus(); }
+      else if (!box.contains(document.activeElement)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+      else if (e.shiftKey && (document.activeElement === first || document.activeElement === box)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  };
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(mask);
   const firstInput = box.querySelector('input, textarea');
   if (firstInput) firstInput.focus();
+  else closeBtn.focus();
   return { close, box, body: bodyEl };
 }
 

@@ -1,6 +1,8 @@
 package prompts
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +14,131 @@ func testManager(t *testing.T) *Manager {
 	m.Register(Service{ID: "web", Name: "网页", DefaultText: func() string { return "能力-web" }})
 	m.Register(Service{ID: "minecraft", Name: "MC", DefaultText: func() string { return "能力-mc" }})
 	return m
+}
+
+func TestLegacyTemplatesUpgradeWithoutOverwritingEdits(t *testing.T) {
+	m := testManager(t)
+	old := legacyPersonas["default"]
+	old.ID, old.Builtin = "default", true
+	edited := legacyPersonas["tech"]
+	edited.ID, edited.Builtin = "tech", true
+	edited.Desc = "管理员自定义简介"
+	snap := snapshot{Personas: []Persona{old, edited, {ID: "custom", Name: "自定义", Text: "保持我的正文"}},
+		ServicePersona: map[string]string{"web": "tech"}, UserPersona: map[string]string{"reader": "default"},
+		Global: map[string]CapabilityOverride{"web": {Enabled: true, Text: "自定义渠道规则"}}}
+	b, _ := json.Marshal(snap)
+	if err := os.WriteFile(m.path, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Load(); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range m.Personas() {
+		if p.ID == "default" && (p.Text == old.Text || p.Desc == old.Desc) {
+			t.Fatal("untouched legacy template not upgraded")
+		}
+		if p.ID == "tech" && (p.Text != edited.Text || p.Desc != edited.Desc) {
+			t.Fatal("edited built-in template overwritten")
+		}
+		if p.ID == "custom" && p.Text != "保持我的正文" {
+			t.Fatal("custom template overwritten")
+		}
+	}
+	if m.ServicePersona("web") != "tech" || m.UserPersona("reader") != "default" || m.Global("web").Text != "自定义渠道规则" {
+		t.Fatal("existing selections or capability override changed")
+	}
+}
+
+func TestServiceSettingsSaveAndRollback(t *testing.T) {
+	m := testManager(t)
+	if err := m.SetServiceSettings("web", CapabilityOverride{Enabled: true, Text: "新规则"}, "tech"); err != nil {
+		t.Fatal(err)
+	}
+	if m.ServicePersona("web") != "tech" || m.Global("web").Text != "新规则" {
+		t.Fatal("settings not applied together")
+	}
+	for _, change := range []struct {
+		id       string
+		override CapabilityOverride
+		persona  string
+	}{
+		{"web", CapabilityOverride{Enabled: true, Text: "不应生效"}, "missing"},
+		{"missing", CapabilityOverride{Enabled: true, Text: "不应生效"}, "default"},
+		{"web", CapabilityOverride{Enabled: true, Text: "  "}, "default"},
+	} {
+		if err := m.SetServiceSettings(change.id, change.override, change.persona); err == nil {
+			t.Fatal("invalid settings accepted")
+		}
+		if m.ServicePersona("web") != "tech" || m.Global("web").Text != "新规则" {
+			t.Fatal("invalid update partially applied")
+		}
+	}
+	// 将持久化目标改为目录，强制 Rename 失败，内存中的生效值也必须回滚。
+	m.path = t.TempDir()
+	if err := m.SetServiceSettings("web", CapabilityOverride{Enabled: true, Text: "写盘失败"}, "teacher"); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if m.ServicePersona("web") != "tech" || m.Global("web").Text != "新规则" {
+		t.Fatal("persistence failure changed active settings")
+	}
+}
+
+func TestPersonaSaveFailurePreservesActiveSettings(t *testing.T) {
+	m := testManager(t)
+	if err := m.SetUserPersona("reader", "tech"); err != nil {
+		t.Fatal(err)
+	}
+	before := m.Resolve("web", "reader", "规则")
+	m.path = t.TempDir()
+	if err := m.SetUserPersona("reader", "teacher"); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if err := m.SetUserPersona("reader", ""); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if m.UserPersona("reader") != "tech" {
+		t.Fatal("failed selection changed active persona")
+	}
+	if _, err := m.SavePersona(Persona{ID: "tech", Name: "新名称", Text: "不应生效"}); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if got := m.Resolve("web", "reader", "规则"); got != before {
+		t.Fatal("failed edit changed active template")
+	}
+	n := len(m.Personas())
+	if _, err := m.SavePersona(Persona{Name: "新模板", Text: "不应保存"}); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if len(m.Personas()) != n {
+		t.Fatal("failed creation left a template behind")
+	}
+	if err := m.DeletePersona("tech"); err == nil {
+		t.Fatal("expected reset persistence failure")
+	}
+	if got := m.Resolve("web", "reader", "规则"); got != before {
+		t.Fatal("failed reset changed active template")
+	}
+}
+
+func TestPersonaDeleteFailurePreservesReferences(t *testing.T) {
+	m := testManager(t)
+	p, err := m.SavePersona(Persona{Name: "自定义", Text: "正在使用的模板"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetUserPersona("reader", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetServicePersona("web", p.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.path = t.TempDir()
+	if err := m.DeletePersona(p.ID); err == nil {
+		t.Fatal("expected delete persistence failure")
+	}
+	if m.UserPersona("reader") != p.ID || m.ServicePersona("web") != p.ID || !strings.Contains(m.Resolve("web", "reader", "规则"), p.Text) {
+		t.Fatal("failed deletion removed active template or references")
+	}
 }
 
 func TestResolveComposition(t *testing.T) {

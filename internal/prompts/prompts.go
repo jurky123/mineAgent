@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,24 +58,6 @@ type snapshot struct {
 	Personas       []Persona                     `json:"personas,omitempty"`
 	ServicePersona map[string]string             `json:"servicePersona,omitempty"`
 	UserPersona    map[string]string             `json:"userPersona,omitempty"`
-}
-
-// builtinPersonas 是内置人设模板（可编辑；删除=恢复这里的内容）。
-var builtinPersonas = []Persona{
-	{ID: "default", Name: "默认助手", Desc: "通用、能动手",
-		Text: "你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、收发文件、联网搜索、设提醒）。"},
-	{ID: "mc-veteran", Name: "MC 老玩家", Desc: "服里随和的老玩家",
-		Text: "你是服务器里的老玩家 AI，说话随和、简短、接地气，像个熟络的服友。"},
-	{ID: "concise", Name: "简洁客服", Desc: "只给答案和下一步",
-		Text: "你是高效的客服：先给答案和下一步，不寒暄、不铺垫、不复述问题。"},
-	{ID: "tech", Name: "技术搭档", Desc: "结论 + 步骤 + 代码",
-		Text: "你是资深工程师搭档：先给结论，再给可执行步骤和代码，指出坑与风险。"},
-	{ID: "snarky", Name: "毒舌损友", Desc: "爱吐槽但不冒犯",
-		Text: "你是嘴上不饶人的损友：会吐槽调侃，但不人身攻击、不冒犯、不传播负面情绪，正事照样办。"},
-	{ID: "translator", Name: "中英翻译", Desc: "只输出译文",
-		Text: "你是翻译：只输出译文（未指定目标语言时做中↔英互译），不加解释、不加客套。"},
-	{ID: "teacher", Name: "严谨老师", Desc: "循序讲解",
-		Text: "你是耐心的老师：先给直觉再给细节，循序渐进，讲完做个小结。"},
 }
 
 // DefaultPersonaFor 返回某服务的默认人设（Minecraft 用"MC 老玩家"，其余"默认助手"）。
@@ -130,7 +113,13 @@ func (m *Manager) ensureBuiltins() {
 		m.personaIndex[p.ID] = i
 	}
 	for _, b := range builtinPersonas {
-		if _, ok := m.personaIndex[b.ID]; ok {
+		if i, ok := m.personaIndex[b.ID]; ok {
+			// 只升级未编辑过的旧版内置模板；任何名称/简介/正文改动都保留。
+			if old, known := legacyPersonas[b.ID]; known && m.personas[i].Name == old.Name &&
+				m.personas[i].Desc == old.Desc && m.personas[i].Text == old.Text {
+				b.Builtin = true
+				m.personas[i] = b
+			}
 			continue
 		}
 		b.Builtin = true
@@ -291,19 +280,29 @@ func (m *Manager) SavePersona(p Persona) (Persona, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if p.ID == "" {
-		p.ID = fmt.Sprintf("p-%d", time.Now().UnixMilli())
+		p.ID = fmt.Sprintf("p-%d", time.Now().UnixNano())
 		p.Builtin = false
 		m.personaIndex[p.ID] = len(m.personas)
 		m.personas = append(m.personas, p)
+		if err := m.saveLocked(); err != nil {
+			m.personas = m.personas[:len(m.personas)-1]
+			delete(m.personaIndex, p.ID)
+			return p, err
+		}
 	} else {
 		i, ok := m.personaIndex[p.ID]
 		if !ok {
 			return p, fmt.Errorf("人设不存在")
 		}
 		p.Builtin = m.personas[i].Builtin
+		old := m.personas[i]
 		m.personas[i] = p
+		if err := m.saveLocked(); err != nil {
+			m.personas[i] = old
+			return p, err
+		}
 	}
-	return p, m.saveLocked()
+	return p, nil
 }
 
 // DeletePersona 删除人设；内置人设不删除，而是恢复内置正文。
@@ -314,11 +313,21 @@ func (m *Manager) DeletePersona(id string) error {
 	if !ok {
 		return fmt.Errorf("人设不存在")
 	}
+	oldPersonas := append([]Persona(nil), m.personas...)
+	oldIndex, oldService, oldUser := maps.Clone(m.personaIndex), maps.Clone(m.servicePersona), maps.Clone(m.userPersona)
+	save := func() error {
+		if err := m.saveLocked(); err != nil {
+			m.personas, m.personaIndex = oldPersonas, oldIndex
+			m.servicePersona, m.userPersona = oldService, oldUser
+			return err
+		}
+		return nil
+	}
 	for _, b := range builtinPersonas {
 		if b.ID == id {
 			b.Builtin = true
 			m.personas[i] = b
-			return m.saveLocked()
+			return save()
 		}
 	}
 	m.personas = append(m.personas[:i], m.personas[i+1:]...)
@@ -337,7 +346,7 @@ func (m *Manager) DeletePersona(id string) error {
 			delete(m.userPersona, k)
 		}
 	}
-	return m.saveLocked()
+	return save()
 }
 
 func (m *Manager) personaText(id string) string {
@@ -385,6 +394,49 @@ func (m *Manager) SetServicePersona(service, personaID string) error {
 	return m.saveLocked()
 }
 
+// SetServiceSettings 一次保存渠道人设与能力覆盖，写盘失败则保留此前的生效值。
+func (m *Manager) SetServiceSettings(service string, o CapabilityOverride, personaID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.index[service]; !ok {
+		return fmt.Errorf("未知服务 %s", service)
+	}
+	if personaID != "" {
+		if _, ok := m.personaIndex[personaID]; !ok {
+			return fmt.Errorf("人设不存在")
+		}
+	}
+	o.Text = strings.TrimSpace(o.Text)
+	if len([]rune(o.Text)) > MaxCapabilityLen {
+		return fmt.Errorf("系统提示词太长（上限 %d 字）", MaxCapabilityLen)
+	}
+	if o.Enabled && o.Text == "" {
+		return fmt.Errorf("自定义系统提示词不能为空")
+	}
+	oldGlobal, hadGlobal := m.global[service]
+	oldPersona, hadPersona := m.servicePersona[service]
+	m.global[service] = o
+	if personaID == "" {
+		delete(m.servicePersona, service)
+	} else {
+		m.servicePersona[service] = personaID
+	}
+	if err := m.saveLocked(); err != nil {
+		if hadGlobal {
+			m.global[service] = oldGlobal
+		} else {
+			delete(m.global, service)
+		}
+		if hadPersona {
+			m.servicePersona[service] = oldPersona
+		} else {
+			delete(m.servicePersona, service)
+		}
+		return err
+	}
+	return nil
+}
+
 func (m *Manager) UserPersona(user string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -397,15 +449,26 @@ func (m *Manager) SetUserPersona(user, personaID string) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if personaID == "" { // 空 = 跟随服务/默认人设
+	if personaID != "" {
+		if _, ok := m.personaIndex[personaID]; !ok {
+			return fmt.Errorf("人设不存在")
+		}
+	}
+	old, hadOld := m.userPersona[user]
+	if personaID == "" {
 		delete(m.userPersona, user)
-		return m.saveLocked()
+	} else {
+		m.userPersona[user] = personaID
 	}
-	if _, ok := m.personaIndex[personaID]; !ok {
-		return fmt.Errorf("人设不存在")
+	if err := m.saveLocked(); err != nil {
+		if hadOld {
+			m.userPersona[user] = old
+		} else {
+			delete(m.userPersona, user)
+		}
+		return err
 	}
-	m.userPersona[user] = personaID
-	return m.saveLocked()
+	return nil
 }
 
 // ---------- 组合 ----------
@@ -468,6 +531,13 @@ func SetCapabilities(id string, o CapabilityOverride) error {
 		return fmt.Errorf("提示词未初始化")
 	}
 	return def.SetCapabilities(id, o)
+}
+
+func SetServiceSettings(id string, o CapabilityOverride, personaID string) error {
+	if def == nil {
+		return fmt.Errorf("提示词未初始化")
+	}
+	return def.SetServiceSettings(id, o, personaID)
 }
 
 func ResetCapabilities(id string) error {

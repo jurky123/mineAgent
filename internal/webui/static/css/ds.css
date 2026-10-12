@@ -1,6 +1,6 @@
 /* ds.css — Portal 设计系统：按钮 / 卡片 / 弹层 / 表单 / 列表等交互原语。
    规则：普通按钮 10px、CTA 12px、卡片 16px、弹层 14/22px、Tag 才用胶囊。
-   只被门户类页面（/、/account、/games）加载，Agent 聊天页保持自己的样式。 */
+   门户页面使用完整样式；Agent 复用控件与弹层，页面布局由自己的样式负责。 */
 
 * { box-sizing: border-box; }
 body.ds {

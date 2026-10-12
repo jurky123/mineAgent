@@ -398,7 +398,7 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
 ` +
 	agent.CoreAgentPrinciples + `
 渠道规则（企业微信）：
-- 用简体中文回答，语气轻松友好；单条 500 字内，不要用 Markdown 表格。
+- 默认用用户使用的语言，翻译时按目标语言输出；单条 500 字内，不要用 Markdown 表格。
   需要版式时调用 wecom_markdown；需要发图时调用 wecom_image（jpg/png，10MB内）。
 - 发图流程：先用 workspace_write/exec 把图做到 workspace 里，再调 wecom_image 发，path 写相对路径。
 - 画图直接用 PIL（已装），中文字体用 /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc。

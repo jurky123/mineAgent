@@ -8,6 +8,7 @@ import { initWorkspace, openWorkspace } from './workspace.js';
 import * as conversations from './conversations.js';
 import * as chat from './chat.js';
 import * as composer from './composer.js';
+import { initPromptSettings, refreshPromptLabel } from './prompt-settings.js';
 
 // ---------- 登录 / 登出 ----------
 function showLogin() {
@@ -82,11 +83,12 @@ async function startChat() {
   await chat.loadHistory();
   chat.connectSSE();
   composer.loadOptions().catch(() => {});
+  refreshPromptLabel().catch(() => {});
   composer.renderPending();
   composer.autoGrow();
   $('sidebar').classList.remove('open');
   $('backdrop').classList.remove('on');
-  $('text').focus();
+  if (!document.querySelector('.dialog-mask')) $('text').focus();
 }
 
 // ---------- 额度 ----------
@@ -136,6 +138,7 @@ async function ensureFresh() {
 // ---------- 启动 ----------
 function boot() {
   initTheme();
+  initPromptSettings();
   ensureFresh();
   // 渲染调试模式：?ui=1 不连后端，直接用假数据渲染（给截图/视觉对比用）
   if (new URLSearchParams(location.search).has('ui')) {

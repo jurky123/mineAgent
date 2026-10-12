@@ -165,7 +165,7 @@ Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持�
 | `/agent` | Productivity App | Agent 聊天页（ChatGPT 风全屏工作区：多会话/文件收发/模型切换，见下） |
 | `/games` → `/games/chess` | Entertainment App | 游戏目录 → 国际象棋（大厅 → 房间 → 对局 三态） |
 | `/screens` | Control App | **显示屏**（MineDisplay）：世界里的浏览器屏列表/开屏/换网址/关屏 + 导航白名单（开关/增删/一键加常用站）；写操作限管理员。服务端代理到 MineDisplay 本地控制 API（`web.displayApi` + `web.displayTokenFile`，插件自动生成令牌） |
-| `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 人设 / 系统提示词 / 关于 |
+| `/account` | Settings | 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于；人设和提示词在 `/agent` 内调整 |
 
 **顺手就能用**：`Ctrl/Cmd + K` 打开命令面板（新建对话 / 打开棋局 / 对局历史 / 切换主题…）；
 支持安装成 PWA（`manifest.webmanifest` + 纯网络 Service Worker，手机"添加到主屏幕"后全屏运行）；
@@ -294,12 +294,18 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   `data/webui/prefs.json`
 - **Workspace / 外观 / 用量 / 退出登录**：收进侧栏底部的账户菜单
   （Workspace 仅 `web.adminUsers` 可见；用量弹窗有滚动/周/月三条进度条）
-- **人设 + 系统提示词**（「我的」页）：系统提示词是**能力层**——每个服务（网页 / QQ /
+- **Agent 设置**（`/agent` 顶栏齿轮、侧栏或账户菜单）：三个分区——「我的人设」提供卡片选择与正文预览；
+  「渠道设置」提供渠道选择、默认人设、内置/自定义规则与大文本编辑；「模板库」可新建、编辑、恢复或删除共享模板。
+  普通用户只看到本人人设，渠道与模板管理仅管理员可见。支持手机与深色模式、字数提示、保存状态和未保存更改确认。
+  系统提示词是**能力层**——每个服务（网页 / QQ /
   企微 / 企微机器人 / 个人微信 / Minecraft）一套"能力与规则"，管理员可完全替换内置版本；
   **人设**是**角色层**——可增删改的模板（内置：默认助手 / MC 老玩家 / 简洁客服 / 技术搭档 /
   毒舌损友 / 中英翻译 / 严谨老师），管理员可为每个服务选一条，网页用户还能给自己选一条。
-  最终提示词 = 人设正文 + 系统提示词，换人设不会丢能力与安全规则。改动即时生效，
-  存 `data/webui/prompts.json`
+  最终提示词 = 人设正文 + 系统提示词。渠道的人设与规则一次保存，写盘失败时不改变生效配置。
+  改动从下一条消息起生效，存 `data/webui/prompts.json`。七个内置模板已补充表达方式、任务深度与边界；
+  未编辑的旧版内置模板自动升级，已编辑模板和渠道覆盖保持原样。
+  浏览器交互回归：`npm run test:prompts`（Playwright，临时本地 API，不接触线上配置与数据；截图默认在 `/tmp/mineagent-prompts-ui`）。
+  纯样式预览：`/agent?ui=1&panel=prompts`，使用固定假数据，不读取或保存真实提示词。
 
 交互细节：输入框打 `/` 弹出命令面板（↑↓ 选择、Tab/Enter 补全）；消息列表往上滚
 可「载入更早消息」；模型/思考切换、上传失败等用 toast 提示；SSE 断线时顶部重连提示；
@@ -344,7 +350,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `GET /api/conversations` | 会话列表（纯读；旧单会话会合成返回） |
 | `POST /api/conversations/delete`、`/rename` | 删除 / 重命名会话 |
 | `POST /api/prefs` `{model, effort}` | 保存本账号的模型与思考强度 |
-| `GET/POST /api/prompts` | 人设与提示词：GET 返回服务/人设模板/选择；POST `scope=capability`（系统提示词）、`service-persona`（按服务选人设）、`persona-save`/`persona-delete`（模板，以上仅管理员）、`user-persona`（本人网页人设） |
+| `GET/POST /api/prompts` | 人设与提示词：登录用户可预览模板正文，管理员可看渠道规则；POST `scope=service-settings`（一起保存渠道人设与规则）、`capability`、`service-persona`、`persona-save`/`persona-delete`（以上仅管理员）、`user-persona`（本人网页人设） |
 | `GET /api/usage` | 模型 key 额度（滚动/周/月，网关 `/usage`，60s 缓存） |
 | `GET /api/workspace?path=` | 列 workspace 目录（仅管理员） |
 | `GET /api/workspace/file?path=` | 下载/预览 workspace 文件（仅管理员） |

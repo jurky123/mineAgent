@@ -29,27 +29,28 @@ func (s *Server) handlePrompts(w http.ResponseWriter, r *http.Request, u *storag
 func (s *Server) promptsGet(w http.ResponseWriter, u *storage.User) {
 	services := make([]map[string]any, 0)
 	for _, svc := range prompts.Services() {
-		item := map[string]any{"id": svc.ID, "name": svc.Name, "desc": svc.Desc}
+		item := map[string]any{"id": svc.ID, "name": svc.Name, "desc": svc.Desc,
+			"persona": prompts.ServicePersona(svc.ID), "defaultPersona": prompts.DefaultPersonaFor(svc.ID)}
 		if u.IsAdmin {
 			item["default"] = prompts.DefaultText(svc.ID)
 			item["global"] = prompts.Global(svc.ID)
-			item["persona"] = prompts.ServicePersona(svc.ID)
 		}
 		services = append(services, item)
 	}
 	personas := make([]map[string]any, 0)
 	for _, p := range prompts.Personas() {
-		item := map[string]any{"id": p.ID, "name": p.Name, "desc": p.Desc, "builtin": p.Builtin}
-		if u.IsAdmin {
-			item["text"] = p.Text
-		}
+		// 人设是共享模板，登录用户可预览正文；渠道系统提示词细节仍只对管理员开放。
+		item := map[string]any{"id": p.ID, "name": p.Name, "desc": p.Desc, "builtin": p.Builtin, "text": p.Text}
 		personas = append(personas, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"admin":     u.IsAdmin,
-		"services":  services,
-		"personas":  personas,
-		"myPersona": prompts.UserPersona(u.Username),
+		"admin":      u.IsAdmin,
+		"services":   services,
+		"personas":   personas,
+		"myPersona":  prompts.UserPersona(u.Username),
+		"webPersona": prompts.ServicePersona("web"),
+		"limits": map[string]int{"persona": prompts.MaxPersonaLen, "capability": prompts.MaxCapabilityLen,
+			"name": prompts.MaxNameLen, "desc": prompts.MaxDescLen},
 	})
 }
 
@@ -78,12 +79,22 @@ func (s *Server) promptsPost(w http.ResponseWriter, r *http.Request, u *storage.
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-	case "capability", "service-persona", "persona-save", "persona-delete":
+	case "capability", "service-persona", "service-settings", "persona-save", "persona-delete":
 		if !u.IsAdmin {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "只有管理员能改"})
 			return
 		}
 		switch strings.TrimSpace(req.Scope) {
+		case "service-settings":
+			if req.Enabled == nil || req.Text == nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "渠道设置需要完整的 enabled 与 text"})
+				return
+			}
+			enabled := req.Enabled != nil && *req.Enabled
+			if err := prompts.SetServiceSettings(id, prompts.CapabilityOverride{Enabled: enabled, Text: text}, strings.TrimSpace(req.Persona)); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
 		case "capability":
 			// 文本为空且没带 enabled：视为"恢复内置系统提示词"
 			if strings.TrimSpace(text) == "" && req.Enabled == nil {

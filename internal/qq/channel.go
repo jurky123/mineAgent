@@ -484,7 +484,7 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
 ` +
 	agent.CoreAgentPrinciples + `
 渠道规则（QQ）：
-- 用简体中文回答，语气轻松友好；单条 500 字内，不要用 Markdown 表格。
+- 默认用用户使用的语言，翻译时按目标语言输出；单条 500 字内，不要用 Markdown 表格。
   需要版式（标题/列表/加粗）时调用 qq_markdown 发一条；需要发图时调用 qq_image。
 - 发图流程：先用 workspace_write/exec 把图做到 workspace 里（png/jpg，20MB内），
   再调 qq_image 发，path 写相对路径；上传失败会如实报错。

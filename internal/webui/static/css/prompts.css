@@ -1,0 +1,93 @@
+/* Agent 设置沿用站点控件；编辑区独立滚动，操作区始终可见。 */
+.prompt-entry { width: 100%; margin-bottom: 6px; }
+.prompt-entry #agent-persona-label { margin-left: auto; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-3); }
+.collapsed .prompt-entry span { display: none; }
+.agent-prompts { display: flex; flex-direction: column; max-height: min(88dvh, 820px); }
+.agent-prompts .dialog-head { padding: 22px 26px 16px; border-bottom: 1px solid var(--border); }
+.agent-prompts .dialog-title { font-size: 19px; }
+.agent-prompts .dialog-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.agent-prompts > .dialog-actions:empty { display: none; }
+.prompt-shell { display: flex; flex-direction: column; min-height: 0; }
+.prompt-tabs { display: flex; gap: 22px; flex-shrink: 0; padding: 0 26px; border-bottom: 1px solid var(--border); }
+.prompt-tab { display: flex; align-items: center; gap: 7px; border: 0; border-bottom: 2px solid transparent; padding: 15px 0 13px; color: var(--text-secondary); background: transparent; font: inherit; font-size: 14px; cursor: pointer; }
+.prompt-tab[aria-selected=true] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.prompt-content { overflow-y: auto; padding: 24px 26px; min-height: 0; overscroll-behavior: contain; }
+.prompt-heading { position: relative; margin-bottom: 22px; }
+.prompt-heading h3 { margin: 0 0 6px; font-size: 17px; color: var(--text); font-weight: 600; }
+.prompt-heading p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text-secondary); max-width: 680px; }
+.prompt-heading > button { margin-top: 12px; }
+.prompt-personas-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.prompt-personas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.prompt-choice { display: flex; align-items: flex-start; gap: 10px; min-height: 103px; padding: 15px 12px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--surface); text-align: left; font: inherit; cursor: pointer; transition: background 120ms, border-color 120ms; }
+.prompt-choice:hover { border-color: var(--border-strong); background: var(--surface-muted); }
+.prompt-choice.selected { border-color: var(--brand); background: var(--brand-soft); }
+.prompt-persona-icon { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); flex-shrink: 0; color: var(--text-secondary); }
+.selected .prompt-persona-icon { color: var(--brand); border-color: var(--interactive-border); }
+.prompt-choice-text { flex: 1; min-width: 0; }
+.prompt-choice-text strong { display: block; font-size: 13px; font-weight: 600; margin: 2px 0 5px; }
+.prompt-choice-text > span { display: block; color: var(--text-secondary); font-size: 11.5px; line-height: 1.55; }
+.prompt-choice .prompt-choice-check { width: 14px; height: 14px; margin-top: 9px; color: var(--brand); visibility: hidden; }
+.prompt-choice.selected .prompt-choice-check { visibility: visible; }
+.prompt-preview { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 16px; padding: 21px; }
+.prompt-preview > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+.prompt-preview > summary::-webkit-details-marker { display: none; }
+.prompt-preview-arrow { color: var(--text-tertiary); transition: transform 150ms; }
+.prompt-preview[open] .prompt-preview-arrow { transform: rotate(90deg); }
+.prompt-preview:not([open]) h4 { margin: 0; }
+.prompt-eyebrow { display: block; color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .6px; margin-bottom: 13px; }
+.prompt-preview h4 { margin: 0 0 7px; font-size: 20px; font-weight: 600; color: var(--text); }
+.prompt-preview-desc { margin: 0 0 20px; font-size: 12px; color: var(--text-secondary); }
+.prompt-preview-text { white-space: pre-wrap; color: var(--text); font-size: 13px; line-height: 1.85; }
+.prompt-preview-note { margin-top: 22px; padding-top: 15px; border-top: 1px solid var(--border); font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); }
+.prompt-editor-layout { display: grid; grid-template-columns: 205px minmax(0, 1fr); gap: 25px; }
+.prompt-selector { display: flex; flex-direction: column; gap: 6px; }
+.prompt-selector-item { border: 1px solid transparent; border-radius: 10px; text-align: left; padding: 12px; font: inherit; color: var(--text); background: transparent; cursor: pointer; }
+.prompt-selector-item strong { display: block; font-size: 13px; font-weight: 600; }
+.prompt-selector-item span { display: block; font-size: 11px; line-height: 1.5; color: var(--text-secondary); margin-top: 4px; }
+.prompt-selector-item:hover { background: var(--surface-muted); }
+.prompt-selector-item.selected { background: var(--brand-soft); border-color: var(--interactive-border); }
+.prompt-editor { min-width: 0; }
+.prompt-field { margin-bottom: 16px; }
+.prompt-field-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.prompt-field label { color: var(--text); font-size: 12px; font-weight: 600; }
+.prompt-counter { font-size: 11px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.prompt-counter.over { color: var(--danger); }
+.agent-prompts .input, .agent-prompts .textarea { width: 100%; font-size: 13px; }
+.prompt-textarea { font-family: inherit; line-height: 1.8; resize: vertical; min-height: 180px; }
+.prompt-textarea[readonly] { background: var(--surface-muted); color: var(--text-secondary); }
+.prompt-editor-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.prompt-editor-tools span { font-size: 11px; color: var(--text-secondary); }
+.prompt-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; gap: 16px; border-top: 1px solid var(--border); padding: 16px 26px; background: var(--surface); }
+.prompt-status { font-size: 12px; color: var(--text-secondary); }
+.prompt-status.dirty { color: var(--brand); }
+.prompt-error { color: var(--danger); font-size: 12px; max-width: 650px; }
+.prompt-footer .btn { flex-shrink: 0; min-width: 116px; }
+.prompt-loading { padding: 60px 20px; text-align: center; color: var(--text-secondary); }
+.agent-prompts button:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+@media (max-width: 720px) {
+  .dialog-mask:has(.agent-prompts) { padding: 10px; }
+  .agent-prompts { width: 100% !important; max-height: 94dvh; border-radius: 18px; }
+  .agent-prompts .dialog-head { padding: 16px 16px 12px; }
+  .prompt-tabs { gap: 18px; padding: 0 16px; }
+  .prompt-tab { font-size: 13px; padding: 12px 0; }
+  .prompt-content { padding: 18px 16px; }
+  .prompt-heading { margin-bottom: 16px; }
+  .prompt-heading h3 { font-size: 16px; }
+  .prompt-personas-layout { grid-template-columns: 1fr; gap: 16px; }
+  .prompt-choice { min-height: 108px; padding: 11px 9px; gap: 7px; }
+  .prompt-persona-icon { width: 24px; height: 24px; border-radius: 7px; }
+  .prompt-choice .prompt-choice-check { width: 11px; margin-top: 6px; }
+  .prompt-choice-text strong { font-size: 12px; }
+  .prompt-choice-text > span { font-size: 11px; }
+  .prompt-preview { padding: 15px 17px; order: -1; }
+  .prompt-preview .prompt-eyebrow { margin-bottom: 5px; font-size: 10px; }
+  .prompt-preview[open] h4 { margin-bottom: 15px; }
+  .prompt-preview h4 { font-size: 18px; }
+  .prompt-editor-layout { grid-template-columns: 1fr; gap: 16px; }
+  .prompt-selector { flex-direction: row; overflow-x: auto; padding-bottom: 6px; }
+  .prompt-selector-item { flex-shrink: 0; width: 135px; padding: 10px; }
+  .prompt-selector-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prompt-footer { padding: 13px 16px max(13px, env(safe-area-inset-bottom)); gap: 10px; }
+  .prompt-status { font-size: 11px; }
+  .prompt-footer .btn { min-width: 95px; }
+}

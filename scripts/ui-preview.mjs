@@ -39,10 +39,12 @@ const shots = [
   { dir: 'desktop', name: 'chess-lobby', url: '/games/chess?ui=1&state=lobby' },
   { dir: 'desktop', name: 'chess-playing', url: '/games/chess?ui=1&state=playing' },
   { dir: 'desktop', name: 'account', url: '/account?ui=1' },
+  { dir: 'desktop', name: 'agent-prompts', url: '/agent?ui=1&panel=prompts' },
   { dir: 'mobile', name: 'portal', url: '/?ui=1' },
   { dir: 'mobile', name: 'games', url: '/games?ui=1' },
   { dir: 'mobile', name: 'chess-playing', url: '/games/chess?ui=1&state=playing' },
   { dir: 'mobile', name: 'account', url: '/account?ui=1' },
+  { dir: 'mobile', name: 'agent-prompts', url: '/agent?ui=1&panel=prompts&theme=dark' },
   // 固定状态（轻量 Storybook：以后评审同一状态可直接对比）
   { dir: 'states', name: 'chess-check', url: '/games/chess?ui=1&state=check' },
   { dir: 'states', name: 'chess-finished-win', url: '/games/chess?ui=1&state=finished-win' },

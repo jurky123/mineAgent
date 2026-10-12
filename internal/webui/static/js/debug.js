@@ -15,6 +15,27 @@ import { renderMsg, setTyping, layout, toBottom } from './chat.js';
 import { renderToolbar, openIntelPopover, openModelPopover } from './composer.js';
 import { renderList } from './conversations.js';
 import { openAppearance, applyTheme } from './theme.js';
+import { initPromptSettings, openPromptSettings } from './prompt-settings.js';
+
+// 仅用于样式预览，完全不读写 /api/prompts。
+const promptPreview = {
+  admin: true, myPersona: '', webPersona: 'default',
+  limits: { persona: 8000, capability: 20000, name: 40, desc: 200 },
+  personas: [
+    ['default', '默认助手', '自然交流，清楚回答，务实协作', '你是 MineAgent，一位友善、务实的协作助手。\n先理解用户想解决什么，直接给有用的回答；简单问题简短回应，复杂任务按需要解释。\n表达自然，不靠寒暄、夸张赞美或重复问题凑字数。'],
+    ['mc-veteran', 'MC 老玩家', '像熟悉的服友，简短实用，不抢聊天', '你是服务器里的老玩家 AI，像一个熟络、靠谱的服友。\n给新玩家耐心解释，实时状态以工具结果为准。'],
+    ['concise', '简洁客服', '答案优先，保留关键条件与下一步', '先给答案或可执行的下一步；精简表述但不省略关键条件。'],
+    ['tech', '技术搭档', '先看证据，再给可执行方案与验证办法', '你是资深工程师搭档。\n先说结论，再给必要的依据、可执行步骤或代码。'],
+    ['snarky', '毒舌损友', '轻松吐槽事情，认真帮你解决问题', '轻轻吐槽离谱的现象，笑点对事不对人；正事照样认真办。'],
+    ['translator', '中英翻译', '忠实自然，保留语气、术语与格式', '翻译时只输出译文，保留原意、语气、专有名词与格式。'],
+    ['teacher', '严谨老师', '从直觉到例子，按你的基础调整深度', '先给直觉或一个具体例子，再解释必要的概念与推导。'],
+  ].map(([id, name, desc, text]) => ({ id, name, desc, text, builtin: true })),
+  services: [['web', '网页聊天'], ['qq', 'QQ 机器人'], ['wecom', '企业微信'], ['aibot', '企微智能机器人'], ['wechat', '个人微信'], ['minecraft', 'Minecraft']].map(([id, name]) => ({
+    id, name, desc: '渠道默认与输出规则', defaultPersona: id === 'minecraft' ? 'mc-veteran' : 'default',
+    persona: id === 'minecraft' ? 'mc-veteran' : 'default', global: { enabled: false },
+    default: '渠道规则（' + name + '）：\n能力以实际提供的工具与权限为准。\n实时信息先查询，失败时如实说明。\n表达风格遵从所选人设，格式和长度遵从渠道规则。',
+  })),
+};
 
 const TINY_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200">' +
@@ -34,6 +55,8 @@ export function startDebug() {
   S.token = 'debug';
   S.me = 'Jiang';
   S.admin = true;
+  initPromptSettings(promptPreview);
+  if (q.get('panel') === 'prompts') openPromptSettings(promptPreview);
   S.conv = 'demo';
   S.options = {
     skills: [

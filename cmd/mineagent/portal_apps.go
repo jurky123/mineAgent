@@ -38,6 +38,11 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 			Card: gamesCard(store, gamesMgr),
 		},
 		portal.App{
+			ID: "screens", Name: "显示屏", Desc: "世界里的浏览器屏：开屏/换网址/白名单", Icon: "monitor",
+			Path: "/screens", Order: 35, Enabled: true,
+			Nav: true, NavLabel: "屏幕", HomeRole: "hidden",
+		},
+		portal.App{
 			ID: "announcements", Name: "最新动态", Icon: "megaphone",
 			Order: 40, Enabled: true, Nav: false, HomeRole: "feed", Priority: 40, Span: 2,
 			Card: announcementsFeed(store),

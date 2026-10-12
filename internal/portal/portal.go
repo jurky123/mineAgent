@@ -105,6 +105,8 @@ func (s *Server) Handler() http.Handler {
 	if s.rinkuJcef != nil {
 		mux.Handle("/rinku-jcef/", s.rinkuJcef)
 	}
+	// 显示屏控制（MineDisplay 本地控制 API 代理）：GET 任意登录用户，写操作限管理员。
+	mux.HandleFunc("/api/display/", s.handleDisplayProxy)
 	// PWA：manifest 与 Service Worker（注入版本号；纯网络 SW，不做离线缓存）
 	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
 		b, err := webui.RenderPage("manifest.webmanifest")
@@ -180,6 +182,7 @@ var pages = map[string]string{
 	"/account":         "account/index.html",
 	"/account/history": "account/history/index.html",
 	"/games":           "games/index.html",
+	"/screens":         "display/index.html",
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {

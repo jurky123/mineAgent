@@ -161,6 +161,11 @@ type Web struct {
 	// 例如 GitHub 加速站 https://ghfast.top/https://github.com/Keksuccino/jcef-rinku/releases/download；
 	// 留空则回源本机 dataDir/rinku-jcef 的已同步文件。
 	RinkuJcefRedirect string `json:"rinkuJcefRedirect"`
+	// MineDisplay 控制 API（门户 /screens 显示屏管理页用）：本地回环地址。
+	// MineDisplay 只绑 127.0.0.1:control-port（默认 8769）。
+	DisplayAPI string `json:"displayApi"`
+	// MineDisplay 控制 API 的 Bearer 令牌文件（插件首次启动自动生成）。
+	DisplayTokenFile string `json:"displayTokenFile"`
 	// 快捷指令（+ 菜单的"技能"）：点一下把 prompt 填进输入框。
 	// 留空用内置默认（见 DefaultSkills）。
 	Skills []Skill `json:"skills"`
@@ -190,6 +195,9 @@ func DefaultWeb() Web {
 		AllowedOrigins: []string{"*"},
 		DataDir:        "data/webui",
 		Skills:         DefaultSkills(),
+
+		DisplayAPI:       "http://127.0.0.1:8769",
+		DisplayTokenFile: "/home/ubuntu/minecraft/plugins/MineDisplay/control-token.txt",
 	}
 }
 
@@ -395,6 +403,12 @@ func Load(path string) (Config, error) {
 	if cfg.Web.DataDir == "" {
 		cfg.Web.DataDir = dweb.DataDir
 	}
+	if cfg.Web.DisplayAPI == "" {
+		cfg.Web.DisplayAPI = dweb.DisplayAPI
+	}
+	if cfg.Web.DisplayTokenFile == "" {
+		cfg.Web.DisplayTokenFile = dweb.DisplayTokenFile
+	}
 	if len(cfg.Web.Skills) == 0 {
 		cfg.Web.Skills = dweb.Skills
 	}
@@ -504,6 +518,8 @@ func applyEnv(cfg *Config) {
 	set(&cfg.AIBot.Secret, "MINEAGENT_AIBOT_SECRET")
 	set(&cfg.Web.Listen, "MINEAGENT_WEB_LISTEN")
 	set(&cfg.Web.RinkuJcefRedirect, "MINEAGENT_RINKU_JCEF_REDIRECT")
+	set(&cfg.Web.DisplayAPI, "MINEAGENT_DISPLAY_API")
+	set(&cfg.Web.DisplayTokenFile, "MINEAGENT_DISPLAY_TOKEN_FILE")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")

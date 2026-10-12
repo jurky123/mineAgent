@@ -9,118 +9,174 @@ import (
 func testManager(t *testing.T) *Manager {
 	t.Helper()
 	m := New(filepath.Join(t.TempDir(), "prompts.json"))
-	m.Register(Service{ID: "web", Name: "网页", Desc: "网页聊天", DefaultText: func() string { return "默认-web" }})
-	m.Register(Service{ID: "qq", Name: "QQ", Desc: "QQ", DefaultText: func() string { return "默认-qq" }})
+	m.Register(Service{ID: "web", Name: "网页", DefaultText: func() string { return "能力-web" }})
+	m.Register(Service{ID: "minecraft", Name: "MC", DefaultText: func() string { return "能力-mc" }})
 	return m
 }
 
-func TestResolveChain(t *testing.T) {
+func TestResolveComposition(t *testing.T) {
 	m := testManager(t)
 
-	if got := m.Resolve("web", "jzk", "默认-web"); got != "默认-web" {
-		t.Fatalf("默认: %q", got)
+	// 默认：默认助手人设 + 能力
+	got := m.Resolve("web", "jzk", "能力-web")
+	if !strings.HasPrefix(got, "你是 MineAgent") || !strings.HasSuffix(got, "能力-web") {
+		t.Fatalf("默认组合不对: %q", got)
 	}
 
-	if err := m.SetGlobal("web", Override{Enabled: true, Text: "全局-web"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := m.Resolve("web", "jzk", "默认-web"); got != "全局-web" {
-		t.Fatalf("全局替换: %q", got)
-	}
-	if got := m.Resolve("qq", "jzk", "默认-qq"); got != "默认-qq" {
-		t.Fatalf("其它服务不受影响: %q", got)
+	// MC 默认人设是"MC 老玩家"
+	gotMC := m.Resolve("minecraft", "", "能力-mc")
+	if !strings.Contains(gotMC, "老玩家") || !strings.HasSuffix(gotMC, "能力-mc") {
+		t.Fatalf("MC 默认人设不对: %q", gotMC)
 	}
 
-	if err := m.SetUserAppend("web", "jzk", "我的补充"); err != nil {
+	// 全局能力覆盖（完全替换默认能力）
+	if err := m.SetCapabilities("web", CapabilityOverride{Enabled: true, Text: "能力-覆盖"}); err != nil {
 		t.Fatal(err)
 	}
-	want := "全局-web\n\n我的补充"
-	if got := m.Resolve("web", "jzk", "默认-web"); got != want {
-		t.Fatalf("全局+追加: %q want %q", got, want)
-	}
-	// IM 通道没有用户身份（user=""），只拿全局
-	if got := m.Resolve("web", "", "默认-web"); got != "全局-web" {
-		t.Fatalf("无用户身份不应追加: %q", got)
-	}
-	// 别的账号不共享追加
-	if got := m.Resolve("web", "other", "默认-web"); got != "全局-web" {
-		t.Fatalf("他人不应看到追加: %q", got)
+	got = m.Resolve("web", "jzk", "能力-web")
+	if !strings.HasSuffix(got, "能力-覆盖") || strings.Contains(got, "能力-web") {
+		t.Fatalf("能力覆盖不对: %q", got)
 	}
 
-	// 全局未启用时，用户追加拼在默认之后
-	if err := m.SetGlobal("qq", Override{Enabled: false, Text: "不该生效"}); err != nil {
+	// 服务人设切换
+	if err := m.SetServicePersona("web", "tech"); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SetUserAppend("qq", "jzk", "补充2"); err != nil {
+	got = m.Resolve("web", "jzk", "能力-web")
+	if !strings.Contains(got, "资深工程师搭档") {
+		t.Fatalf("服务人设未生效: %q", got)
+	}
+
+	// 用户自选人设覆盖服务人设（仅网页；IM 传 user="" 时不受影响）
+	if err := m.SetUserPersona("jzk", "snarky"); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.Resolve("qq", "jzk", "默认-qq"); got != "默认-qq\n\n补充2" {
-		t.Fatalf("默认+追加: %q", got)
+	if got = m.Resolve("web", "jzk", "能力-web"); !strings.Contains(got, "损友") {
+		t.Fatalf("用户人设未生效: %q", got)
+	}
+	if got = m.Resolve("web", "other", "能力-web"); !strings.Contains(got, "资深工程师搭档") {
+		t.Fatalf("他人不应看到本人人设: %q", got)
+	}
+	if got = m.Resolve("web", "", "能力-web"); !strings.Contains(got, "资深工程师搭档") {
+		t.Fatalf("无用户身份应回退服务人设: %q", got)
+	}
+
+	// 空值 = 恢复默认
+	if err := m.SetUserPersona("jzk", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got = m.Resolve("web", "jzk", "能力-web"); !strings.Contains(got, "资深工程师搭档") {
+		t.Fatalf("清空用户人设后应回退服务人设: %q", got)
+	}
+	if err := m.SetServicePersona("web", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got = m.Resolve("web", "", "能力-web"); !strings.Contains(got, "你是 MineAgent") {
+		t.Fatalf("清空服务人设后应回退默认人设: %q", got)
 	}
 }
 
-func TestGlobalValidation(t *testing.T) {
+func TestPersonaCRUD(t *testing.T) {
 	m := testManager(t)
-	if err := m.SetGlobal("nope", Override{Enabled: true, Text: "x"}); err == nil {
-		t.Fatal("未知服务应报错")
-	}
-	if err := m.SetGlobal("web", Override{Enabled: true, Text: strings.Repeat("a", MaxGlobalLen+1)}); err == nil {
-		t.Fatal("超长应报错")
-	}
-	// 空白文本视为未启用
-	if err := m.SetGlobal("web", Override{Enabled: true, Text: "   "}); err != nil {
+
+	p, err := m.SavePersona(Persona{Name: "新角色", Desc: "测试", Text: "你是测试角色。"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if m.GlobalEnabled("web") {
-		t.Fatal("空白文本不应被视为启用")
+	if p.ID == "" || p.Builtin {
+		t.Fatalf("新建人设异常: %+v", p)
 	}
-	if err := m.SetUserAppend("web", "jzk", strings.Repeat("b", MaxUserLen+1)); err == nil {
-		t.Fatal("用户追加超长应报错")
+	if err := m.SetServicePersona("web", p.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// 更新
+	p.Text = "你是更新后的角色。"
+	if _, err := m.SavePersona(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Resolve("web", "", "能力-web"); !strings.Contains(got, "更新后的角色") {
+		t.Fatalf("更新人设未生效: %q", got)
+	}
+
+	// 删除自定义：同时清掉引用，回退默认
+	if err := m.DeletePersona(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Resolve("web", "", "能力-web"); !strings.Contains(got, "你是 MineAgent") {
+		t.Fatalf("删除后应回退默认人设: %q", got)
+	}
+
+	// 编辑内置后删除 = 恢复内置正文
+	if _, err := m.SavePersona(Persona{ID: "default", Name: "默认助手", Text: "被改过的默认"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Resolve("web", "", "能力-web"); !strings.Contains(got, "被改过的默认") {
+		t.Fatalf("内置编辑未生效: %q", got)
+	}
+	if err := m.DeletePersona("default"); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Resolve("web", "", "能力-web"); strings.Contains(got, "被改过的默认") {
+		t.Fatalf("内置删除后应恢复: %q", got)
+	}
+}
+
+func TestValidation(t *testing.T) {
+	m := testManager(t)
+	if _, err := m.SavePersona(Persona{Name: "", Text: "x"}); err == nil {
+		t.Fatal("空名称应报错")
+	}
+	if _, err := m.SavePersona(Persona{Name: "x", Text: ""}); err == nil {
+		t.Fatal("空正文应报错")
+	}
+	if _, err := m.SavePersona(Persona{Name: "x", Text: strings.Repeat("a", MaxPersonaLen+1)}); err == nil {
+		t.Fatal("超长正文应报错")
+	}
+	if err := m.SetServicePersona("web", "nope"); err == nil {
+		t.Fatal("不存在的人设应报错")
+	}
+	if err := m.SetServicePersona("nope", "default"); err == nil {
+		t.Fatal("未知服务应报错")
+	}
+	if err := m.SetCapabilities("web", CapabilityOverride{Enabled: true, Text: strings.Repeat("a", MaxCapabilityLen+1)}); err == nil {
+		t.Fatal("超长能力应报错")
+	}
+	if err := m.SetCapabilities("web", CapabilityOverride{Enabled: true, Text: "  "}); err != nil {
+		t.Fatal(err)
+	}
+	if m.Global("web").Enabled {
+		t.Fatal("空白文本不应启用")
 	}
 }
 
 func TestPersistence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "prompts.json")
 	m := New(path)
-	m.Register(Service{ID: "web", DefaultText: func() string { return "默认" }})
-	if err := m.SetGlobal("web", Override{Enabled: true, Text: "覆盖"}); err != nil {
+	m.Register(Service{ID: "web", DefaultText: func() string { return "能力" }})
+	if _, err := m.SavePersona(Persona{Name: "私有", Text: "你是私有角色。"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SetUserAppend("web", "jzk", "追加"); err != nil {
+	if err := m.SetServicePersona("web", "tech"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetUserPersona("jzk", "snarky"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetCapabilities("web", CapabilityOverride{Enabled: true, Text: "覆盖"}); err != nil {
 		t.Fatal(err)
 	}
 
 	m2 := New(path)
-	m2.Register(Service{ID: "web", DefaultText: func() string { return "默认" }})
+	m2.Register(Service{ID: "web", DefaultText: func() string { return "能力" }})
 	if err := m2.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if got := m2.Resolve("web", "jzk", "默认"); got != "覆盖\n\n追加" {
-		t.Fatalf("重启后: %q", got)
+	got := m2.Resolve("web", "jzk", "能力")
+	if !strings.Contains(got, "损友") || !strings.HasSuffix(got, "覆盖") {
+		t.Fatalf("重启后组合不对: %q", got)
 	}
-	// 清空追加后应删除该用户的记录
-	if err := m2.SetUserAppend("web", "jzk", ""); err != nil {
-		t.Fatal(err)
-	}
-	if got := m2.UserAppend("web", "jzk"); got != "" {
-		t.Fatalf("清空后: %q", got)
-	}
-	if err := m2.ResetGlobal("web"); err != nil {
-		t.Fatal(err)
-	}
-	if m2.GlobalEnabled("web") {
-		t.Fatal("重置后不应还有覆盖")
-	}
-}
-
-func TestRegisterDedupAndOrder(t *testing.T) {
-	m := testManager(t)
-	m.Register(Service{ID: "web", Name: "第二个", DefaultText: func() string { return "x" }})
-	svc := m.Services()
-	if len(svc) != 2 || svc[0].ID != "web" || svc[1].ID != "qq" {
-		t.Fatalf("顺序或去重不对: %+v", svc)
-	}
-	if svc[0].Name != "网页" {
-		t.Fatalf("重复注册应保留第一个: %q", svc[0].Name)
+	if len(m2.Personas()) != len(builtinPersonas)+1 {
+		t.Fatalf("人设数量不对: %d", len(m2.Personas()))
 	}
 }

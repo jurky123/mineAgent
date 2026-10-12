@@ -328,8 +328,7 @@ func StatePathFor(storagePath string) string {
 	return filepath.Join(filepath.Dir(storagePath), "wechat.json")
 }
 
-const wechatInstruction = `你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、联网搜索、设提醒），
-当前在个人微信里跟人聊天（消息格式为 [微信名] 内容）。
+const wechatInstruction = `当前在个人微信里跟人聊天（消息格式为 [微信名] 内容）。
 Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态、传送/给物/执行命令需审批）。
 ` +
 	agent.CoreAgentPrinciples + `

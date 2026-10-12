@@ -113,12 +113,12 @@ func main() {
 	if err != nil {
 		log.Warn("load prompts override", "err", err)
 	}
-	pm.Register(prompts.Service{ID: "web", Name: "网页聊天", Desc: "门户 /agent 网页对话", DefaultText: webui.DefaultInstruction})
-	pm.Register(prompts.Service{ID: "qq", Name: "QQ 机器人", Desc: "QQ 官方机器人", DefaultText: qq.DefaultInstruction})
-	pm.Register(prompts.Service{ID: "wecom", Name: "企业微信", Desc: "企微应用回调", DefaultText: wecom.DefaultInstruction})
-	pm.Register(prompts.Service{ID: "aibot", Name: "企微智能机器人", Desc: "企微长连接机器人", DefaultText: aibot.DefaultInstruction})
-	pm.Register(prompts.Service{ID: "wechat", Name: "个人微信", Desc: "ClawBot 直连", DefaultText: wechat.DefaultInstruction})
-	pm.Register(prompts.Service{ID: "minecraft", Name: "Minecraft", Desc: "服内聊天助手", DefaultText: agent.DefaultMCInstruction})
+	pm.Register(prompts.Service{ID: "web", Name: "网页聊天", Desc: "门户 /agent 网页对话", DefaultText: webui.DefaultCapabilities})
+	pm.Register(prompts.Service{ID: "qq", Name: "QQ 机器人", Desc: "QQ 官方机器人", DefaultText: qq.DefaultCapabilities})
+	pm.Register(prompts.Service{ID: "wecom", Name: "企业微信", Desc: "企微应用回调", DefaultText: wecom.DefaultCapabilities})
+	pm.Register(prompts.Service{ID: "aibot", Name: "企微智能机器人", Desc: "企微长连接机器人", DefaultText: aibot.DefaultCapabilities})
+	pm.Register(prompts.Service{ID: "wechat", Name: "个人微信", Desc: "ClawBot 直连", DefaultText: wechat.DefaultCapabilities})
+	pm.Register(prompts.Service{ID: "minecraft", Name: "Minecraft", Desc: "服内聊天助手", DefaultText: agent.DefaultCapabilities})
 
 	hub := session.NewHub(store, log)
 	sess, err := hub.Session(ctx, cfg.Minecraft.SessionID)
@@ -417,18 +417,14 @@ func main() {
 					return
 				}
 				log.Info("agent trigger", "player", chat.Player, "query", query, "messageId", msg.ID)
-				// MC 默认走预建 runner；只有管理员给 minecraft 配了全局覆盖时才改提示词。
-				mcInstruction := ""
-				if prompts.GlobalEnabled("minecraft") {
-					mcInstruction = prompts.Resolve("minecraft", "", agent.DefaultMCInstruction())
-				}
+				// 人设 + MC 内置能力组合（管理员改人设/系统提示词后即时生效）。
 				if !ag.Submit(agent.Request{
 					Session:           sess,
 					Player:            chat.Player,
 					RequesterID:       chat.UUID,
 					Query:             query,
 					TriggerMessageID:  msg.ID,
-					SystemInstruction: mcInstruction,
+					SystemInstruction: prompts.Resolve("minecraft", "", agent.DefaultCapabilities()),
 				}) {
 					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}

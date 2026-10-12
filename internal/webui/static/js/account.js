@@ -36,7 +36,7 @@ function decorateSections() {
   const map = {
     '账号': 'user', '外观': 'sun', '安全': 'shield', '设备': 'devices',
     '游戏': 'gamepad', '关于': 'info',
-    '系统提示词': 'settings', '我的追加提示词': 'pencil',
+    '人设': 'sparkle', '系统提示词': 'settings',
   };
   document.querySelectorAll('.section-title').forEach((el) => {
     const name = map[el.textContent.trim()];
@@ -172,7 +172,9 @@ function renderStats(games) {
   }
 }
 
-// ---------- 系统提示词（管理员全局替换 + 本人网页追加） ----------
+// ---------- 人设（模板 + 按服务切换）+ 系统提示词（管理员） ----------
+
+let PROMPT_DATA = null;
 
 async function renderPrompts() {
   let data;
@@ -181,20 +183,71 @@ async function renderPrompts() {
   } catch (e) {
     return; // 接口不可用时静默，不影响设置页其它部分
   }
+  PROMPT_DATA = data;
+  const rows = document.getElementById('personas-rows');
+  rows.innerHTML = '';
+
+  // 我的人设（网页）：空值 = 跟随服务默认
+  rows.appendChild(personaSelectRow('我在网页端的人设', '只影响你自己的网页对话', false, data.myPersona || '', async (v) => {
+    await apiPost('/api/prompts', { scope: 'user-persona', persona: v });
+    toast('已切换');
+  }));
+
   const adminSection = document.getElementById('prompts-admin-section');
+  const manageBtn = document.getElementById('persona-manage');
   if (data.admin) {
+    manageBtn.hidden = false;
+    for (const svc of data.services || []) {
+      rows.appendChild(personaSelectRow(svc.name, svc.desc || '', true, svc.persona || '', async (v) => {
+        await apiPost('/api/prompts', { scope: 'service-persona', id: svc.id, persona: v });
+        toast('已切换 ' + svc.name + ' 的人设');
+      }));
+    }
     adminSection.hidden = false;
     const box = document.getElementById('prompts-admin');
     box.innerHTML = '';
-    for (const svc of data.services || []) box.appendChild(promptServiceRow(svc));
+    for (const svc of data.services || []) box.appendChild(capabilityRow(svc));
   } else {
+    manageBtn.hidden = true;
     adminSection.hidden = true;
   }
-  const ta = document.getElementById('prompt-user-web');
-  if (ta) ta.value = (data.user && data.user.web) || '';
 }
 
-function promptServiceRow(svc) {
+function personaSelectRow(title, sub, isService, value, onPick) {
+  const row = h('div', 'list-row');
+  const main = h('div', 'list-main');
+  main.appendChild(h('div', 'list-title', title));
+  if (sub) main.appendChild(h('div', 'list-sub', sub));
+  row.appendChild(main);
+
+  const sel = document.createElement('select');
+  sel.className = 'input';
+  sel.style.width = 'auto';
+  sel.style.minWidth = '9rem';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = isService ? '服务默认' : '跟随服务默认';
+  sel.appendChild(none);
+  for (const p of PROMPT_DATA.personas || []) {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.name;
+    sel.appendChild(o);
+  }
+  sel.value = value;
+  sel.onchange = async () => {
+    try {
+      await onPick(sel.value);
+    } catch (e) {
+      toast(e.message || '保存失败', { warn: true });
+      renderPrompts();
+    }
+  };
+  row.appendChild(sel);
+  return row;
+}
+
+function capabilityRow(svc) {
   const g = svc.global || {};
   const custom = !!(g.enabled && (g.text || '').trim());
   const row = h('div', 'list-row');
@@ -204,25 +257,24 @@ function promptServiceRow(svc) {
   row.appendChild(main);
   row.appendChild(h('span', 'badge' + (custom ? ' brand' : ''), custom ? '已自定义' : '内置默认'));
   const btn = h('button', 'btn sm', '编辑');
-  btn.onclick = () => openPromptEditor(svc);
+  btn.onclick = () => openCapabilityEditor(svc);
   row.appendChild(btn);
   return row;
 }
 
-function openPromptEditor(svc) {
+function openCapabilityEditor(svc) {
   const g = svc.global || {};
   let enabled = !!(g.enabled && (g.text || '').trim());
 
   const body = h('div');
-  const ta = h('textarea', 'textarea');
-  ta.value = g.text || '';
-  ta.rows = 12;
-  ta.placeholder = '留空并保存 = 恢复内置默认';
-
   const seg = h('div', 'seg');
   seg.style.marginBottom = '10px';
   const bOff = h('button', 'seg-item', '用内置默认');
   const bOn = h('button', 'seg-item', '使用自定义');
+  const ta = h('textarea', 'textarea');
+  ta.value = g.text || '';
+  ta.rows = 14;
+  ta.placeholder = '留空并保存 = 恢复内置默认';
   const sync = () => {
     bOff.classList.toggle('on', !enabled);
     bOn.classList.toggle('on', enabled);
@@ -237,7 +289,7 @@ function openPromptEditor(svc) {
   if (svc.default) {
     const det = h('details');
     det.style.margin = '0 0 10px';
-    det.appendChild(h('summary', 'list-sub', '查看内置默认提示词'));
+    det.appendChild(h('summary', 'list-sub', '查看内置系统提示词'));
     const pre = h('pre', 'list-sub', svc.default);
     pre.style.whiteSpace = 'pre-wrap';
     pre.style.maxHeight = '180px';
@@ -249,15 +301,15 @@ function openPromptEditor(svc) {
   sync();
 
   openDialog({
-    title: '编辑提示词 · ' + svc.name,
-    width: 640,
+    title: '系统提示词 · ' + svc.name,
+    width: 680,
     body,
     actions: [
       {
         label: '恢复默认', danger: true,
         onClick: async () => {
-          await apiPost('/api/prompts', { scope: 'global', id: svc.id, text: '' });
-          toast('已恢复内置默认');
+          await apiPost('/api/prompts', { scope: 'capability', id: svc.id, text: '' });
+          toast('已恢复内置');
           renderPrompts();
         },
       },
@@ -265,12 +317,12 @@ function openPromptEditor(svc) {
         label: '保存', primary: true,
         onClick: async () => {
           try {
-            await apiPost('/api/prompts', { scope: 'global', id: svc.id, enabled, text: ta.value });
+            await apiPost('/api/prompts', { scope: 'capability', id: svc.id, enabled, text: ta.value });
             toast('已保存');
             renderPrompts();
           } catch (e) {
             toast(e.message || '保存失败', { warn: true });
-            return false; // 失败不关弹窗
+            return false;
           }
         },
       },
@@ -278,20 +330,108 @@ function openPromptEditor(svc) {
   });
 }
 
-(function bindUserPromptSave() {
-  const btn = document.getElementById('prompt-user-save');
-  if (!btn) return;
-  btn.onclick = async () => {
-    const ta = document.getElementById('prompt-user-web');
-    try {
-      await apiPost('/api/prompts', { scope: 'user', id: 'web', text: ta.value });
-      toast('已保存');
-    } catch (e) {
-      toast(e.message || '保存失败', { warn: true });
+// 人设模板管理（管理员）
+function openPersonaManager() {
+  const body = h('div');
+  const list = h('div', 'settings');
+  const render = () => {
+    list.innerHTML = '';
+    for (const p of (PROMPT_DATA && PROMPT_DATA.personas) || []) {
+      const row = h('div', 'list-row');
+      const main = h('div', 'list-main');
+      main.appendChild(h('div', 'list-title', p.name));
+      if (p.desc) main.appendChild(h('div', 'list-sub', p.desc));
+      row.appendChild(main);
+      const edit = h('button', 'btn sm', '编辑');
+      edit.onclick = () => openPersonaEdit(p, reloadPersonas);
+      row.appendChild(edit);
+      const del = h('button', 'btn sm' + (p.builtin ? '' : ' danger'), p.builtin ? '恢复默认' : '删除');
+      del.onclick = async () => {
+        const ok = await confirmDialog({
+          title: p.builtin ? '恢复内置人设？' : '删除人设？',
+          body: p.name, confirmText: p.builtin ? '恢复' : '删除', danger: true,
+        });
+        if (!ok) return;
+        try {
+          await apiPost('/api/prompts', { scope: 'persona-delete', id: p.id });
+          toast('已处理');
+          await reloadPersonas();
+        } catch (e) {
+          toast(e.message || '操作失败', { warn: true });
+        }
+      };
+      row.appendChild(del);
+      list.appendChild(row);
     }
   };
-})();
+  const reloadPersonas = async () => {
+    PROMPT_DATA = await apiGet('/api/prompts');
+    render();
+    renderPrompts();
+  };
+  render();
+  body.appendChild(list);
+  openDialog({
+    title: '人设模板', width: 620, body,
+    actions: [
+      { label: '新建人设', onClick: () => { openPersonaEdit({ id: '', name: '', desc: '', text: '' }, reloadPersonas); return false; } },
+      { label: '关闭', primary: true },
+    ],
+  });
+}
 
+function openPersonaEdit(p, onSaved) {
+  const body = h('div');
+  const name = h('input', 'input');
+  name.type = 'text';
+  name.value = p.name || '';
+  name.placeholder = '名称，如：毒舌损友';
+  name.maxLength = 40;
+  const desc = h('input', 'input');
+  desc.type = 'text';
+  desc.value = p.desc || '';
+  desc.placeholder = '一句话简介';
+  desc.maxLength = 200;
+  desc.style.marginTop = '8px';
+  const ta = h('textarea', 'textarea');
+  ta.value = p.text || '';
+  ta.rows = 10;
+  ta.placeholder = '人设正文：你是谁、什么性格、怎么说话（只写角色，能力与规则由系统提示词保证）';
+  ta.style.marginTop = '8px';
+  body.appendChild(name);
+  body.appendChild(desc);
+  body.appendChild(ta);
+
+  openDialog({
+    title: p.id ? '编辑人设' : '新建人设',
+    width: 620,
+    body,
+    actions: [
+      {
+        label: '保存', primary: true,
+        onClick: async () => {
+          try {
+            await apiPost('/api/prompts', {
+              scope: 'persona-save',
+              data: { id: p.id || '', name: name.value, desc: desc.value, text: ta.value },
+            });
+            toast('已保存');
+            if (onSaved) onSaved();
+            renderPrompts();
+          } catch (e) {
+            toast(e.message || '保存失败', { warn: true });
+            return false;
+          }
+        },
+      },
+    ],
+  });
+}
+
+(function bindPersonaManager() {
+  const btn = document.getElementById('persona-manage');
+  if (btn) btn.onclick = openPersonaManager;
+})();
 let firstLoad = true;   // 只有首次加载做淡入，之后刷新（如退出其他设备）直接替换
 const kids = (...ids) => ids.flatMap((id) => [...document.getElementById(id).children]);
 

@@ -320,8 +320,7 @@ func firstLine(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-const aibotInstruction = `你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、联网搜索、设提醒），
-当前在企业微信「智能机器人」里跟人聊天（单聊，或被 @ 的群聊，消息格式为 [userid] 内容）。
+const aibotInstruction = `当前在企业微信「智能机器人」里跟人聊天（单聊，或被 @ 的群聊，消息格式为 [userid] 内容）。
 Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态、传送/给物/执行命令需审批）。
 ` +
 	agent.CoreAgentPrinciples + `

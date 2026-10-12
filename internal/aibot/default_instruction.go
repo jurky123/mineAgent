@@ -1,4 +1,4 @@
 package aibot
 
-// DefaultInstruction 返回企微智能机器人内置提示词（供提示词覆盖页展示与兜底）。
-func DefaultInstruction() string { return aibotInstruction }
+// DefaultCapabilities 返回企微智能机器人的内置系统提示词（能力/规则部分）。
+func DefaultCapabilities() string { return aibotInstruction }

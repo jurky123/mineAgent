@@ -478,8 +478,7 @@ func firstLine(s string, max int) string {
 	return string(r[:max]) + "…"
 }
 
-const qqInstruction = `你是 MineAgent，一个能动手的 agent（写代码/执行、查资料、画图、收发文件、联网搜索、
-设提醒），当前在 QQ 里跟人聊天（可能是服主私聊，也可能是玩家群，消息格式为 [QQ名] 内容）。
+const qqInstruction = `当前在 QQ 里跟人聊天（可能是服主私聊，也可能是玩家群，消息格式为 [QQ名] 内容）。
 Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态、传送/给物/执行命令需审批），
 不要把自己只当成服的客服。
 ` +

@@ -1,4 +1,4 @@
 package qq
 
-// DefaultInstruction 返回 QQ 通道内置提示词（供提示词覆盖页展示与兜底）。
-func DefaultInstruction() string { return qqInstruction }
+// DefaultCapabilities 返回 QQ 通道的内置系统提示词（能力/规则部分）。
+func DefaultCapabilities() string { return qqInstruction }

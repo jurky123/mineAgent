@@ -1,4 +1,4 @@
 package wechat
 
-// DefaultInstruction 返回个人微信通道内置提示词（供提示词覆盖页展示与兜底）。
-func DefaultInstruction() string { return wechatInstruction }
+// DefaultCapabilities 返回个人微信通道的内置系统提示词（能力/规则部分）。
+func DefaultCapabilities() string { return wechatInstruction }

@@ -1,4 +1,4 @@
 package wecom
 
-// DefaultInstruction 返回企微通道内置提示词（供提示词覆盖页展示与兜底）。
-func DefaultInstruction() string { return wecomInstruction }
+// DefaultCapabilities 返回企微通道的内置系统提示词（能力/规则部分）。
+func DefaultCapabilities() string { return wecomInstruction }

@@ -1,0 +1,82 @@
+{
+  "listen": "127.0.0.1:8765",
+  "token": "",
+  "logLevel": "info",
+  "minecraft": {
+    "trigger": "@agent",
+    "sessionId": "minecraft-main",
+    "replyMode": "broadcast"
+  },
+  "qq": {
+    "appId": "102789721",
+    "apiBase": "https://api.bot.qq.com",
+    "adminOpenIds": [
+      "279C27AF6BE1C49472D2E4292C6A0BCF"
+    ],
+    "minIntervalMs": 1500,
+    "maxPendingPerUser": 2
+  },
+  "wecom": {
+    "corpId": "ww838177127fc63526",
+    "agentId": 1000002,
+    "secret": "FO8ZHzMtqNTSJzjc0bIfcxw0Z06LhODfjNpiw6RNoac",
+    "token": "8vIKwkw6eS0wh2ttP7aGhQ",
+    "encodingAesKey": "St2Gid7SdyL72AMG8dKbQgkcJu1Q0dRRBxJoFKIkj9S",
+    "port": 80,
+    "adminUserIds": [
+      "JiangZhiKun"
+    ],
+    "minIntervalMs": 1500,
+    "maxPendingPerUser": 2
+  },
+  "aibot": {
+    "botId": "aibz2X9bkJT66l4HDgX3c4RNansU0J7xc84",
+    "secret": "VQcyEQnmaCDmwEqIqsVKYzRB8aZuwiWP0I9oH8QFtem",
+    "adminUserIds": [
+      "JiangZhiKun"
+    ],
+    "minIntervalMs": 1500
+  },
+  "model": {
+    "baseURL": "https://opencode.ai/zen/go/v1",
+    "apiKey": "sk-wbt7aYspZKPbJtLifDlUnzOe49cHln6qqx54kYSMA7gTDWhTEZDMuvzof1AaDBsW",
+    "name": "deepseek-v4.1-flash",
+    "options": [],
+    "providers": [
+      {
+        "id": "openrouter",
+        "label": "OpenRouter",
+        "baseURL": "https://openrouter.ai/api/v1",
+        "apiKey": "",
+        "freeOnly": true,
+        "models": []
+      }
+    ]
+  },
+  "storage": {
+    "path": "/home/ubuntu/mineagent-data/mineagent.db"
+  },
+  "tools": {
+    "approvalTimeoutSeconds": 180
+  },
+  "workspace": {
+    "root": "/home/ubuntu/mineagent-data/workspace",
+    "maxFileBytes": 65536,
+    "execTimeoutSec": 15,
+    "maxOutputBytes": 8192
+  },
+  "web": {
+    "listen": "[::]:8766",
+    "users": [],
+    "adminUsers": [
+      "jzk"
+    ],
+    "allowedOrigins": [
+      "*"
+    ],
+    "maxUploadMB": 20,
+    "minIntervalMs": 1000,
+    "dataDir": "/home/ubuntu/mineagent-data/webui",
+    "domain": "zkun.art"
+  }
+}

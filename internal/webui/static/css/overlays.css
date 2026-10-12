@@ -95,3 +95,22 @@
 .vnav:hover { background: rgba(255,255,255,.18); }
 .vnav.prev { left: 14px; } .vnav.next { right: 14px; }
 .vmeta { padding: 8px 14px 14px; color: #8a8a8a; font-size: 12px; text-align: center; }
+
+/* ---------- 动效统一（与门户 ds.css 同一套 token）----------
+   按钮：颜色过渡 + 按下缩放；弹窗：卡片随遮罩一起进出（原来关闭时只有遮罩在淡出，卡片原样消失）。 */
+.icon-btn, .icon-button, .tool-btn, .send, .btn, .nav-item, .suggests button, #loadolder, .po-item {
+  transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease,
+    filter var(--motion-ui) ease, transform 160ms var(--ease-out);
+}
+.icon-btn:active, .icon-button:active, .tool-btn:active, .btn:active, .nav-item:active,
+.suggests button:active, #loadolder:active, .send.ready:active {
+  transform: scale(var(--press-scale)); transition-duration: var(--motion-press);
+}
+.send.ready:active { transform: scale(.92); }
+.modal.on { animation: fadein 180ms ease; }
+.modal.on .modal-card { animation: modal-in 220ms var(--ease-out); }
+.modal.closing { animation: fadein 140ms ease reverse forwards; }
+.modal.closing .modal-card { animation: modal-out 130ms var(--ease-in) forwards; }
+@keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
+@keyframes modal-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
+.popover.on { animation: pop 160ms var(--ease-out); }

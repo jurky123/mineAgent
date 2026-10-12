@@ -1,6 +1,6 @@
 // history.js — 对局历史：列表（和谁下、胜负）+ 逐步回放（原始着法重演）。
 import { boot, apiGet, fmtTime } from './shell.js';
-import { h, icon, gameIcon } from './ds.js';
+import { h, icon, gameIcon, reveal } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -74,6 +74,8 @@ function renderList(list, hasMore) {
     box.appendChild(row);
   }
   document.getElementById('more').hidden = !hasMore;
+  if (!renderList.done) reveal(box.children);   // 只在首次加载淡入；"加载更多"时不重播
+  renderList.done = true;
 }
 
 // ---------- 回放 ----------

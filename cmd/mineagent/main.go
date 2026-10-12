@@ -285,6 +285,8 @@ func main() {
 		portalSrv.WithGames(games.NewAPI(log, gamesMgr, acct, portalSrv.Auth()).Handler())
 		// JCEF 内核镜像（Rinku download-mirror 用；可配重定向到加速源，目录作回源）。
 		portalSrv.WithRinkuJCEF(filepath.Join(dataDir, "rinku-jcef"), cfg.Web.RinkuJcefRedirect)
+		// 浏览器屏内容反代（/display/* → Paper 出口代理）：屏地址走 HTTPS。
+		portalSrv.WithScreenProxy(cfg.Web.ScreenProxy)
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
 		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
 		// 必须在 WithGames 之后取 Handler()——门户 mux 是构建时快照，早取就没有 games 路由。

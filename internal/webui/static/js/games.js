@@ -1,6 +1,6 @@
 // games.js — 游戏目录：只负责「发现游戏」，具体房间/对局在各自的游戏页里。
 import { shell, boot, apiGet } from './shell.js';
-import { h, icon, gameIcon } from './ds.js';
+import { h, icon, gameIcon, reveal } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -79,9 +79,9 @@ function catalogCard(game, status) {
     const { games } = await apiGet('/api/games');
     const list = (games || []).filter((g) => g.enabled);
     if (!list.length) { host.appendChild(h('div', 'card', '暂时还没有可玩的游戏')); return; }
-    for (const g of list) {
-      host.appendChild(catalogCard(g, await gameStatus(g.id)));
-    }
+    const stats = await Promise.all(list.map((g) => gameStatus(g.id)));
+    list.forEach((g, i) => host.appendChild(catalogCard(g, stats[i])));
+    reveal(host.children);
   } catch (e) {
     host.appendChild(h('div', 'card', '加载失败：' + e.message));
   }

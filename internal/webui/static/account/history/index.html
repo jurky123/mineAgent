@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="mineagent-version" content="__VER__">
+<script>
+  // 主题要在首屏渲染前定好，避免深色用户每次跳页闪白（shell.js 的 applyTheme 之后会再同步一次）
+  (function () {
+    try {
+      var mode = localStorage.getItem('mineagent.theme') || 'system';
+      var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.mode = mode;
+    } catch (e) {}
+  })();
+</script>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#f7f7f8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)">

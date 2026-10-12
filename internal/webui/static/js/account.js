@@ -1,6 +1,6 @@
 // account.js — 设置页：账号 / 外观 / 安全 / 设备 / 游戏 / 关于。
 import { shell, boot, apiGet, apiPost, logout, themeMode, setTheme, applyTheme } from './shell.js';
-import { h, icon, toast, confirmDialog, notifyEnabled, setNotifyEnabled } from './ds.js';
+import { h, icon, toast, confirmDialog, notifyEnabled, setNotifyEnabled, segThumb, reveal } from './ds.js';
 import { sfxEnabled, setSfxEnabled } from './sfx.js';
 
 const qs = new URLSearchParams(location.search);
@@ -96,17 +96,27 @@ function renderSecurity() {
   box.appendChild(r2);
 }
 
-function renderThemeSeg() {
-  const seg = document.getElementById('theme-seg');
-  const paint = () => {
-    seg.innerHTML = '';
-    for (const [id, label] of [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']]) {
-      const b = h('button', 'seg-item' + (themeMode() === id ? ' on' : ''), label);
-      b.onclick = () => { setTheme(id); paint(); };
-      seg.appendChild(b);
-    }
+// segControl 分段开关：只建一次，之后只切 .on，选中背景由滑块滑过去（不再整段重建）
+function segControl(seg, options, get, set) {
+  seg.innerHTML = '';
+  let syncThumb = () => {};
+  const items = options.map(([val, label]) => {
+    const b = h('button', 'seg-item', label);
+    b.onclick = async () => { await set(val); sync(); };
+    seg.appendChild(b);
+    return [val, b];
+  });
+  const sync = () => {
+    for (const [val, b] of items) b.classList.toggle('on', get() === val);
+    syncThumb();
   };
-  paint();
+  sync();
+  syncThumb = segThumb(seg);
+}
+
+function renderThemeSeg() {
+  segControl(document.getElementById('theme-seg'),
+    [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']], themeMode, setTheme);
 }
 
 function renderSessions(list) {
@@ -161,60 +171,42 @@ function renderStats(games) {
   }
 }
 
+let firstLoad = true;   // 只有首次加载做淡入，之后刷新（如退出其他设备）直接替换
+const kids = (...ids) => ids.flatMap((id) => [...document.getElementById(id).children]);
+
 async function reload() {
   const me = shell.user;
   renderHeader(me);
-  const { sessions } = await apiGet('/api/account/sessions');
+  const [{ sessions }, stats] = await Promise.all([
+    apiGet('/api/account/sessions'),
+    apiGet('/api/account/stats').catch(() => null),   // 没有战绩就不显示
+  ]);
   renderAccountRows(me, sessions.length);
   renderSessions(sessions);
-  try {
-    const { games } = await apiGet('/api/account/stats');
-    renderStats(games);
-  } catch (e) { /* 没有战绩就不显示 */ }
+  if (stats) renderStats(stats.games);
+  if (firstLoad) reveal(kids('acc-rows', 'acc-sessions', 'acc-stats'));
+  firstLoad = false;
 }
 
 // 桌面通知开关（需要浏览器授权；默认关）
 (function bindNotifyToggle() {
   const box = document.getElementById('acc-notify');
   if (!box) return;
-  const paint = () => {
-    box.innerHTML = '';
-    const seg = document.createElement('div');
-    seg.className = 'seg';
-    for (const [val, label] of [[true, '开'], [false, '关']]) {
-      const b = document.createElement('button');
-      b.className = 'seg-item' + (notifyEnabled() === val ? ' on' : '');
-      b.textContent = label;
-      b.onclick = async () => {
-        const ok = await setNotifyEnabled(val);
-        if (val && !ok) toast('浏览器没有授权通知', { warn: true });
-        paint();
-      };
-      seg.appendChild(b);
-    }
-    box.appendChild(seg);
-  };
-  paint();
+  const seg = h('div', 'seg');
+  box.appendChild(seg);
+  segControl(seg, [[true, '开'], [false, '关']], notifyEnabled, async (val) => {
+    const ok = await setNotifyEnabled(val);
+    if (val && !ok) toast('浏览器没有授权通知', { warn: true });
+  });
 })();
 
 // 游戏音效开关（A/B 之外最实用的设置；默认开）
 (function bindSfxToggle() {
   const box = document.getElementById('acc-sfx');
   if (!box) return;
-  const paint = () => {
-    box.innerHTML = '';
-    const seg = document.createElement('div');
-    seg.className = 'seg';
-    for (const [val, label] of [[true, '开'], [false, '关']]) {
-      const b = document.createElement('button');
-      b.className = 'seg-item' + (sfxEnabled() === val ? ' on' : '');
-      b.textContent = label;
-      b.onclick = () => { setSfxEnabled(val); paint(); };
-      seg.appendChild(b);
-    }
-    box.appendChild(seg);
-  };
-  paint();
+  const seg = h('div', 'seg');
+  box.appendChild(seg);
+  segControl(seg, [[true, '开'], [false, '关']], sfxEnabled, setSfxEnabled);
 })();
 
 document.getElementById('revoke-others').onclick = async () => {

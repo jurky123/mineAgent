@@ -166,6 +166,10 @@ type Web struct {
 	DisplayAPI string `json:"displayApi"`
 	// MineDisplay 控制 API 的 Bearer 令牌文件（插件首次启动自动生成）。
 	DisplayTokenFile string `json:"displayTokenFile"`
+	// 浏览器屏内容反代目标（/display/* → Paper 出口代理，默认本机回环）。
+	// 客户端屏地址因此走 https://<域名>/display/<token>，全程 HTTPS；
+	// 置空则关闭反代（客户端会直连 Paper 的公开 HTTP 端口）。
+	ScreenProxy string `json:"screenProxy"`
 	// 快捷指令（+ 菜单的"技能"）：点一下把 prompt 填进输入框。
 	// 留空用内置默认（见 DefaultSkills）。
 	Skills []Skill `json:"skills"`
@@ -198,6 +202,7 @@ func DefaultWeb() Web {
 
 		DisplayAPI:       "http://127.0.0.1:8769",
 		DisplayTokenFile: "/home/ubuntu/minecraft/plugins/MineDisplay/control-token.txt",
+		ScreenProxy:      "http://127.0.0.1:8768",
 	}
 }
 
@@ -409,6 +414,9 @@ func Load(path string) (Config, error) {
 	if cfg.Web.DisplayTokenFile == "" {
 		cfg.Web.DisplayTokenFile = dweb.DisplayTokenFile
 	}
+	if cfg.Web.ScreenProxy == "" {
+		cfg.Web.ScreenProxy = dweb.ScreenProxy
+	}
 	if len(cfg.Web.Skills) == 0 {
 		cfg.Web.Skills = dweb.Skills
 	}
@@ -520,6 +528,7 @@ func applyEnv(cfg *Config) {
 	set(&cfg.Web.RinkuJcefRedirect, "MINEAGENT_RINKU_JCEF_REDIRECT")
 	set(&cfg.Web.DisplayAPI, "MINEAGENT_DISPLAY_API")
 	set(&cfg.Web.DisplayTokenFile, "MINEAGENT_DISPLAY_TOKEN_FILE")
+	set(&cfg.Web.ScreenProxy, "MINEAGENT_SCREEN_PROXY")
 	set(&cfg.Workspace.Root, "MINEAGENT_WORKSPACE")
 	set(&cfg.Workspace.Review.BaseURL, "MINEAGENT_REVIEW_BASE_URL")
 	set(&cfg.Workspace.Review.APIKey, "MINEAGENT_REVIEW_API_KEY")

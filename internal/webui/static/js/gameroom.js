@@ -1,7 +1,7 @@
 // gameroom.js — 棋类房间的公共部分（大厅 / 房间信息 / 着法 / SSE / 动作按钮）。
 // 国际象棋与五子棋共用；各游戏只负责自己的棋盘渲染与走子交互。
 import { shell, apiGet, apiPost } from './shell.js';
-import { h, icon, toast, confirmDialog, copyText, openDialog, withPending, notify } from './ds.js';
+import { h, icon, toast, confirmDialog, copyText, openDialog, withPending, notify, reveal, swapView } from './ds.js';
 import { play } from './sfx.js';
 
 export const SIDE_LABEL = { white: '白方', black: '黑方' };
@@ -143,8 +143,9 @@ function ownMoveCount(room) {
 let phase = { key: '', status: '', turn: '', inCheck: false, lastMove: '', pieces: 0, cells: 0 };
 let flashTimer = null;
 
-// boardFlash 在棋盘上方居中弹一条短提示（对局开始 / 轮到你 / 将军）。
-export function boardFlash(text, ms = 1300) {
+// boardFlash 在棋盘上弹一条短提示。kind='center'：开局这种一次性的大提示，放棋盘中央；
+// kind='hint'：每回合的"轮到你 / 将军"，做成自己玩家栏里的小 pill，不挡棋盘。
+export function boardFlash(text, ms = 1300, kind = 'center') {
   const host = document.querySelector('.board-col') || document.querySelector('.chess-wrap');
   if (!host) return;
   let el = host.querySelector('.board-flash');
@@ -153,7 +154,10 @@ export function boardFlash(text, ms = 1300) {
     host.appendChild(el);
   }
   el.textContent = text;
-  el.classList.remove('on');
+  el.className = 'board-flash ' + kind + (/将军/.test(text) ? ' alert' : '');
+  // hint 放在棋盘下方"自己"那条玩家栏的中间空白处：完全不挡棋子
+  const bar = kind === 'hint' ? host.querySelector('#bottom-player') : null;
+  el.style.top = bar ? (bar.offsetTop + bar.offsetHeight / 2) + 'px' : '';
   void el.offsetWidth; // 重启 CSS 动画
   el.classList.add('on');
   clearTimeout(flashTimer);
@@ -188,7 +192,7 @@ function notePhase(room) {
     return;
   }
   if (next.status === 'playing' && prev.turn !== next.turn && next.turn === room.you) {
-    boardFlash(next.inCheck ? '将军！轮到你' : '轮到你', 1100);
+    boardFlash(next.inCheck ? '将军！轮到你' : '轮到你', 1400, 'hint');
     play(next.inCheck ? 'check' : 'yourTurn');
     notify(next.inCheck ? '将军！轮到你' : '轮到你走', '（' + (SIDE_LABEL[room.you] || '') + '）', 'mine-turn');
   }
@@ -580,6 +584,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   sec.appendChild(list);
   el.appendChild(sec);
 
+  let firstRooms = true;
   const loadRooms = async () => {
     try {
       const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
@@ -600,12 +605,14 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
         item.appendChild(b);
         list.appendChild(item);
       }
+      if (firstRooms) reveal(list.children);
+      firstRooms = false;
     } catch (e) {
       list.innerHTML = '';
       list.appendChild(h('div', 'empty', '加载失败：' + e.message));
     }
   };
-  refresh.onclick = loadRooms;
+  refresh.onclick = () => withPending(refresh, loadRooms);
   loadRooms();
 }
 

@@ -176,19 +176,35 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
   opacity: 0; pointer-events: none; z-index: 6; white-space: nowrap;
   box-shadow: var(--shadow-raised);
 }
-.board-flash.on { animation: flash-pop 1.3s cubic-bezier(.2, .8, .2, 1); }
+.board-flash.center.on { animation: flash-pop 1.3s var(--ease-out); }
 @keyframes flash-pop {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(.85); }
-  16% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  76% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.92); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  78% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(.98); }
 }
-
-/* 落子 / 棋子动画 */
-.gpoint.last .stone { animation: stone-drop .22s cubic-bezier(.2, 1.5, .5, 1); }
-@keyframes stone-drop { from { transform: scale(1.35); opacity: .55; } to { transform: none; opacity: 1; } }
-.sq.last .pc { animation: piece-in .18s ease-out; }
-@keyframes piece-in { from { transform: scale(1.16); } to { transform: none; } }
+/* 每回合的"轮到你"：自己玩家栏中间的小 pill（top 由 JS 对齐玩家栏中线），轻轻上浮出现、停一会儿再淡出 */
+.board-flash.hint {
+  transform: translate(-50%, -50%);
+  padding: 4px 13px; border-radius: 999px; font-size: 13.5px; font-weight: 650; letter-spacing: .3px;
+  background: var(--brand-soft); color: var(--brand);
+  border: 1px solid var(--interactive-border); box-shadow: none;
+}
+.board-flash.hint.alert { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.board-flash.hint.on { animation: hint-pop 1.4s var(--ease-out); }
+@keyframes hint-pop {
+  0% { opacity: 0; transform: translate(-50%, calc(-50% + 6px)) scale(.96); }
+  14% { opacity: 1; transform: translate(-50%, -50%); }
+  80% { opacity: 1; transform: translate(-50%, -50%); }
+  100% { opacity: 0; transform: translate(-50%, -50%); }
+}
+/* 落子：从略大、略透明"落"到盘面，轻微回弹；棋子落位只做很小的缩放 */
+.gpoint.last .stone { animation: stone-drop 240ms var(--ease-spring); }
+@keyframes stone-drop { from { transform: scale(1.22); opacity: .4; } to { transform: none; opacity: 1; } }
+.sq.last .pc { animation: piece-in 200ms var(--ease-out); }
+@keyframes piece-in { from { transform: scale(1.1); opacity: .7; } to { transform: none; opacity: 1; } }
+/* 最近一步 / 选中格的高亮淡入，而不是一下子出现 */
+.sq.last::before, .sq.sel::before { animation: fadein 160ms ease; }
 
 /* 对局中：棋盘放大、单列居中（房间/着法移到棋盘下方），开局进场动画。
    等待房间保持原来的两栏布局。 */
@@ -205,7 +221,7 @@ body.game-focus .room-layout {
   justify-items: center;
 }
 /* 进场动画只在"开始对局"那一下播放，终局不再动 */
-body.game-live .room-layout { animation: game-in .3s cubic-bezier(.2, .8, .2, 1); }
+body.game-live .room-layout { animation: game-in 360ms var(--ease-out); }
 /* 轮到的玩家：dot 高亮 + 名字加粗（文字提示交给状态行/中央 flash） */
 .player-line.acting .dot { box-shadow: 0 0 0 3px var(--brand-soft); border-color: var(--brand); }
 .player-line.acting .player-name { font-weight: 650; }
@@ -262,6 +278,7 @@ body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; 
 .status-bar {
   align-self: center; width: auto; padding: 6px 16px; border-radius: 999px;
   background: var(--surface-muted); gap: 8px; margin-top: 4px;
+  transition: background-color 240ms ease, color 240ms ease;
 }
 .status-bar.active { background: var(--brand-soft); }
 .status-bar.done { background: var(--surface-muted); }
@@ -276,7 +293,7 @@ body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; 
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--border); border-radius: var(--radius-large);
   box-shadow: var(--shadow-raised); padding: 18px 26px;
-  animation: result-in .26s cubic-bezier(.2, .8, .2, 1);
+  animation: result-in 320ms var(--ease-out) 120ms both;   /* 等最后一手落定再出来 */
   backdrop-filter: blur(2px);
 }
 .result-title { font-size: 24px; font-weight: 750; letter-spacing: .5px; }

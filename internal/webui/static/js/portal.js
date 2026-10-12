@@ -1,6 +1,6 @@
 // portal.js —— 首页：Agent 一级入口 + MC 状态 + 游戏 + 最新动态（Bento 布局）。
 import { shell, boot, apiGet, fmtTime } from './shell.js';
-import { h, icon, toast, openDialog, confirmDialog, gameIcon } from './ds.js';
+import { h, icon, toast, openDialog, confirmDialog, gameIcon, reveal } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -294,6 +294,8 @@ function paint(data) {
   }
   const host = home();
   host.innerHTML = '';
+  const first = !paint.done;   // 骨架 → 内容：首次淡入，发动态后的刷新直接替换
+  paint.done = true;
 
   const apps = data.apps || [];
   const hero = apps.find((a) => a.role === 'hero');
@@ -328,6 +330,7 @@ function paint(data) {
   if (!hero && !status && !content.length && !feed.length) {
     host.appendChild(h('div', 'card', '门户暂无内容'));
   }
+  if (first) reveal(host.querySelectorAll(':scope > .home-top > *, :scope > :not(.home-top)'));
 }
 
 function demoData() {

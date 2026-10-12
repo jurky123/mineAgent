@@ -33,6 +33,8 @@ type Server struct {
 
 	rinkuJcef *rinkujcef.Handler // JCEF 内核镜像（Rinku download-mirror 用，可为 nil）
 
+	screenProxy *screenProxy // 浏览器屏内容反代（/display/* → Paper 出口代理，可为 nil）
+
 	acme      *autocert.Manager // 启用 HTTPS 时才有
 	tlsDomain string
 	tlsSrv    *http.Server
@@ -58,6 +60,15 @@ func (s *Server) WithGames(h http.Handler) *Server {
 func (s *Server) WithRinkuJCEF(dir, redirectBase string) *Server {
 	if dir != "" || redirectBase != "" {
 		s.rinkuJcef = &rinkujcef.Handler{Dir: dir, RedirectBase: redirectBase}
+	}
+	return s
+}
+
+// WithScreenProxy 挂上浏览器屏内容反代（/display/* → Paper 出口代理）。
+// target 为空或非法则跳过（客户端会直连 Paper 的 8768，退化为明文 HTTP）。
+func (s *Server) WithScreenProxy(target string) *Server {
+	if target != "" {
+		s.screenProxy = newScreenProxy(target)
 	}
 	return s
 }
@@ -107,6 +118,11 @@ func (s *Server) Handler() http.Handler {
 	}
 	// 显示屏控制（MineDisplay 本地控制 API 代理）：GET 任意登录用户，写操作限管理员。
 	mux.HandleFunc("/api/display/", s.handleDisplayProxy)
+	// 浏览器屏内容反代：客户端拿到的屏地址是 https://<域名>/display/<token>，
+	// 由此转到 Paper 出口代理（本机回环），内容与令牌全程 HTTPS。
+	if s.screenProxy != nil {
+		mux.Handle("/display/", s.screenProxy)
+	}
 	// PWA：manifest 与 Service Worker（注入版本号；纯网络 SW，不做离线缓存）
 	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
 		b, err := webui.RenderPage("manifest.webmanifest")

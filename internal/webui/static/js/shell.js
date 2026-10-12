@@ -2,7 +2,7 @@
 // 页面约定：<div id="shell-top"></div> + 自己的内容 + 调 shell.boot(active)。
 // 未登录时渲染整页登录态（不是弹窗），登录后才进入门户。
 
-import { h, icon, toast, gameIcon } from './ds.js';
+import { h, icon, toast, gameIcon, segThumb, reducedMotion } from './ds.js';
 
 // 命令面板里的棋类图标（用真实棋子/石图）
 function gameIconEl(id, cls) { return gameIcon(id, cls); }
@@ -11,6 +11,7 @@ const TOKEN_KEY = 'mineagent.token';
 const LOGIN_SLOGAN = '欢迎━(*｀∀´*)ノ亻!';
 const NAME_KEY = 'mineagent.name';
 const LAST_KEY = 'mineagent.lastName';
+const SHELL_CACHE_KEY = 'mineagent.shell';   // 上次的 apps + user：新页面首帧就画完整顶栏，不等接口
 
 export const shell = {
   token: localStorage.getItem(TOKEN_KEY) || '',
@@ -50,9 +51,13 @@ export function applyTheme() {
 
 export function setTheme(mode) {
   localStorage.setItem('mineagent.theme', mode);
-  // 整页 crossfade，避免几千个元素同时翻色（不支持的浏览器直接瞬时切换）
-  if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.startViewTransition(() => applyTheme());
+  // 整页 crossfade，避免几千个元素同时翻色（不支持的浏览器直接瞬时切换）。
+  // html.vt-theme 让转场只做淡化、不套用跨页的上浮位移。
+  if (document.startViewTransition && !reducedMotion()) {
+    const root = document.documentElement;
+    root.classList.add('vt-theme');
+    const vt = document.startViewTransition(() => applyTheme());
+    vt.finished.finally(() => root.classList.remove('vt-theme'));
   } else {
     applyTheme();
   }
@@ -107,6 +112,7 @@ export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(NAME_KEY);
   localStorage.removeItem('mineagent.admin');
+  localStorage.removeItem(SHELL_CACHE_KEY);
 }
 
 export async function logout() {
@@ -223,8 +229,10 @@ function paintTop(active) {
 
   const nav = h('nav', 'nav');
   const mk = (label, path, iconName) => {
-    const a = h('a', 'nav-item' + (path === active ? ' on' : ''));
+    const on = path.split('?')[0] === active;
+    const a = h('a', 'nav-item' + (on ? ' on' : ''));
     a.href = path;
+    if (on) a.appendChild(h('span', 'nav-pill'));
     a.appendChild(icon(iconName));
     a.appendChild(h('span', null, label));
     nav.appendChild(a);
@@ -270,7 +278,9 @@ function paintTop(active) {
   accBtn.title = shell.user ? shell.user.name : '登录';
   if (shell.user) {
     const av = h('span', 'avatar', (shell.user.name[0] || '?'));
-    av.style.viewTransitionName = 'user-avatar';   // Portal → Account 的头像共享元素
+    // Portal → Account 的头像共享元素。账号页自己的大头像已经叫 user-avatar，
+    // 名字重复会让浏览器放弃整个转场（连主题切换的淡化也没了），所以在账号页顶栏头像不命名。
+    if (!active.startsWith('/account')) av.style.viewTransitionName = 'user-avatar';
     accBtn.appendChild(av);
   }
   else accBtn.appendChild(icon('user'));
@@ -287,13 +297,15 @@ function paintTop(active) {
       b.onclick = fn;
       accPop.appendChild(b);
     };
-    item('我的账号', 'user', () => { location.href = '/account?ui=1'; });
+    item('我的账号', 'user', () => { location.href = '/account'; });
     // 手机上没有主题按钮：把外观放进账号菜单（三个明确选项）
     const themeRow = h('div', 'menu-theme');
     themeRow.appendChild(h('div', 'menu-theme-title', '外观'));
     const seg = h('div', 'seg');
+    let syncThumb = () => {};
     const paintSeg = () => {
       seg.querySelectorAll('.seg-item').forEach((el) => el.classList.toggle('on', el.dataset.mode === themeMode()));
+      syncThumb();
     };
     for (const m of MODES) {
       const b = h('button', 'seg-item', m.label);
@@ -302,6 +314,7 @@ function paintTop(active) {
       seg.appendChild(b);
     }
     paintSeg();
+    syncThumb = segThumb(seg);
     themeRow.appendChild(seg);
     accPop.appendChild(themeRow);
     item('退出登录', 'logout', () => logout(), 'danger-item');
@@ -320,7 +333,7 @@ function paintTop(active) {
 
   host.appendChild(bar);
   paintTabbar(active);
-  document.addEventListener('click', () => closePops());
+  if (!paintTop.bound) { document.addEventListener('click', () => closePops()); paintTop.bound = true; }
 }
 
 // 手机底部 tabbar：拇指可达；≤640px 显示（顶栏导航同时隐藏）
@@ -336,9 +349,13 @@ function paintTabbar(active) {
   const bar = h('nav', 'tabbar');
   bar.id = 'tabbar';
   for (const it of items) {
-    const a = h('a', 'tab' + (it.path === active || (it.path !== '/' && active.startsWith(it.path)) ? ' on' : ''));
+    const on = it.path === active || (it.path !== '/' && active.startsWith(it.path));
+    const a = h('a', 'tab' + (on ? ' on' : ''));
     a.href = it.path;
-    a.appendChild(icon(it.icon));
+    const ic = h('span', 'tab-ic');
+    if (on) ic.appendChild(h('span', 'tab-pill'));
+    ic.appendChild(icon(it.icon));
+    a.appendChild(ic);
     a.appendChild(h('span', null, it.label));
     bar.appendChild(a);
   }
@@ -354,7 +371,7 @@ function hidePop(el) {
   if (!el || !el.classList.contains('on') || el.classList.contains('closing')) return;
   el.classList.remove('on');
   el.classList.add('closing');
-  setTimeout(() => el.classList.remove('closing'), 100);
+  setTimeout(() => el.classList.remove('closing'), 130);
 }
 
 function togglePop(el) {
@@ -385,7 +402,14 @@ function openPalette() {
 
   let filtered = actions.slice();
   let cursor = 0;
-  const close = () => mask.remove();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    mask.classList.add('closing');
+    setTimeout(() => mask.remove(), 170);
+  };
+  mask.closePalette = close;
   const paint = () => {
     list.innerHTML = '';
     filtered.forEach((a, i) => {
@@ -420,7 +444,8 @@ if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      if (document.querySelector('.palette-mask')) document.querySelector('.palette-mask').remove();
+      const open = document.querySelector('.palette-mask:not(.closing)');
+      if (open) open.closePalette();
       else openPalette();
     }
   });
@@ -440,23 +465,41 @@ export async function boot({ active = '', requireLogin = true, preview = false }
   if (preview) {
     // 预览：不请求后端，直接用假账号/假应用，但走同一套顶栏渲染
     shell.apps = PREVIEW_APPS;
-    saveAuth(PREVIEW_USER);
+    shell.user = PREVIEW_USER;   // 只放内存：预览不能写 localStorage（否则会顶掉真实账号的 lastName/admin）
     paintTop(active);
     return shell.user;
+  }
+
+  // 有登录态时先按上次的缓存把顶栏画完整（首帧就有导航与头像，跨页转场不"跳"），接口回来有变化再重画
+  let painted = '';
+  const snapshot = () => JSON.stringify({ apps: shell.apps,
+    user: shell.user && { id: shell.user.id, name: shell.user.name, admin: !!shell.user.admin } });
+  if (shell.token) {
+    try {
+      const c = JSON.parse(localStorage.getItem(SHELL_CACHE_KEY) || 'null');
+      if (c && c.user) {
+        shell.apps = c.apps || [];
+        shell.user = c.user;
+        paintTop(active);
+        painted = snapshot();
+      }
+    } catch (e) { /* 缓存坏了就当没有 */ }
   }
 
   const loadApps = async () => {
     try { shell.apps = (await apiGet('/api/portal/apps')).apps || []; } catch (e) { /* 忽略 */ }
   };
-  await loadApps();
-
-  try {
-    const me = await apiGet('/api/auth/me');
-    saveAuth(me);
-  } catch (e) {
-    shell.user = null;
-  }
-  paintTop(active);
+  const loadMe = async () => {
+    try {
+      const me = await apiGet('/api/auth/me');
+      saveAuth(me);
+    } catch (e) {
+      shell.user = null;
+    }
+  };
+  await Promise.all([loadApps(), loadMe()]);
+  if (shell.user) localStorage.setItem(SHELL_CACHE_KEY, snapshot());
+  if (snapshot() !== painted) paintTop(active);
 
   if (!shell.user && requireLogin) {
     await loginView();

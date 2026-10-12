@@ -92,9 +92,8 @@ export function toast(msg, { warn = false, ms = 2600 } = {}) {
   toastWrap.appendChild(el);
   clearTimeout(toastTimers.get(el));
   const timer = setTimeout(() => {
-    el.style.opacity = '0';
-    el.style.transition = 'opacity .2s';
-    setTimeout(() => el.remove(), 220);
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 200);
   }, ms);
   toastTimers.set(el, timer);
 }
@@ -122,7 +121,7 @@ export function openDialog({ title, body, actions = [], width }) {
     if (closing) return;
     closing = true;
     mask.classList.add('closing');           // 退出动画（和打开对称）
-    setTimeout(() => mask.remove(), 150);
+    setTimeout(() => mask.remove(), 170);
   };
   for (const a of actions) {
     const btn = h('button', 'btn' + (a.primary ? ' primary cta' : '') + (a.danger ? ' danger' : ''), a.label);
@@ -169,6 +168,50 @@ export function confirmDialog({ title, body, confirmText = '确定', danger = fa
     });
     obs.observe(document.body, { childList: true, subtree: true });
   });
+}
+
+// ---------- 动效小工具 ----------
+export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// reveal 异步内容首次出现时淡入上浮（同一批次按顺序错开 45ms，最多错开 8 个）。
+export function reveal(nodes) {
+  let i = 0;
+  for (const el of nodes) {
+    if (!(el instanceof Element)) continue;
+    el.style.setProperty('--i', String(Math.min(i++, 8)));
+    el.classList.add('reveal');
+    el.addEventListener('animationend', () => el.classList.remove('reveal'), { once: true });
+  }
+}
+
+// swapView 同一页面内换一屏（如大厅 ↔ 房间）：支持 View Transitions 就淡出淡入，不支持直接换。
+export function swapView(update) {
+  if (!document.startViewTransition || reducedMotion() || document.hidden) { update(); return; }
+  document.startViewTransition(update);
+}
+
+// segThumb 给 .seg 分段控件加一个滑动的选中滑块，返回 sync()：选中项变化后调用一次。
+// 用 ResizeObserver 兜底：控件在隐藏的弹层里时宽度为 0，展开后再定位。
+export function segThumb(seg) {
+  seg.classList.add('has-thumb');
+  let thumb = seg.querySelector(':scope > .seg-thumb');
+  if (!thumb) {
+    thumb = h('span', 'seg-thumb');
+    seg.prepend(thumb);
+  }
+  let placed = false;
+  const sync = () => {
+    const on = seg.querySelector('.seg-item.on');
+    if (!on || !on.offsetWidth) { thumb.hidden = true; return; }
+    thumb.hidden = false;
+    if (!placed) thumb.classList.add('instant');   // 第一次定位不做动画
+    thumb.style.width = on.offsetWidth + 'px';
+    thumb.style.transform = 'translateX(' + on.offsetLeft + 'px)';
+    if (!placed) { void thumb.offsetWidth; thumb.classList.remove('instant'); placed = true; }
+  };
+  new ResizeObserver(() => { placed = false; sync(); }).observe(seg);
+  sync();
+  return sync;
 }
 
 // ---------- 棋子图 ----------

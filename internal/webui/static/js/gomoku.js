@@ -1,7 +1,7 @@
 // gomoku.js — 五子棋：大厅 → 房间（等待/对局/终局）；15 路棋盘 + 落子交互。
 // 房间/大厅/SSE 等公共部分在 gameroom.js。
 import { boot, apiPost } from './shell.js';
-import { h, icon, toast, gameIcon, copyText } from './ds.js';
+import { h, icon, toast, gameIcon, copyText, swapView } from './ds.js';
 import * as room from './gameroom.js';
 
 const qs = new URLSearchParams(location.search);
@@ -144,7 +144,7 @@ function paint() {
 
     room.actionButtons(document.getElementById('actions'), r, {
       onRoom: apply,
-      onExit: () => { state.room = null; paint(); },
+      onExit: () => apply(null),
     });
   } else {
     chip.hidden = true;
@@ -160,8 +160,9 @@ function paint() {
 }
 
 function apply(r) {
+  const switching = !state.room !== !r;   // 大厅 ↔ 房间是整屏切换：淡出淡入；房间内更新直接重画
   state.room = r;
-  paint();
+  if (switching) swapView(paint); else paint();
 }
 
 // ---------- UI 预览模式（?ui=1&state=… / ?ui=motion）----------

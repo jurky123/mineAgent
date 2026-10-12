@@ -47,13 +47,17 @@
 .hero-send {
   width: 38px; height: 38px; border-radius: 11px; border: 0; flex: none;
   background: var(--brand); color: #fff; display: inline-flex; align-items: center; justify-content: center;
-  transition: transform .12s, filter .15s;
+  transition: transform 160ms var(--ease-out), filter var(--motion-ui) ease, box-shadow var(--motion-ui) ease;
 }
-.hero-send:hover { filter: brightness(1.06); }
-.hero-send:active { transform: scale(.96); }
+.hero-send:hover { filter: brightness(1.06); box-shadow: 0 2px 10px color-mix(in srgb, var(--brand) 28%, transparent); }
+.hero-send:hover .i { transform: translateY(-1px); }
+.hero-send .i { transition: transform 200ms var(--ease-out); }
+.hero-send:active { transform: scale(.94); transition-duration: var(--motion-press); }
 
 .hero-last { display: flex; align-items: center; gap: 8px; min-width: 0; text-decoration: none; border-left: 2px solid var(--brand-soft); padding-left: 12px; }
+.hero-conv, .hero-go { transition: color var(--motion-ui) ease, transform 200ms var(--ease-out); }
 .hero-last.clickable:hover .hero-conv { color: var(--brand); }
+.hero-last.clickable:hover .hero-go { color: var(--brand); transform: translateX(3px); }
 .hero-last-label { color: var(--text-tertiary); font-size: 12.5px; flex: none; }
 .hero-conv { color: var(--text); font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hero-go { color: var(--text-tertiary); flex: none; }
@@ -63,7 +67,13 @@
 .status-head { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; }
 .app-icon-tile { width: 30px; height: 30px; border-radius: 9px; background: var(--surface-muted); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-tertiary); }
+.status-dot.on, .presence-dot { position: relative; }
 .status-dot.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .16); }
+.status-dot.on::after, .presence-dot::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: #22c55e; animation: live-ping 2.4s var(--ease-out) infinite;
+}
+@keyframes live-ping { 0% { opacity: .45; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(2.6); } }
 .status-dot.off { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent); }
 .status-count { font-size: 20px; font-weight: 650; }
 .status-sub { color: var(--text-secondary); font-size: 13px; }
@@ -71,7 +81,7 @@
 .player-faces { display: flex; align-items: center; }
 .player-faces .face {
   width: 34px; height: 34px; border-radius: 50%; margin-right: -8px;
-  background: var(--tint, var(--surface-muted)); color: var(--text);
+  background: var(--tint, var(--surface-muted)); color: #1d1d22;   /* tint 恒为浅色，深色主题下也要深字 */
   border: 2px solid var(--surface); display: inline-flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 650; letter-spacing: .3px;
 }
@@ -97,7 +107,8 @@
 .feed-main { flex: 1; min-width: 0; }
 .feed-text { color: var(--text); font-size: 14.5px; white-space: pre-wrap; word-break: break-word; }
 .feed-meta { color: var(--text-tertiary); font-size: 12.5px; margin-top: 3px; }
-.feed-del { opacity: 0; transition: opacity .12s; }
+.feed-row { transition: background var(--motion-ui) ease; }
+.feed-del { opacity: 0; transition: opacity var(--motion-ui) ease; }
 .feed-row:hover .feed-del { opacity: 1; }
 
 /* ---------- 账号设置 ---------- */
@@ -107,12 +118,14 @@
 .setting-value { color: var(--text-secondary); font-size: 14px; }
 .setting-row { cursor: default; }
 .setting-row.action { cursor: pointer; }
+.setting-row.action { transition: background var(--motion-ui) ease; }
 .setting-row.action:hover { background: var(--surface-muted); }
 .setting-row .right { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); }
 
 /* 主题分段选择器 */
 .seg { display: inline-flex; background: var(--surface-muted); border-radius: 10px; padding: 3px; gap: 2px; }
-.seg-item { border: 0; background: transparent; color: var(--text-secondary); padding: 6px 12px; border-radius: 8px; font: inherit; font-size: 13.5px; cursor: pointer; }
+.seg-item { border: 0; background: transparent; color: var(--text-secondary); padding: 6px 12px; border-radius: 8px; font: inherit; font-size: 13.5px; cursor: pointer; transition: color var(--motion-ui) ease, transform var(--motion-fast) var(--ease-out); }
+.seg-item:hover { color: var(--text); }
 .seg-item.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow-card); font-weight: 600; }
 
 /* ---------- 游戏目录 ---------- */
@@ -131,8 +144,14 @@
 }
 
 /* 目录卡整卡可点 */
-.catalog-card.clickable { cursor: pointer; transition: border-color .15s, transform .15s, box-shadow .15s; }
-.catalog-card.clickable:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, .05); }
+.catalog-card.clickable {
+  cursor: pointer;
+  transition: border-color var(--motion-ui) ease, transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out);
+}
+.catalog-card.clickable:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(16, 24, 40, .07); }
+.catalog-card.clickable:active { transform: translateY(0) scale(.99); transition-duration: var(--motion-press); }
+.catalog-art-piece { transition: transform 320ms var(--ease-out); }
+.catalog-card.clickable:hover .catalog-art-piece { transform: translateY(-2px) scale(1.04); }
 
 /* Games 目录页比 Portal 窄（避免"还差一张卡"的空旷感） */
 .wrap.games-wrap { max-width: 52rem; }
@@ -162,15 +181,17 @@
 }
 .catalog-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .catalog-card .catalog-head { display: flex; align-items: center; gap: 8px; }
-.catalog-go { margin-top: auto; color: var(--interactive); font-size: 14px; font-weight: 600; text-decoration: none; }
-.catalog-card.clickable:hover .catalog-go { transform: translateX(3px); transition: transform .15s; }
+.catalog-go { margin-top: auto; color: var(--interactive); font-size: 14px; font-weight: 600; text-decoration: none; transition: transform 200ms var(--ease-out); align-self: flex-start; }
+.catalog-card.clickable:hover .catalog-go { transform: translateX(3px); }
 
 
 /* ---------- Account：iOS/macOS 设置式分组（全站最"平"的页面）---------- */
 .settings { display: flex; flex-direction: column; }
 .settings .list-row { padding: 12px 2px; }
 .settings .list-row + .list-row { border-top: 1px solid var(--border); }
-.settings .list-row.action { padding: 12px 8px; border-radius: 10px; }
+.settings .list-row.action { padding: 12px 8px; border-radius: 10px; cursor: pointer; transition: background var(--motion-ui) ease; }
+.settings .list-row.action .right { transition: transform 200ms var(--ease-out), color var(--motion-ui) ease; }
+.settings .list-row.action:hover .right { transform: translateX(2px); color: var(--text-secondary); }
 .settings .list-row.action:hover { background: var(--surface-muted); }
 .section-head .section-title { font-size: 15px; color: var(--text-secondary); font-weight: 600; }
 

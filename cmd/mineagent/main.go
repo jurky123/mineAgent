@@ -283,6 +283,8 @@ func main() {
 		// AI 解说（每步点评）：用同一个模型网关，失败不影响对局
 		gamesMgr.SetCommentator(commentary.New(cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Name, log).Comment)
 		portalSrv.WithGames(games.NewAPI(log, gamesMgr, acct, portalSrv.Auth()).Handler())
+		// JCEF 内核镜像（Rinku download-mirror 用；目录不存在则不挂载）。
+		portalSrv.WithRinkuJCEF(filepath.Join(dataDir, "rinku-jcef"))
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
 		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
 		// 必须在 WithGames 之后取 Handler()——门户 mux 是构建时快照，早取就没有 games 路由。

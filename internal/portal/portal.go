@@ -15,6 +15,7 @@ import (
 	"mineagent/internal/account"
 	"mineagent/internal/config"
 	"mineagent/internal/games"
+	"mineagent/internal/rinkujcef"
 	"mineagent/internal/storage"
 	"mineagent/internal/webui"
 
@@ -29,6 +30,8 @@ type Server struct {
 	web   *webui.Channel
 	apps  []App
 	games http.Handler // 小游戏 API（main 注入，见 WithGames）
+
+	rinkuJcef *rinkujcef.Handler // JCEF 内核镜像（Rinku download-mirror 用，可为 nil）
 
 	acme      *autocert.Manager // 启用 HTTPS 时才有
 	tlsDomain string
@@ -47,6 +50,14 @@ func (s *Server) PortalEnabled() bool {
 // WithGames 挂上小游戏 API（internal/games 的 Handler）。
 func (s *Server) WithGames(h http.Handler) *Server {
 	s.games = h
+	return s
+}
+
+// WithRinkuJCEF 挂上 JCEF 内核镜像（/rinku-jcef/*，供 Rinku download-mirror 用）。
+func (s *Server) WithRinkuJCEF(dir string) *Server {
+	if dir != "" {
+		s.rinkuJcef = &rinkujcef.Handler{Dir: dir}
+	}
 	return s
 }
 
@@ -88,6 +99,10 @@ func (s *Server) Handler() http.Handler {
 	if s.games != nil {
 		mux.Handle("/api/games", s.games)
 		mux.Handle("/api/games/", s.games)
+	}
+	// JCEF 内核镜像（Rinku download-mirror 用；公开只读，路径收紧到 tag/asset）。
+	if s.rinkuJcef != nil {
+		mux.Handle("/rinku-jcef/", s.rinkuJcef)
 	}
 	// PWA：manifest 与 Service Worker（注入版本号；纯网络 SW，不做离线缓存）
 	mux.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {

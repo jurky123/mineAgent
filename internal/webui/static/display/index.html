@@ -29,32 +29,38 @@
 <body>
 <div id="shell-top"></div>
 
-<main class="wrap screens-wrap">
+<main class="wrap narrow">
   <section class="hero">
     <h1>显示屏</h1>
     <p class="sub">世界里的浏览器屏：开屏 / 换网址 / 关屏，以及导航白名单</p>
   </section>
 
-  <section class="card">
-    <div class="screens-head">
-      <h2>浏览器屏</h2>
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">浏览器屏</h2>
+      <div class="spacer"></div>
       <span class="badge" id="screens-meta">加载中…</span>
     </div>
-    <div id="screens-list" class="screens-list"></div>
+    <div class="settings" id="screens-list"></div>
     <div class="screens-form">
       <input id="open-id" class="input" placeholder="屏幕 ID（字母数字，如 demo）">
       <input id="open-url" class="input" placeholder="https://example.com/">
       <button id="open-btn" class="btn primary">打开 / 更新</button>
     </div>
-    <p class="hint">打开后到游戏里瞄准墙面执行 <code>/minedisplay browser place &lt;id&gt;</code> 摆到世界（没摆的屏只有操作层能看）。</p>
+    <p class="field-hint">打开后到游戏里瞄准墙面执行 <code>/minedisplay browser place &lt;id&gt;</code> 摆到世界（没摆的屏只有操作层能看）。</p>
   </section>
 
-  <section class="card">
-    <div class="screens-head">
-      <h2>导航白名单</h2>
-      <label class="screens-toggle"><input type="checkbox" id="wl-enabled"> 启用</label>
+  <section class="section">
+    <div class="section-head">
+      <h2 class="section-title">导航白名单</h2>
+      <div class="spacer"></div>
+      <label class="toggle">
+        <input type="checkbox" id="wl-enabled">
+        <span class="toggle-track"><span class="toggle-knob"></span></span>
+        <span>启用</span>
+      </label>
     </div>
-    <p class="hint">关闭（默认）＝任意公网站点都能打开/跳转，仍然拦截内网地址；启用＝只有下面列出的站可以（子域自动匹配）。</p>
+    <p class="field-hint">关闭（默认）＝任意公网站点都能打开/跳转，仍然拦截内网地址；启用＝只有下面列出的站可以（子域自动匹配）。</p>
     <div id="wl-hosts" class="screens-chips"></div>
     <div class="screens-form">
       <input id="wl-host" class="input" placeholder="example.com（子域自动匹配）">

@@ -1,7 +1,7 @@
 // display.js — 显示屏管理：屏幕列表 + 导航白名单。
 // 数据走门户 /api/display/*（转发到 MineDisplay 本地控制 API，令牌由服务端读取）。
 import { boot, apiGet, apiPost } from './shell.js';
-import { h, toast, withPending, confirmDialog } from './ds.js';
+import { h, toast, withPending, confirmDialog, icon } from './ds.js';
 
 const $ = (id) => document.getElementById(id);
 let refreshing = false;
@@ -49,6 +49,10 @@ function render(st) {
 
 function screenRow(s) {
   const row = h('div', 'screens-row');
+  const tile = h('span', 'screens-row-icon');
+  tile.appendChild(icon('monitor'));
+  row.appendChild(tile);
+
   const main = h('div', 'screens-row-main');
   main.appendChild(h('div', 'screens-row-title', `${s.id} · ${s.host || s.url}`));
   const bits = ['r' + s.revision];
@@ -60,7 +64,7 @@ function screenRow(s) {
   main.appendChild(h('div', 'screens-row-sub', bits.join(' · ')));
   row.appendChild(main);
 
-  const close = h('button', 'btn', '关闭');
+  const close = h('button', 'btn sm', '关闭');
   close.onclick = async () => {
     const ok = await confirmDialog({
       title: '关闭屏幕',
@@ -84,8 +88,10 @@ function screenRow(s) {
 }
 
 function hostChip(host) {
-  const chip = h('button', 'screens-chip', host + ' ×');
+  const chip = h('button', 'screens-chip');
   chip.title = '点击移除';
+  chip.appendChild(document.createTextNode(host));
+  chip.appendChild(icon('x'));
   chip.onclick = async () => {
     try {
       await apiPost('/api/display/whitelist', { action: 'remove', host });

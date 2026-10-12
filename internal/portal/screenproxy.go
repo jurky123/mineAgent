@@ -35,9 +35,9 @@ func newScreenProxy(target string) *screenProxy {
 }
 
 func (sp *screenProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// 只允许 GET/HEAD（出口代理侧同样限制，这里先挡一层）。
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		http.Error(w, "只支持 GET/HEAD", http.StatusMethodNotAllowed)
+	// 只允许 GET/HEAD/POST（站点 API 调用需要 POST；出口代理侧同样限制，这里先挡一层）。
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodPost {
+		http.Error(w, "只支持 GET/HEAD/POST", http.StatusMethodNotAllowed)
 		return
 	}
 	sp.proxy.ServeHTTP(w, r)

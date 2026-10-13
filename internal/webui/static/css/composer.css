@@ -230,3 +230,14 @@ html[data-theme="dark"] .reason-dot.on { background: rgba(255,255,255,.5); }
   padding-top: 8px; font-weight: 600;
 }
 .po-modelname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-modelhead { display: flex; align-items: center; justify-content: space-between; padding-right: 12px; }
+.po-refresh { color: var(--interactive); background: none; border: 0; padding: 6px; font-size: 12px; }
+.po-refresh:disabled { color: var(--text-3); cursor: wait; }
+.po-modelcontrols { flex-wrap: wrap; }
+.po-modelcontrols .po-chip { padding: 5px 9px; }
+.po-sort { margin-left: auto; min-width: 0; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--radius-sm); padding: 5px; font-size: 12px; }
+.po-modelstatus, .po-modelempty { padding: 5px 12px 9px; font-size: 11px; color: var(--text-3); line-height: 1.6; }
+.po-modelbody { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.po-modelbody .po-modelname { white-space: normal; overflow-wrap: anywhere; }
+.po-modeldetail { color: var(--text-3); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.po-item.model:disabled { cursor: default; opacity: .55; }

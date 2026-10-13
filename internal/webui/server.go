@@ -376,28 +376,22 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, u *stora
 
 // handleOptions 给 + 菜单：技能、可选模型、思考强度、当前偏好。
 func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Query().Get("refresh") == "1" {
+		c.refreshModelCatalog()
+	}
 	catalog := c.modelCatalog(r.Context())
-	byID := make(map[string]ModelOption, len(catalog))
-	for _, m := range catalog {
-		byID[m.ID] = m
-	}
 	prefs := c.prefsOf(u.Username)
-	// 偏好里的模型已不在目录（网关/配置变了）→ 回退默认。
-	// 目录为空（离线/拉不到列表）时不动偏好，否则会把用户的设置误清掉。
-	if prefs.Model != "" && len(catalog) > 0 {
-		if _, ok := byID[prefs.Model]; !ok {
-			prefs.Model = ""
-			c.setPrefs(u.Username, prefs)
-		}
-	}
+	// Discovery can be partial or temporarily unavailable. GET must not erase preferences.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"skills":       c.cfg.Skills,
-		"models":       catalog,
-		"efforts":      effortLevels,
-		"model":        prefs.Model,
-		"effort":       prefs.Effort,
-		"defaultModel": c.model,
-		"admin":        u.IsAdmin,
+		"skills":          c.cfg.Skills,
+		"models":          catalog,
+		"efforts":         effortLevels,
+		"model":           prefs.Model,
+		"effort":          prefs.Effort,
+		"defaultModel":    c.model,
+		"admin":           u.IsAdmin,
+		"modelsFetchedAt": c.models.fetchedAt(),
 	})
 }
 
@@ -433,7 +427,7 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, u *storage
 				return
 			}
 			if found != nil && found.Unavailable {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型网关当前不可用（503），换一个试试"})
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "这个模型当前不可用：" + found.UnavailableReason})
 				return
 			}
 			if found != nil && found.NeedsKey {

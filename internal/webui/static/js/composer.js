@@ -202,7 +202,13 @@ function applyCmd(x) {
 // placePopover 空会话（composer 居中）时向下展开，其余情况向上（默认）。
 export function placePopover(box) {
   const centered = $('composer').parentElement === $('emptySlot');
-  box.classList.toggle('below', centered);
+  const anchor = box.offsetParent || $('composer');
+  const rect = anchor.getBoundingClientRect();
+  const above = rect.top - 18;
+  const below = window.innerHeight - rect.bottom - 18;
+  const useBelow = centered && below >= above;
+  box.classList.toggle('below', useBelow);
+  if (box.id === 'popover') box.style.maxHeight = Math.max(160, Math.min(560, useBelow ? below : above)) + 'px';
 }
 
 export function closePopovers(except) {
@@ -266,80 +272,125 @@ function renderPlusMenu() {
 }
 
 let modelFreeOnly = localStorage.getItem('mineagent.freeonly') === '1';
+let modelShowUnavailable = false;
+let modelSort = 'newest';
 
-export function openModelPopover(back) {
+export function openModelPopover(back, query = '') {
   const box = $('popover');
   const cur = S.options ? S.options.model || '' : '';
   const defaultModel = (S.options && S.options.defaultModel) || '';
   const all = (S.options && S.options.models) || [];
   box.innerHTML = (back ? '<button class="po-item po-back" id="po-back"><svg class="i"><use href="#i-chevron"/></svg>返回</button>' : '') +
-    '<div class="po-title">模型</div>' +
-    '<div class="po-toolrow">' +
-    '<input class="po-filter" id="po-filter" placeholder="筛选模型…">' +
-    '<button class="po-chip' + (modelFreeOnly ? ' on' : '') + '" id="po-freeonly">只看免费</button>' +
-    '</div>' +
+    '<div class="po-modelhead"><span class="po-title">选择模型</span><button class="po-refresh" id="po-refresh">刷新列表</button></div>' +
+    '<div class="po-toolrow"><input class="po-filter" id="po-filter" aria-label="搜索模型" placeholder="搜索名称或模型 ID…"></div>' +
+    '<div class="po-toolrow po-modelcontrols">' +
+    '<button class="po-chip' + (modelFreeOnly ? ' on' : '') + '" id="po-freeonly" aria-pressed="' + modelFreeOnly + '">只看免费</button>' +
+    '<button class="po-chip' + (modelShowUnavailable ? ' on' : '') + '" id="po-showall" aria-pressed="' + modelShowUnavailable + '">显示不可用</button>' +
+    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option></select></div>' +
+    '<div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
     '<div class="po-scroll" id="po-list"></div>';
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
   const list = $('po-list');
-
-  // 免费标记要一直显示；再叠加"未配置 key / 不可用"提醒
+  const usable = (m) => !m.needsKey && !m.unavailable;
   const badge = (m) => {
     let out = m.free ? '<span class="po-badge free">免费</span>' : '';
-    if (m.needsKey) out += '<span class="po-badge dim">未配置 key</span>';
+    if (m.needsKey) out += '<span class="po-badge dim">未配置密钥</span>';
     else if (m.unavailable) out += '<span class="po-badge dim">不可用</span>';
+    else if (m.verified) out += '<span class="po-badge dim">已验证</span>';
     return out;
   };
-  const mk = (m, isDefault) => {
-    const off = m.needsKey || m.unavailable;
+  const mk = (m) => {
     const b = document.createElement('button');
-    b.className = 'po-item model' + (cur === m.id ? ' on' : '') + (off ? ' off' : '');
-    b.innerHTML = '<span class="po-modelname">' + esc(m.label) + (isDefault ? ' <span class="po-desc">默认</span>' : '') +
-      ' ' + badge(m) + '</span><span class="check">' + ICON.check + '</span>';
-    if (off) {
-      b.onclick = (e) => {
-        e.stopPropagation();
-        toast(m.needsKey ? '先在 config.json 的 model.providers 里填它家的 apiKey' : '这个模型网关当前不可用（503）', 'err');
-      };
-    } else {
-      b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: m.id }); };
-    }
+    b.className = 'po-item model' + ((cur || defaultModel) === m.id ? ' on' : '') + (!usable(m) ? ' off' : '');
+    b.disabled = !usable(m);
+    const released = new Date((m.created || 0) * 1000);
+    const date = m.created && Number.isFinite(released.getTime()) ? released.toISOString().slice(0, 10) : '';
+    const detail = [m.id, date ? '发布 ' + date : '', m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
+      m.unavailableReason || '', m.stale ? '缓存目录' : ''].filter(Boolean).join(' · ');
+    b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">' + esc(m.label) +
+      (m.provider === 'default' && m.id === defaultModel ? ' <span class="po-desc">默认</span>' : '') + badge(m) +
+      '</span><span class="po-modeldetail">' + esc(detail) + '</span></span><span class="check">' + ICON.check + '</span>';
+    b.title = detail;
+    b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: m.id }); };
     list.appendChild(b);
   };
   const build = (f) => {
     list.innerHTML = '';
     const q = (f || '').trim().toLowerCase();
-    const match = (m) => (!q || m.label.toLowerCase().indexOf(q) >= 0 || m.id.toLowerCase().indexOf(q) >= 0) &&
-      (!modelFreeOnly || m.free);
-    if (!q && !modelFreeOnly) {
+    const matches = all.filter((m) => (!q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) &&
+      (!modelFreeOnly || m.free) && (modelShowUnavailable || usable(m)));
+    matches.sort((a, b) => {
+      if (usable(a) !== usable(b)) return usable(a) ? -1 : 1;
+      if (modelSort === 'free' && a.free !== b.free) return a.free ? -1 : 1;
+      if (modelSort !== 'name' && (a.created || 0) !== (b.created || 0)) return (b.created || 0) - (a.created || 0);
+      return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    const freeCount = all.filter((m) => usable(m) && m.free).length;
+    const unknownDates = matches.some((m) => !m.created);
+    $('po-modelstatus').textContent = matches.length + ' 个模型 · ' + freeCount + ' 个免费可选' +
+      (modelSort === 'newest' && unknownDates ? ' · 无发布日期的按名称排序' : '') +
+      (all.some((m) => m.stale) ? ' · 刷新失败，显示缓存' : '') + ' · 实际可用性与额度以提供商为准';
+    const def = all.find((m) => m.provider === 'default' && m.id === defaultModel);
+    if (!q && !modelFreeOnly && (!def || usable(def) || modelShowUnavailable)) {
       const b = document.createElement('button');
       b.className = 'po-item model' + (cur === '' ? ' on' : '');
-      b.innerHTML = '<span class="po-modelname">默认 · ' + esc(defaultModel) + '</span><span class="check">' + ICON.check + '</span>';
+      b.innerHTML = '<span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="check">' + ICON.check + '</span>';
+      b.disabled = !!def && !usable(def);
       b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: '' }); };
       list.appendChild(b);
     }
-    let lastProvider = null;
-    all.filter(match).forEach((m) => {
-      if (m.provider !== lastProvider) {
-        lastProvider = m.provider;
-        const t = document.createElement('div');
-        t.className = 'po-title po-provider';
-        t.textContent = m.providerLabel || m.provider;
-        list.appendChild(t);
-      }
-      mk(m, m.provider === 'default' && m.id === defaultModel);
-    });
-    if (!list.children.length) list.innerHTML = '<div class="po-desc" style="padding:8px 10px">没有匹配的模型</div>';
+    // Group by provider after sorting; each provider appears once.
+    const groups = new Map();
+    for (const m of matches) {
+      if (!groups.has(m.provider)) groups.set(m.provider, []);
+      groups.get(m.provider).push(m);
+    }
+    for (const models of groups.values()) {
+      const t = document.createElement('div');
+      t.className = 'po-title po-provider';
+      t.textContent = models[0].providerLabel || models[0].provider;
+      list.appendChild(t);
+      models.forEach(mk);
+    }
+    if (!matches.length) {
+      const empty = document.createElement('div'); empty.className = 'po-modelempty';
+      empty.textContent = modelFreeOnly ? '暂无匹配的免费模型。免费额度与可用性以提供商为准。' : '暂无匹配的可选模型。可刷新列表或显示不可用模型。';
+      list.appendChild(empty);
+    }
   };
-  build('');
+  $('po-sort').value = modelSort;
+  $('po-filter').value = query;
+  build(query);
   $('po-filter').oninput = () => build($('po-filter').value);
+  $('po-sort').onchange = () => { modelSort = $('po-sort').value; build($('po-filter').value); };
   $('po-freeonly').onclick = (e) => {
-    e.stopPropagation();
-    modelFreeOnly = !modelFreeOnly;
+    e.stopPropagation(); modelFreeOnly = !modelFreeOnly;
     localStorage.setItem('mineagent.freeonly', modelFreeOnly ? '1' : '0');
     $('po-freeonly').classList.toggle('on', modelFreeOnly);
+    $('po-freeonly').setAttribute('aria-pressed', String(modelFreeOnly));
     build($('po-filter').value);
   };
+  $('po-showall').onclick = (e) => {
+    e.stopPropagation(); modelShowUnavailable = !modelShowUnavailable;
+    $('po-showall').classList.toggle('on', modelShowUnavailable);
+    $('po-showall').setAttribute('aria-pressed', String(modelShowUnavailable));
+    build($('po-filter').value);
+  };
+  $('po-refresh').onclick = async (e) => {
+    e.stopPropagation();
+    const button = e.currentTarget;
+    button.disabled = true; button.textContent = '刷新中…';
+    try {
+      await loadOptions(true);
+      if ($('po-refresh') === button && box.classList.contains('on')) {
+        openModelPopover(back, $('po-filter').value);
+        $('po-refresh').focus();
+      }
+    } catch (err) { showError(err.message); }
+    finally { button.disabled = false; button.textContent = '刷新列表'; }
+  };
   closePopovers('popover');
+  placePopover(box);
   box.classList.add('on');
 }
 
@@ -487,7 +538,7 @@ async function setPrefs(patch) {
 
 export async function loadOptions(force) {
   if (S.options && !force) { renderToolbar(); return S.options; }
-  S.options = await api('/api/options');
+  if (S.token !== 'debug') S.options = await api('/api/options' + (force ? '?refresh=1' : ''));
   renderToolbar();
   return S.options;
 }

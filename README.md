@@ -101,6 +101,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 验证：`go test ./...`、`go vet ./...`、`python3 scripts/deploy_test.py`。
 Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持的测试环境会显示跳过。
 部署脚本测试只在临时目录运行模拟命令，不操作真实服务。
+模型列表回归：`npm run test:models`（Playwright + 临时静态服务/模拟 API，不访问线上配置或数据）。
 
 `scripts/deploy.sh` 先把二进制构建到临时目录，再查询 `/api/games/active`。
 仅 HTTP 成功、响应包含有效的 `playing: 0` 时才替换 `bin/mineagent` 并重启；
@@ -292,6 +293,15 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   的 `''/low/medium/high`），下方 `Model` 进入模型列表（默认从网关 `GET /models`
   拉，10 分钟缓存，也可用 `model.options` 限定）；每个账号各选各的，存
   `data/webui/prefs.json`
+  模型列表默认隐藏未配置密钥、探测失败、明确不支持工具/文本输出或已下线的条目；可打开「显示不可用」查看原因。
+  支持搜索、最新/免费/名称排序、「只看免费」及手动刷新。最新排序采用提供商 `created` 日期；
+  未提供日期的模型排在有日期的后面并按名称排序，不推测发布日期。
+  免费标记优先依据提供商定价（输入/输出及已公布的请求、图片、缓存等费用必须为零）；
+  未提供定价时仅识别 `-free`、`:free` 和 `openrouter/free`，Contributor 不代表免费。
+  免费也可能需要 API key、受限额影响或仅限活动期，实时定价/可用性以提供商为准。
+  默认网关保留 1-token 后台探测；成功显示「已验证」，404/503 暂时标不可用，20 分钟后会重新探测，
+  不再永久跳过失败模型。额外提供商仅根据目录元数据判断，不批量生成付费请求。
+  目录请求失败时保留上次成功缓存；读取列表不再清空账号已选模型。
 - **Workspace / 外观 / 用量 / 退出登录**：收进侧栏底部的账户菜单
   （Workspace 仅 `web.adminUsers` 可见；用量弹窗有滚动/周/月三条进度条）
 - **Agent 设置**（`/agent` 顶栏齿轮、侧栏或账户菜单）：三个分区——「我的人设」提供卡片选择与正文预览；
@@ -347,6 +357,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `GET /api/history?conv=&after=<id>` | 历史消息（含附件引用） |
 | `POST /api/clear` | 清空当前会话（前端"新会话"），并广播其它标签页 |
 | `GET /api/options` | 技能 / 可选模型 / 思考强度 / 当前偏好 |
+| `GET /api/options?refresh=1` | 刷新提供商模型目录（10 秒内重复刷新复用缓存） |
 | `GET /api/conversations` | 会话列表（纯读；旧单会话会合成返回） |
 | `POST /api/conversations/delete`、`/rename` | 删除 / 重命名会话 |
 | `POST /api/prefs` `{model, effort}` | 保存本账号的模型与思考强度 |

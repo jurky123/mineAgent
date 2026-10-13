@@ -64,7 +64,9 @@ export function startDebug() {
       { name: '画张图', desc: '用 PIL 画好直接发给我', prompt: '用 PIL 画一张图并发给我，内容：' },
       { name: '写代码跑一下', desc: 'workspace 里写脚本并执行（管理员）', prompt: '在 workspace 里写个脚本跑一下：' }
     ],
-    models: ['deepseek-v4.1-flash', 'deepseek-v4-pro', 'glm-5.3', 'grok-4.7', 'kimi-k3', 'qwen3.8-max'],
+    models: ['deepseek-v4.1-flash', 'deepseek-v4-pro', 'glm-5.3', 'grok-4.7', 'kimi-k3', 'qwen3.8-max', 'demo-preview-free'].map((id, i) => ({
+      id, label: id, provider: 'default', providerLabel: '预览模型', free: id.endsWith('-free'), created: 1780000000 + i * 86400,
+    })),
     defaultModel: 'deepseek-v4.1-flash',
     model: '',
     effort: 'medium',

@@ -192,7 +192,11 @@ func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	return s.migratePortal(ctx)
+	if err := s.migratePortal(ctx); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, passkeySchema)
+	return err
 }
 
 func (s *Store) EnsureSession(ctx context.Context, id string, now int64) error {

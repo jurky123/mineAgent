@@ -150,6 +150,9 @@ type Web struct {
 	// 站点域名：设置后用 Let's Encrypt 自动给该域名签发/续期 HTTPS 证书
 	//（80 端口同时服务 ACME HTTP-01 验证；证书缓存在 certDir）。
 	Domain string `json:"domain"`
+	// Passkey identity is pinned to configuration, never inferred from Host headers.
+	PasskeyRPID    string   `json:"passkeyRPID,omitempty"`
+	PasskeyOrigins []string `json:"passkeyOrigins,omitempty"`
 	// HTTPS 监听地址，默认 [::]:443。
 	TLSListen string `json:"tlsListen"`
 	// ACME 证书缓存目录，默认 <dataDir>/certs。

@@ -101,6 +101,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 验证：`go test ./...`、`go vet ./...`、`python3 scripts/deploy_test.py`。
 Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持的测试环境会显示跳过。
 部署脚本测试只在临时目录运行模拟命令，不操作真实服务。
+社区与认证回归：`npm run test:community`、`npm run test:passkeys`（临时数据库和 Chrome 虚拟认证器，不读取生产配置）。
 模型列表回归：`npm run test:models`（Playwright + 临时静态服务/模拟 API，不访问线上配置或数据）。
 
 `scripts/deploy.sh` 先把二进制构建到临时目录，再查询 `/api/games/active`。
@@ -162,7 +163,8 @@ Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持�
 
 | 页面 | UI 模式 | 说明 |
 |---|---|---|
-| `/` | Personal Hub | 首页：Agent **Quick Composer**（直接提问，回车后跳到 `/agent` 并自动发出）、Minecraft 状态（头像堆叠的"谁在玩"+ 天气/时段/TPS，细节可展开）、游戏内容卡、最新动态 Feed（公告 + 最近对局结果的时间轴）；欢迎语右侧有 **在线人数（Presence）** |
+| `/` | Friends Hub | 公共首页：欢迎区、世界图片区、Agent/游戏/Minecraft 三个入口、共享发布信息；真实登录后显示继续对话与实时详情 |
+| `/minecraft` | Guide | PCL 安装、升级备份和故障处理；发布记录不完整时显示整合包准备中 |
 | `/agent` | Productivity App | Agent 聊天页（ChatGPT 风全屏工作区：多会话/文件收发/模型切换，见下） |
 | `/games` → `/games/chess` | Entertainment App | 游戏目录 → 国际象棋（大厅 → 房间 → 对局 三态） |
 | `/screens` | Control App | **显示屏**（MineDisplay）：世界里的浏览器屏列表/开屏/换网址/关屏 + 导航白名单（开关/增删/一键加常用站）；写操作限管理员。服务端代理到 MineDisplay 本地控制 API（`web.displayApi` + `web.displayTokenFile`，插件自动生成令牌） |
@@ -170,7 +172,7 @@ Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持�
 
 **顺手就能用**：`Ctrl/Cmd + K` 打开命令面板（新建对话 / 打开棋局 / 对局历史 / 切换主题…）；
 支持安装成 PWA（`manifest.webmanifest` + 纯网络 Service Worker，手机"添加到主屏幕"后全屏运行）；
-手机端底部有 Tabbar（首页/Agent/游戏/我的）。
+手机端底部有 Tabbar（首页/Agent/游戏/Minecraft/我的）；Agent 工作区保留顶栏和自己的输入布局。
 
 **图标与品牌**：线性图标用 Lucide（ISC，内联在 `static/js/ds.js` 的 `ICON_PATHS`，34 个），
 品牌 mark / favicon 用站点图标 `static/img/logo.png`（256px）与 `static/img/favicon.png`（64px，
@@ -181,23 +183,19 @@ Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持�
 组件遵循圆角体系（控件 10px / CTA 12px / 卡片 16px / 弹层 14-22px，只有 Tag 是胶囊）；
 公开的交互原语在 `static/css/ds.css` + `static/js/ds.js`（Button/IconButton/Card/Dialog/
 ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没有 alert/prompt/confirm**；
-顶栏导航只放白名单应用（首页 / Agent / 游戏），主题是明确的选择器（跟随系统 / 浅色 / 深色），
-未登录时是整页登录态（记住上次名字，可"以 jzk 继续"或换名字）。
+顶栏导航只放核心入口（首页 / Agent / 游戏 / Minecraft），显示屏收进账户菜单，主题是明确的选择器（跟随系统 / 浅色 / 深色），
+未登录时是整页登录态（共享 Passkey 登录、激活与账号恢复表单）。
 
 `web.portal=false` 可一键回滚成"`/` 就是聊天页"的旧版单页模式。
 
-### 账号体系（名字即账号）
+### 账号体系（Passkey + 账号恢复）
 
-- 没有密码：输入名字即登录，首次输入自动注册（`web.users` 非空时只允许名单内名字）。
-  知道名字就能进，所以**别把管理员名字设成别人能猜到的**。
-- 数据在 SQLite 的 `users` / `auth_sessions` 表：token 只存 sha256，有效期 30 天，
-  单账号最多 5 台设备（第 6 次登录淘汰最旧的）；登录时同时种 HttpOnly cookie，
-  附件 URL（`<img>`/下载链接）靠它鉴权。
-- 管理员权限**只看** `config.web.adminUsers`（`users.is_admin` 只是镜像，登录时同步）。
-- 升级说明：旧版 `data/webui/tokens.json` 启动时惰性导入（**旧浏览器不用重新登录**，
-  文件保留可回滚）；会话键已从 `web:c2c:<名字>` 迁到 `web:user:<用户ID>`，
-  老数据用 `./bin/mineagent --config config.json --migrate-portal` 迁移
-  （先自动备份数据库，幂等可重跑；会上传目录 `web-files/<名字>` 一并改成 `web-files/u<ID>`）。
+- 使用 Passkey 与设备解锁/安全密钥验证身份，昵称不再是凭据；`/api/login` 与 `/api/auth/login` 的旧名字登录返回 410。
+- 首次激活和无恢复码的人工恢复由管理员核验本人归属后，通过操作员 CLI 发放一次性激活码。不能凭旧登录 token 抢占旧账号。
+- 成功绑定后仅显示一次恢复码，用户离线保管；恢复成功会原子撤销旧 Passkey、全部旧恢复码与全部旧会话，再使用新 Passkey 登录。
+- 保留原账号 ID、对话、记忆与战绩；旧的名字登录会话不再接受，不自动导入旧 token。管理员权限仍由服务端 `web.adminUsers` 决定。
+- RP ID 默认取 `web.domain`，信任源默认 `https://<web.domain>`；开发/多源需显式配置 `web.passkeyRPID` / `web.passkeyOrigins`，不能根据请求 Host 自动信任来源。
+- **这是需要准备迁移的认证变更，尚未部署。** 激活授权、数据库备份、正式域名与真实设备验收见 [社区改造与认证迁移记录](MINE_COMMUNITY_IMPLEMENTATION.md)。
 
 ### 门户扩展点（加功能不用改骨架）
 
@@ -338,14 +336,16 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
    `web.dataDir`、`workspace.root` 绝对路径指定；`scripts/deploy.sh` 的令牌也从这里读）。
 2. `config.json` 里 `web.listen` 默认 `0.0.0.0:8766`（空字符串=禁用网页入口）；
    公网访问要在腾讯云控制台放行 TCP 8766（ufw 未启用）
-3. 浏览器打开 `http://zkun.art/` 或 `http://<公网IP>:8766/` 输入名字进入
+3. 公共首页可直接浏览；登录和激活使用正式 HTTPS 域名下的 Passkey。裸 HTTP/IP 不作为 Passkey 登录入口。
 4. 想用 workspace 写代码/跑代码，把名字填进 `web.adminUsers`（`/myid` 可看自己身份）
 
 接口一览（`/api/auth/*`、`/api/portal/*` 是门户新路径；旧路径保留为别名）：
 
 | 接口 | 说明 |
 |---|---|
-| `POST /api/auth/login` `{"name":"..."}` | 登录/注册（旧路径 `/api/login` 同样可用） |
+| `POST /api/auth/login`、`POST /api/login` | 旧名字登录已停用，返回 410 |
+| `POST /api/auth/passkey/login/begin`、`/finish` | Passkey 挑战与签名登录 |
+| `POST /api/auth/passkey/register/begin`、`/finish` | 一次性激活码/恢复码验证与 Passkey 绑定 |
 | `GET /api/auth/me` | 当前用户（旧路径 `/api/me`） |
 | `POST /api/auth/logout` | 注销当前 token（旧路径 `/api/logout`） |
 | `GET /api/account/sessions` | 已登录设备列表 |

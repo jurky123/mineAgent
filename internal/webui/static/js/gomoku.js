@@ -51,12 +51,14 @@ function renderBoard() {
     const pt = pointName(i);
     const btn = h('button', 'gpoint');
     btn.dataset.point = pt;
+    btn.setAttribute('aria-label', pt.toUpperCase() + '，' + (cells[i] === 'b' ? '黑子' : cells[i] === 'w' ? '白子' : '空位'));
+    btn.disabled = !myTurn || !!state.moving || (cells[i] || '.') !== '.';
     btn.style.left = (((col + 0.5) / size) * 100) + '%';
     btn.style.top = (((row + 0.5) / size) * 100) + '%';
     const c = cells[i] || '.';
     if (c === 'b') btn.appendChild(h('span', 'stone b'));
     else if (c === 'w') btn.appendChild(h('span', 'stone w'));
-    else if (r.status === 'playing') btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
+    else if (myTurn && !state.moving) btn.appendChild(h('span', 'stone ghost ' + (r.you === 'black' ? 'b' : 'w')));
     if (c === '.') btn.classList.add(myTurn ? 'playable' : 'locked');
     if (r.lastMove === pt) btn.classList.add('last');
     if (win.has(i)) btn.classList.add('win');
@@ -80,6 +82,7 @@ async function place(i) {
     toast(e.message, { warn: true });
   } finally {
     state.moving = false;
+    renderBoard();
     document.querySelector('.board-col')?.classList.remove('board-pending');
   }
 }

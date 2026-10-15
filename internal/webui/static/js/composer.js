@@ -580,14 +580,14 @@ document.querySelectorAll('.suggests button').forEach((b) => {
   b.onclick = () => { $('text').value = b.dataset.q; autoGrow(); $('text').focus(); };
 });
 document.addEventListener('paste', (e) => {
-  if (!S.token) return;
+  if (!S.me) return;
   const files = e.clipboardData && e.clipboardData.files;
   if (files && files.length) { e.preventDefault(); addFiles(files); }
 });
 let dragDepth = 0;
 window.addEventListener('dragenter', (e) => {
   e.preventDefault();
-  if (!S.token) return;
+  if (!S.me) return;
   if (++dragDepth === 1) $('drop').classList.add('on');
 });
 window.addEventListener('dragover', (e) => e.preventDefault());

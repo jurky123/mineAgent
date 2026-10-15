@@ -3,9 +3,9 @@
 
 /* ---------- 整页登录态 ---------- */
 .login-view {
-  position: fixed; inset: 0; z-index: 70;
+  position: fixed; inset: 64px 0 0; z-index: 70;
   display: flex; align-items: center; justify-content: center;
-  background: var(--page); padding: 24px;
+  background: var(--page); padding: 24px; overflow-y: auto; align-items: safe center;
 }
 .login-box {
   width: min(92vw, 340px); display: flex; flex-direction: column; align-items: stretch; gap: 12px;

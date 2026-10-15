@@ -37,7 +37,7 @@ import (
 //   - agent 发文件：web_file 工具（tools.WebSend）+ webToolGate，
 //     消息 Target 前缀 file:，网页端内联图片/下载链接。
 //
-// 安全：账号登录/令牌由 internal/account 统一负责（无密码，名字即账号），
+// 安全：账号由 internal/account 的 Passkey 登录与经过验证的令牌负责，
 // web.users 可配白名单；workspace/审批权限只给 web.adminUsers。
 type Channel struct {
 	log *slog.Logger
@@ -51,6 +51,7 @@ type Channel struct {
 	hub      *session.Hub
 	store    *storage.Store
 	acct     *account.Service
+	passkeys http.Handler
 	ag       *agent.Agent
 	webTools []tool.BaseTool
 
@@ -104,6 +105,18 @@ func NewChannel(log *slog.Logger, cfg config.Config, acct *account.Service, hub 
 		running:        make(map[string]runState),
 	}
 	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, dataDir, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
+	rpID, origins := cfg.Web.PasskeyRPID, cfg.Web.PasskeyOrigins
+	if rpID == "" {
+		rpID = cfg.Web.Domain
+	}
+	if len(origins) == 0 && cfg.Web.Domain != "" {
+		origins = []string{"https://" + cfg.Web.Domain}
+	}
+	if auth, err := account.NewPasskeys(acct, rpID, origins); err == nil {
+		c.passkeys = auth
+	} else {
+		log.Warn("Passkey authentication unavailable; name login disabled")
+	}
 	c.loadPrefs()
 	return c
 }

@@ -41,6 +41,8 @@
     "botAgent": ""
   },
   "web": {
+    "passkeyRPID": "",
+    "passkeyOrigins": [],
     "listen": "0.0.0.0:8766",
     "users": [],
     "adminUsers": [],

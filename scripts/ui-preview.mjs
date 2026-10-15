@@ -34,6 +34,8 @@ const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
 
 const shots = [
+  { dir: 'desktop', name: 'minecraft', url: '/minecraft?ui=1' },
+  { dir: 'mobile', name: 'minecraft', url: '/minecraft?ui=1' },
   { dir: 'desktop', name: 'portal', url: '/?ui=1' },
   { dir: 'desktop', name: 'games', url: '/games?ui=1' },
   { dir: 'desktop', name: 'chess-lobby', url: '/games/chess?ui=1&state=lobby' },

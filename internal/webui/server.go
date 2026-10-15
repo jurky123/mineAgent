@@ -54,6 +54,13 @@ func (c *Channel) ServeOn(addr string, h http.Handler) error {
 func (c *Channel) API() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", c.handleLogin)
+	mux.HandleFunc("/api/auth/passkey/", func(w http.ResponseWriter, r *http.Request) {
+		if c.passkeys == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Passkey 尚未配置，请联系管理员"})
+			return
+		}
+		c.passkeys.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]string{"version": version.Version})
@@ -70,6 +77,10 @@ func (c *Channel) API() http.Handler {
 	})
 	mux.HandleFunc("/api/logout", c.handleLogout)
 	mux.HandleFunc("/api/me", c.withAuth(c.handleMe))
+	// Shared identity works in both Portal and standalone Agent modes.
+	mux.HandleFunc("/api/auth/login", c.handleLogin)
+	mux.HandleFunc("/api/auth/logout", c.handleLogout)
+	mux.HandleFunc("/api/auth/me", c.withAuth(c.handleMe))
 	mux.HandleFunc("/api/history", c.withAuth(c.handleHistory))
 	mux.HandleFunc("/api/clear", c.withAuth(c.handleClear))
 	mux.HandleFunc("/api/events", c.handleEvents) // SSE 用 ?token=，自己校验
@@ -243,7 +254,7 @@ func SetAuthCookie(w http.ResponseWriter, r *http.Request, tok string) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "mineagent_token", Value: tok, Path: "/", MaxAge: 30 * 24 * 3600,
-		SameSite: http.SameSiteLaxMode, HttpOnly: true,
+		SameSite: http.SameSiteLaxMode, HttpOnly: true, Secure: r.TLS != nil,
 	})
 }
 
@@ -263,47 +274,9 @@ func (c *Channel) withAuth(next func(w http.ResponseWriter, r *http.Request, u *
 	}
 }
 
+// Name-only authentication is deliberately disabled, including legacy aliases.
 func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
-		return
-	}
-	var req struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
-		return
-	}
-	name := strings.TrimSpace(req.Name)
-	if !ValidAccountName(name) {
-		c.log.Warn("web login rejected", "name", req.Name, "reason", "invalid name", "remote", r.RemoteAddr)
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "名字不合法：1-24 个字符，字母/数字/中文/_-，字母数字开头，别带空格和符号"})
-		return
-	}
-	if !c.acct.LoginAllowed(name) {
-		c.log.Warn("web login rejected", "name", name, "reason", "not in allow list", "remote", r.RemoteAddr)
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "这个名字不在允许名单里"})
-		return
-	}
-	u, tok, err := c.acct.Login(r.Context(), name, r.UserAgent(), r.RemoteAddr)
-	if err != nil {
-		c.log.Error("web login failed", "name", name, "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "登录失败，请稍后再试"})
-		return
-	}
-	// cookie 供 <img>/<a download> 等无法带 Authorization 的请求鉴权。
-	http.SetCookie(w, &http.Cookie{
-		Name: "mineagent_token", Value: tok, Path: "/", MaxAge: 30 * 24 * 3600,
-		SameSite: http.SameSiteLaxMode, HttpOnly: true,
-	})
-	c.log.Info("web login", "name", name, "uid", u.ID, "admin", u.IsAdmin)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"name":  u.Username,
-		"id":    u.ID,
-		"token": tok,
-		"admin": u.IsAdmin,
-	})
+	writeJSON(w, http.StatusGone, map[string]string{"error": "名字不能用于身份验证，请使用 Passkey 登录或联系管理员激活账号"})
 }
 
 // handleLogout 注销当前令牌并清 cookie。

@@ -39,6 +39,6 @@ export function convParam() {
 
 // 附件 URL 兜底拼 token（cookie 被拦时 <img>/下载也能用）
 export function withTok(u) {
-  if (!u || u.startsWith('blob:') || u.startsWith('data:')) return u;
+  if (!u || !S.token || u.startsWith('blob:') || u.startsWith('data:')) return u;
   return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(S.token);
 }

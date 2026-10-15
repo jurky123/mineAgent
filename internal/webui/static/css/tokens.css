@@ -47,13 +47,13 @@
   --col: 48rem;
 
   /* ---- Portal 设计系统（Agent 聊天页继续用上面的 token，互不影响） ---- */
-  --page: #f7f7f8;
+  --page: #F6F7F9;
   --surface-muted: #f3f4f6;
   --border-strong: #dadade;
-  --text-secondary: #6b6b70;
-  --text-tertiary: #9a9aa0;
-  --brand: #0a84ff;
-  --brand-hover: #0077e6;
+  --text-secondary: #5E6878;
+  --text-tertiary: #626D7D;
+  --brand: #2563EB;
+  --brand-hover: #1D4ED8;
   --brand-soft: rgba(10, 132, 255, .09);
   --grid-line: #d9d9de;
   --motion-press: 70ms;
@@ -116,9 +116,11 @@ html[data-theme="dark"] {
   --surface-muted: #1c1c20;
   --border-strong: #3b3b41;
   --text-secondary: #a3a3ab;
-  --text-tertiary: #707078;
-  --brand: #0a84ff;
-  --brand-hover: #2f97ff;
+  --text-tertiary: #a0a6b2;
+  --brand: #2563EB;
+  --brand-hover: #1D4ED8;
+  --danger: #ff9c94;
+  --ok: #6ee7b7;
   --brand-soft: rgba(10, 132, 255, .16);
   --grid-line: #3a3a40;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .3);
@@ -186,3 +188,5 @@ html.vt-theme::view-transition-group(*) { animation-duration: 0s; }
 
 #app.enter, #login.enter { animation: screenIn .28s cubic-bezier(.2,.8,.2,1); }
 #app.leave, #login.leave { animation: screenOut .16s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }

@@ -1,10 +1,10 @@
 // Package account 是 Portal 的统一账号层（网页/游戏/未来其它应用共用）。
 //
 // 设计要点（见 MINE_PORTAL_DESIGN.md §5）：
-//   - 名字即账号，无密码；Username 是登录名且不可变，ID 是唯一权威标识；
+//   - Passkey verifies identity; Username is display/login metadata and ID is authoritative;
 //   - token 明文只发给客户端，库里只存 sha256；
 //   - 管理员权限只以 config.web.adminUsers 为准，users.is_admin 只是落库镜像；
-//   - 旧版 tokens.json 在启动时惰性导入（同 token 继续有效，可回滚）。
+//   - Name-only legacy tokens are retained for migration but never accepted as verified sessions.
 package account
 
 import (
@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -78,12 +79,11 @@ func (s *Service) IsAdminName(name string) bool {
 	return false
 }
 
-// Login 登录（或首次访问即注册）：返回用户与明文 token。
-func (s *Service) Login(ctx context.Context, name, userAgent, ip string) (*storage.User, string, error) {
+// issueSession is called only after successful WebAuthn verification.
+func (s *Service) issueSession(ctx context.Context, u *storage.User, credentialID []byte, userAgent, ip string) (*storage.User, string, error) {
 	now := time.Now()
-	u, err := s.store.EnsureUser(ctx, name, now.UnixMilli())
-	if err != nil {
-		return nil, "", err
+	if !s.LoginAllowed(u.Username) {
+		return nil, "", errors.New("account is not allowed")
 	}
 	if err := s.syncAdmin(ctx, u); err != nil {
 		return nil, "", err
@@ -103,6 +103,10 @@ func (s *Service) Login(ctx context.Context, name, userAgent, ip string) (*stora
 	}); err != nil {
 		return nil, "", err
 	}
+	if err := s.store.MarkPasskeySession(ctx, hash, credentialID); err != nil {
+		_ = s.store.DeleteAuthSession(ctx, hash)
+		return nil, "", err
+	}
 	_ = s.evictOldSessions(ctx, u.ID)
 	_ = s.store.TouchUser(ctx, u.ID, now.UnixMilli())
 	return u, tok, nil
@@ -110,14 +114,16 @@ func (s *Service) Login(ctx context.Context, name, userAgent, ip string) (*stora
 
 // CurrentWithSession 同 Current，但附带会话 ID（账号页"退出所有设备"用）。
 func (s *Service) CurrentWithSession(ctx context.Context, token string) (*storage.User, int64, bool) {
-	if token == "" {
+	if token == "" || !s.store.IsPasskeySession(ctx, hashToken(token)) {
 		return nil, 0, false
 	}
 	u, sid, err := s.store.AuthSessionUser(ctx, hashToken(token), time.Now().UnixMilli())
 	if err != nil || u == nil {
 		return nil, 0, false
 	}
-	_ = s.syncAdmin(ctx, u)
+	if !s.LoginAllowed(u.Username) || s.syncAdmin(ctx, u) != nil {
+		return nil, 0, false
+	}
 	_ = s.store.TouchUser(ctx, u.ID, time.Now().UnixMilli())
 	return u, sid, true
 }
@@ -137,7 +143,7 @@ func (s *Service) RevokeOtherSessions(ctx context.Context, token string) (int64,
 
 // Current 校验 token 返回用户；无效/过期返回 nil。
 func (s *Service) Current(ctx context.Context, token string) *storage.User {
-	if token == "" {
+	if token == "" || !s.store.IsPasskeySession(ctx, hashToken(token)) {
 		return nil
 	}
 	u, _, err := s.store.AuthSessionUser(ctx, hashToken(token), time.Now().UnixMilli())
@@ -148,7 +154,9 @@ func (s *Service) Current(ctx context.Context, token string) *storage.User {
 	if u == nil {
 		return nil
 	}
-	_ = s.syncAdmin(ctx, u)
+	if !s.LoginAllowed(u.Username) || s.syncAdmin(ctx, u) != nil {
+		return nil
+	}
 	_ = s.store.TouchUser(ctx, u.ID, time.Now().UnixMilli())
 	return u
 }

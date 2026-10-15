@@ -28,7 +28,8 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 		},
 		portal.App{
 			ID: "minecraft", Name: "Minecraft", Desc: "服务器状态", Icon: "pickaxe",
-			Order: 20, Enabled: true, Nav: false, HomeRole: "status", Priority: 20,
+			Path: "/minecraft", NavLabel: "Minecraft",
+			Order: 20, Enabled: true, Nav: true, HomeRole: "status", Priority: 20,
 			Card: mcStatusCard(gw),
 		},
 		portal.App{
@@ -40,7 +41,7 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 		portal.App{
 			ID: "screens", Name: "显示屏", Desc: "世界里的浏览器屏：开屏/换网址/白名单", Icon: "monitor",
 			Path: "/screens", Order: 35, Enabled: true,
-			Nav: true, NavLabel: "屏幕", HomeRole: "hidden",
+			Nav: false, NavLabel: "屏幕", HomeRole: "hidden",
 		},
 		portal.App{
 			ID: "announcements", Name: "最新动态", Icon: "megaphone",

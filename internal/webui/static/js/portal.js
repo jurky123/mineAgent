@@ -1,6 +1,10 @@
 // portal.js —— 首页：Agent 一级入口 + MC 状态 + 游戏 + 最新动态（Bento 布局）。
 import { shell, boot, apiGet, fmtTime } from './shell.js';
 import { h, icon, toast, openDialog, confirmDialog, gameIcon, reveal } from './ds.js';
+import { loadMinecraftRelease, worldVisual, downloadCard } from './minecraft-release.js';
+let releaseData = null;
+let releaseError = '';
+
 
 const qs = new URLSearchParams(location.search);
 const DEMO = qs.get('ui') === '1';
@@ -17,65 +21,16 @@ function tintOf(name) {
 }
 
 function skeleton() {
-  const wrap = h('div', 'home-top');
-  const a = h('div', 'card hero-card');
-  a.appendChild(h('div', 'skeleton', ' '));
-  const b = h('div', 'card status-card');
-  b.appendChild(h('div', 'skeleton', ' '));
-  wrap.appendChild(a);
-  wrap.appendChild(b);
-  home().appendChild(wrap);
+  const wrap = h('div', 'welcome-skeleton skeleton');
+  wrap.setAttribute('role', 'status'); wrap.setAttribute('aria-label', '正在加载首页');
+  home().replaceChildren(wrap);
 }
 
-// ---------- Agent 主卡 ----------
-function heroCard(app) {
-  const c = app.card || {};
-  const card = h('article', 'card hero-card');
-  const head = h('div', 'hero-head');
-  const ic = h('span', 'hero-icon');
-  ic.appendChild(icon(app.icon || 'sparkle', 'lg'));
-  head.appendChild(ic);
-  const headText = h('div');
-  headText.appendChild(h('div', 'hero-title', c.title || 'MineAgent'));
-  headText.appendChild(h('div', 'hero-sub', c.subtitle || ''));
-  head.appendChild(headText);
-  card.appendChild(head);
-
-  // 直接在首页问（不用先点"新对话"再输入）；发送后跳到 Agent 并自动发出去
-  const compose = h('div', 'hero-compose');
-  const input = h('input', 'hero-input');
-  input.type = 'text';
-  input.placeholder = '问点什么…';
-  input.maxLength = 2000;
-  const go = () => {
-    const q = input.value.trim();
-    if (!q) { input.focus(); return; }
-    location.href = '/agent?new=1&q=' + encodeURIComponent(q);
-  };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
-  const sendBtn = h('button', 'hero-send');
-  sendBtn.title = '发送';
-  sendBtn.appendChild(icon('up', 'lg'));
-  sendBtn.onclick = go;
-  compose.appendChild(input);
-  compose.appendChild(sendBtn);
-  card.appendChild(compose);
-
-  const lastTitle = (c.lastTitle || '').trim();
-  const last = h('a', 'hero-last' + (lastTitle || c.count ? ' clickable' : ''));
-  last.href = c.continuePath || '/agent';
-  if (lastTitle) {
-    last.appendChild(h('span', 'hero-last-label', '最近'));
-    last.appendChild(h('span', 'hero-conv', '“' + lastTitle + '”'));
-  } else if (c.count) {
-    last.appendChild(h('span', 'hero-last-label', '最近'));
-    last.appendChild(h('span', 'hero-conv', '（未命名会话）'));
-  } else {
-    last.appendChild(h('span', 'hero-last-label', '还没有对话'));
-    last.appendChild(h('span', 'hero-conv', '问我任何事：写代码、查资料、控制服务器'));
-  }
-  last.appendChild(h('span', 'hero-go', '→'));
-  card.appendChild(last);
+function entryCard({ title, text, path, label, glyph }) {
+  const card = h('article', 'entry-card');
+  const mark = h('span', 'entry-icon'); mark.appendChild(icon(glyph, 'lg'));
+  card.append(mark, h('h2', null, title), h('p', null, text));
+  const link = h('a', 'btn', label); link.href = path; card.appendChild(link);
   return card;
 }
 
@@ -266,71 +221,60 @@ async function publishDialog() {
 
 // ---------- 渲染 ----------
 function paint(data) {
-  document.getElementById('greeting').textContent = data.greeting || '你好';
-  const acc = data.account || {};
-  const mcCard = (apps => {
-    const st = apps.find((a) => a.id === 'minecraft');
-    return st && st.card ? st.card : null;
-  })(data.apps || []);
-  const sub = document.getElementById('greeting-sub');
-  if (mcCard && (mcCard.players || []).length) {
-    const names = mcCard.players.slice(0, 3).join('、');
-    sub.textContent = names + ' 正在 Minecraft 里';
-  } else {
-    sub.textContent = '今天想做点什么？';
-  }
-  if (DEMO) {   // 预览里也展示在线 chip（真实路径由 renderPresence 拉取）
-    const chip = h('span', 'presence');
-    chip.appendChild(h('span', 'presence-dot'));
-    chip.appendChild(h('span', null, '3 人在线'));
-    const faces = h('span', 'player-faces');
-    for (const n of ['J', 'S', 'A']) {
-      const a = h('span', 'face', n);
-      a.style.setProperty('--tint', tintOf(n + 'x'));
-      faces.appendChild(a);
-    }
-    chip.appendChild(faces);
-    sub.appendChild(chip);
-  }
   const host = home();
-  host.innerHTML = '';
-  const first = !paint.done;   // 骨架 → 内容：首次淡入，发动态后的刷新直接替换
-  paint.done = true;
-
+  host.replaceChildren(); host.setAttribute('aria-busy', 'false');
   const apps = data.apps || [];
-  const hero = apps.find((a) => a.role === 'hero');
-  const status = apps.find((a) => a.role === 'status');
-  const content = apps.filter((a) => a.role === 'content' || a.role === 'app');
-  const feed = apps.filter((a) => a.role === 'feed');
-
-  if (hero || status) {
-    const top = h('div', 'home-top');
-    if (hero) top.appendChild(heroCard(hero));
-    if (status) top.appendChild(statusCard(status));
-    host.appendChild(top);
+  const hero = apps.find((a) => a.id === 'agent');
+  const mc = apps.find((a) => a.id === 'minecraft');
+  const recent = hero?.card;
+  const hasRecent = !!recent?.lastTitle || recent?.count > 0;
+  const welcome = h('section', 'welcome-grid');
+  const copy = h('div', 'welcome-copy');
+  copy.appendChild(h('p', 'eyebrow', 'ZKUN / 朋友们的活动空间'));
+  copy.appendChild(h('p', 'welcome-greeting', data.greeting || '欢迎来坐坐'));
+  const heading = h('h1', null, '一起聊聊，'); heading.appendChild(h('br')); heading.appendChild(document.createTextNode('玩点什么。'));
+  copy.append(heading, h('p', 'welcome-description', '和 Agent 聊个想法，邀请朋友下一局，或回到我们共同的 Minecraft 世界。'));
+  const actions = h('div', 'welcome-actions');
+  const primary = h('a', 'btn primary cta', hasRecent ? '继续上次对话 →' : '打开 Agent →');
+  primary.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
+  const explore = h('a', 'text-link', '先看看小游戏'); explore.href = '/games';
+  actions.append(primary, explore); copy.appendChild(actions);
+  if (hasRecent) copy.appendChild(h('p', 'recent-context', '上次聊到：' + (recent.lastTitle || '未命名会话')));
+  welcome.appendChild(copy);
+  const status = mc?.error ? '状态暂不可用' : mc?.card?.online === true ? '服务器在线' : mc?.card?.online === false ? '离线' : '登录后查看实时状态';
+  const world = h('a', 'world-link'); world.href = '#minecraft'; world.setAttribute('aria-label', '查看 Minecraft 加入方式');
+  world.appendChild(worldVisual(releaseData, status)); welcome.appendChild(world); host.appendChild(welcome);
+  const entries = h('section', 'entry-grid'); entries.setAttribute('aria-label', '快速入口');
+  for (const entry of [
+    { title: 'Agent', text: '查资料、理思路，把一个想法慢慢聊清楚。', path: '/agent', label: hasRecent ? '回到对话' : '开始对话', glyph: 'sparkle' },
+    { title: '小游戏', text: '国际象棋或五子棋，叫上朋友来一局。', path: '/games', label: '进入游戏大厅', glyph: 'gamepad' },
+    { title: 'Minecraft', text: '准备客户端，一起探索我们的世界。', path: '/minecraft', label: '下载与加入指南', glyph: 'pickaxe' },
+  ]) entries.appendChild(entryCard(entry));
+  host.appendChild(entries);
+  const minecraft = downloadCard(releaseData, { compact: true, status }); minecraft.id = 'minecraft';
+  if (releaseError) {
+    const error = h('p', 'field-err', releaseError); error.setAttribute('role', 'status'); minecraft.appendChild(error);
+    const retry = h('button', 'btn', '重新读取发布信息'); retry.onclick = refresh; minecraft.appendChild(retry);
   }
-  const games = [];
-  for (const app of content) {
-    for (const item of ((app.card && app.card.items) || [])) games.push(item);
+  if (mc) {
+    const detail = h('details', 'home-server-details'); detail.appendChild(h('summary', null, '服务器实时详情'));
+    detail.appendChild(statusCard(mc)); minecraft.appendChild(detail);
   }
-  if (games.length) {
-    const sec = h('section', 'section');
-    const head = h('div', 'section-head');
-    const st = h('h2', 'section-title');
-    st.appendChild(icon('gamepad', 'sm'));
-    st.appendChild(h('span', null, '游戏'));
-    head.appendChild(st);
-    host.appendChild(sec);
-    sec.appendChild(head);
-    const grid = h('div', 'game-grid');
-    for (const item of games) grid.appendChild(gameCard(item));
-    sec.appendChild(grid);
+  host.appendChild(minecraft);
+  const games = apps.find((a) => a.id === 'games');
+  if (games?.error) {
+    const error = h('p', 'field-err', '游戏状态暂时加载失败，仍可从游戏大厅进入。'); host.appendChild(error);
+  } else if (games?.card?.items?.length) {
+    const section = h('section', 'section'); section.appendChild(h('h2', 'section-title', '下一局，和谁一起？'));
+    const grid = h('div', 'game-grid'); for (const item of games.card.items) grid.appendChild(gameCard(item));
+    section.appendChild(grid); host.appendChild(section);
   }
-  for (const app of feed) host.appendChild(feedSection(app));
-  if (!hero && !status && !content.length && !feed.length) {
-    host.appendChild(h('div', 'card', '门户暂无内容'));
+  for (const app of apps.filter((a) => a.role === 'feed')) {
+    if (app.card?.items?.length || app.card?.canEdit) host.appendChild(feedSection(app));
+    else if (app.error) host.appendChild(h('p', 'field-err', '动态暂时无法加载，请稍后重试。'));
   }
-  if (first) reveal(host.querySelectorAll(':scope > .home-top > *, :scope > :not(.home-top)'));
+  if (!paint.done) reveal(host.children); paint.done = true;
+  if (location.hash === '#minecraft') requestAnimationFrame(() => minecraft.scrollIntoView());
 }
 
 function demoData() {
@@ -364,41 +308,19 @@ function demoData() {
 }
 
 async function refresh() {
+  try { releaseData = await loadMinecraftRelease(); releaseError = ''; }
+  catch (error) { releaseError = error.message; }
   if (DEMO) { paint(demoData()); return; }
-  try {
-    paint(await apiGet('/api/portal/home'));
-  } catch (e) {
-    if (e.unauthorized) { location.reload(); return; }
-    home().innerHTML = '';
-    home().appendChild(h('div', 'card', '加载失败：' + e.message));
+  if (!shell.user) { paint({ greeting: '欢迎来坐坐', apps: [] }); return; }
+  try { paint(await apiGet('/api/portal/home')); }
+  catch (error) {
+    paint({ greeting: '欢迎回来', apps: [] });
+    const box = h('div', 'home-error'); box.setAttribute('role', 'status');
+    box.appendChild(h('p', 'field-err', '个人动态加载失败：' + error.message));
+    const retry = h('button', 'btn', '重新加载'); retry.onclick = refresh; box.appendChild(retry); home().appendChild(box);
   }
 }
 
-// 现在在线（Portal Presence）：欢迎语右边一个小 chip
-async function renderPresence() {
-  try {
-    const d = await apiGet('/api/portal/presence');
-    const host = document.getElementById('greeting-sub');
-    if (!host || !d || !d.users || d.users.length <= 1) return;
-    const chip = h('span', 'presence');
-    chip.appendChild(h('span', 'presence-dot'));
-    chip.appendChild(h('span', null, d.count + ' 人在线'));
-    const faces = h('span', 'player-faces');
-    for (const name of d.users.slice(0, 4)) {
-      const a = h('span', 'face', (name[0] || '?').toUpperCase());
-      a.title = name;
-      a.style.setProperty('--tint', tintOf(name));
-      faces.appendChild(a);
-    }
-    chip.appendChild(faces);
-    host.appendChild(chip);
-  } catch (e) { /* 未登录等 */ }
-}
-
-(async () => {
-  if (!DEMO) skeleton();
-  await boot({ active: '/', requireLogin: !DEMO, preview: DEMO });
-  if (!DEMO && !shell.user) return;
-  await refresh();
-  if (!DEMO) renderPresence();
-})();
+skeleton();
+await boot({ active: '/', requireLogin: false, preview: DEMO });
+await refresh();

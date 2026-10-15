@@ -1,5 +1,7 @@
 // 入口：登录、侧栏、启动装配
 
+import { boot as bootShell, shell } from './shell.js';
+import { passkeyForm } from './passkeys.js';
 import { $, toast } from './ui.js';
 import { S, saveAuth, clearAuth } from './state.js';
 import { api, logoutRequest, setUnauthorizedHandler } from './api.js';
@@ -13,14 +15,14 @@ import { initPromptSettings, refreshPromptLabel } from './prompt-settings.js';
 // ---------- 登录 / 登出 ----------
 function showLogin() {
   const el = $('login');
-  // 上次的名字/浏览器自动填充会让人误以为"空着也能进"（实际提交的是旧名字），统一清掉
-  const nameInput = $('name');
-  if (nameInput) nameInput.value = '';
-  el.style.display = 'flex';
-  el.classList.remove('leave');
-  el.classList.add('enter');
-  setTimeout(() => el.classList.remove('enter'), 300);
-  setTimeout(() => nameInput && nameInput.focus(), 60);
+  const card = el.querySelector('.login-card');
+  card.replaceChildren(passkeyForm((data) => {
+    S.token = data.token; S.me = data.name; S.admin = !!data.admin; saveAuth();
+    bootShell({ active: '/agent', requireLogin: false }).catch(() => {});
+    startChat().then(applyURLTarget).catch((error) => toast(error.message, 'err'));
+  }));
+  const home = document.createElement('a'); home.href = '/'; home.className = 'login-home'; home.textContent = '← 回到首页'; card.appendChild(home);
+  el.style.display = 'flex'; el.classList.remove('leave');
 }
 function hideLogin() {
   const el = $('login');
@@ -42,33 +44,14 @@ function hideApp(done) {
   setTimeout(() => { el.style.display = 'none'; el.classList.remove('leave'); if (done) done(); }, 170);
 }
 
-async function doLogin(name) {
-  $('enter').disabled = true;
-  $('loginerr').textContent = '';
-  try {
-    const res = await fetch('/api/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name })
-    });
-    const body = await res.json().catch(() => null);
-    if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-    S.token = body.token; S.me = body.name; S.admin = !!body.admin;
-    saveAuth();
-    startChat();
-  } catch (e) {
-    $('loginerr').textContent = e.message;
-    toast(e.message, 'err');
-  } finally {
-    $('enter').disabled = false;
-  }
-}
 
 function logout(silent) {
   clearAuth();
+  S.options = null;
+  document.querySelectorAll('.modal.on').forEach((el) => el.classList.remove('on'));
   chat.disconnect();
   chat.clearMessages();
   hideApp(() => showLogin());
-  if (!silent) $('loginerr').textContent = '';
 }
 
 async function startChat() {
@@ -136,10 +119,11 @@ async function ensureFresh() {
 }
 
 // ---------- 启动 ----------
-function boot() {
+async function boot() {
   initTheme();
   initPromptSettings();
   ensureFresh();
+  await bootShell({ active: '/agent', requireLogin: false, preview: new URLSearchParams(location.search).has('ui') });
   // 渲染调试模式：?ui=1 不连后端，直接用假数据渲染（给截图/视觉对比用）
   if (new URLSearchParams(location.search).has('ui')) {
     import('./debug.js').then((m) => m.startDebug());
@@ -149,21 +133,19 @@ function boot() {
   conversations.initConversations();
   setUnauthorizedHandler(() => logout(true));
 
-  $('enter').onclick = () => doLogin($('name').value.trim());
-  $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click(); });
-
   // 账户菜单：Workspace / 外观 / 退出登录
-  const closeAccount = () => $('accountmenu').classList.remove('on');
-  $('userbtn').onclick = (e) => { e.stopPropagation(); $('accountmenu').classList.toggle('on'); };
+  const closeAccount = () => { $('accountmenu').classList.remove('on'); $('userbtn').setAttribute('aria-expanded', 'false'); };
+  $('userbtn').onclick = (e) => { e.stopPropagation(); $('accountmenu').classList.toggle('on'); $('userbtn').setAttribute('aria-expanded', String($('accountmenu').classList.contains('on'))); };
   document.addEventListener('click', (e) => {
     if (!e.target.closest('#accountmenu') && !e.target.closest('#userbtn')) closeAccount();
   });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && $('accountmenu').classList.contains('on')) { closeAccount(); $('userbtn').focus(); } });
   $('menu-ws').onclick = () => { closeAccount(); openWorkspace(); };
   $('menu-theme').onclick = () => { closeAccount(); openAppearance(); };
   $('menu-usage').onclick = () => { closeAccount(); openUsage(); };
   $('usage-close').onclick = () => $('usagemodal').classList.remove('on');
   $('usagemodal').addEventListener('click', (e) => { if (e.target === $('usagemodal')) $('usagemodal').classList.remove('on'); });
-  $('menu-logout').onclick = () => { closeAccount(); logoutRequest(); logout(false); };
+  $('menu-logout').onclick = async () => { closeAccount(); try { await logoutRequest(); logout(false); bootShell({ active: '/agent', requireLogin: false }).catch(() => {}); } catch (error) { toast('退出失败，请恢复连接后重试', 'err'); } };
   $('menu').onclick = () => $('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
   $('backdrop').onclick = closeSidebar;
   $('collapse').onclick = () => {
@@ -176,7 +158,7 @@ function boot() {
   $('list').addEventListener('scroll', chat.updateToBottom);
   $('tobottom').onclick = chat.toBottom;
 
-  if (S.token && S.me) {
+  if (shell.user) {
     api('/api/me').then((res) => {
       S.admin = !!res.admin; S.me = res.name;
       saveAuth();
@@ -199,15 +181,15 @@ async function applyURLTarget() {
     await conversations.switchTo(wantConv);
   }
   if (ask) {
-    // 首页直接提问：填进输入框并立刻发出去
+    // URL/example prompts remain drafts until the user explicitly sends them.
     const box = document.getElementById('text');
     box.value = ask;
     composer.autoGrow();
     composer.updateSendBtn();
-    await composer.sendMsg();
+    box.focus();
   }
   if (wantNew || wantConv || ask) {
-    history.replaceState(null, '', location.pathname);
+    const clean = new URL(location.href); ['new', 'conv', 'q'].forEach((key) => clean.searchParams.delete(key)); history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
   }
 }
 

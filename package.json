@@ -5,7 +5,9 @@
   "scripts": {
     "ui-preview": "node scripts/ui-preview.mjs",
     "test:prompts": "node scripts/prompt-ui-test.mjs",
-    "test:models": "node scripts/model-ui-test.mjs"
+    "test:models": "node scripts/model-ui-test.mjs",
+    "test:community": "node scripts/community-ui-test.mjs",
+    "test:passkeys": "node scripts/passkey-e2e.mjs"
   },
   "devDependencies": {
     "playwright": "^1.49.0"

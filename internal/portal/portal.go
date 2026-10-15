@@ -159,7 +159,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/api/", api)
 	mux.Handle("/static/", api)
 	mux.HandleFunc("/", s.handlePage)
-	return s.redirectHTTPS(mux)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Referrer-Policy", "same-origin")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		s.redirectHTTPS(mux).ServeHTTP(w, r)
+	})
 }
 
 // redirectHTTPS 把走 http 的域名页面请求 301 到 https（启用 web.domain 后生效）。
@@ -200,6 +204,7 @@ var pages = map[string]string{
 	"/account/history": "account/history/index.html",
 	"/games":           "games/index.html",
 	"/screens":         "display/index.html",
+	"/minecraft":       "minecraft/index.html",
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {

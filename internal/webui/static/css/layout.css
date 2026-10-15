@@ -185,3 +185,16 @@ header {
   .reason { padding: 0 14px 12px; }
   .cmd-item, .po-item { padding-top: 11px; padding-bottom: 11px; }
 }
+
+/* Keep the community navigation and identity visible around the Agent workspace. */
+.agent-page #app { height: calc(100% - 64px); }
+.agent-page #sidebar { top: 64px; }
+.agent-page #login { top: 64px; overflow-y: auto; align-items: safe center; }
+.agent-page #shell-top { position: relative; z-index: 35; }
+.agent-page .tabbar { display: none; }
+.agent-page .topbar .nav-item { width: auto; padding: 6px 11px; font-size: 14px; }
+.agent-page .topbar .brand { padding: 0; }
+.agent-page .passkey-form .input { width: 100%; min-height: 44px; }
+.agent-page .login-card { max-width: 420px; padding-block: 24px; }
+.agent-page .agent-welcome-mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; color: var(--brand); border: 1px solid var(--border); margin: 0 auto 16px; font-size: 24px; font-weight: 700; }
+.agent-page .agent-welcome-sub { color: var(--text-2); font-size: 14px; margin: 0 0 24px; }

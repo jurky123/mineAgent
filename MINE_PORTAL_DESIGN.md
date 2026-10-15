@@ -1,5 +1,7 @@
 # MINE_PORTAL_DESIGN.md — Mine Portal 设计文档（v1）
 
+> 2026-10-15：账号认证已改为 Passkey 与管理员核验激活/恢复，旧文中“名字即账号”仅为历史设计。当前流程与上线前准备见 [MINE_COMMUNITY_IMPLEMENTATION.md](MINE_COMMUNITY_IMPLEMENTATION.md)。首页、Minecraft 指南与 Agent 导航也以该实施记录为准。尚未部署。
+
 > 状态：**P0/P1 已实施并上线（2026-09-25，commit f8df1f5）**；P2+ 待做（见 §14 实施记录）
 > 目标读者：实现这个仓库的 coding agent / 后续维护者
 > 范围：把现有 MineAgent WebUI（单页 = 聊天）升级为 **Mine Portal**：账号 + Agent + 小游戏 + 排行榜。
@@ -225,7 +227,7 @@ RequireAdmin(next)  // 在上述基础上要求名字命中 cfg.Web.AdminUsers�
 - P2：删除 `tokens.json` 相关代码路径。
 
 ### 5.4 信任模型与风险（必须在门户页/文档里写清）
-- 无密码 = **知道名字即可登录该账号**（含 Agent 会话、游戏战绩、积分）。这是私人朋友服务器的合理取舍。
+- 无密码 = **知道名字即可登录该账号**（含 Agent 会话、游戏战绩、积分）。这是旧设计的风险接受判断，现已废弃；不得据此保留名字登录。
 - 预留 `users.pin_hash`：将来可开"有 PIN 必须校验"，无需迁移。
 - 管理权限仍由 `config.json` 的 `web.adminUsers` 决定（不进数据库），避免两处真相。
 

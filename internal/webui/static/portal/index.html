@@ -20,24 +20,22 @@
 <meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)">
 <link rel="apple-touch-icon" href="/static/__VER__/img/icon-192.png">
 <link rel="icon" type="image/png" href="/static/__VER__/img/favicon.png">
-<title>Mine</title>
+<title>zkun · 和朋友一起玩点什么</title>
 <link rel="stylesheet" href="/static/__VER__/css/tokens.css">
 <link rel="stylesheet" href="/static/__VER__/css/ds.css">
 <link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/community.css">
 </head>
 <body>
 <div id="shell-top"><div class="topbar topbar-static">
-  <a class="brand" href="/"><img class="brand-logo" src="/static/__VER__/img/logo.png" alt=""><span>Mine</span></a>
+  <a class="brand" href="/"><img class="brand-logo" src="/static/__VER__/img/logo.png" alt=""><span>zkun</span></a>
   <nav class="nav"><span class="nav-item">首页</span></nav>
   <div class="spacer"></div>
 </div></div>
 
-<main class="wrap">
-  <section class="hero">
-    <h1 id="greeting">你好</h1>
-    <p class="sub" id="greeting-sub">今天想做点什么？</p>
-  </section>
-  <div id="home"></div>
+<main class="wrap community-home" id="main-content">
+  <div id="home" aria-busy="true"></div>
+  <footer class="community-footer"><span>zkun · 和朋友一起玩点什么</span><a href="/minecraft">Minecraft 加入指南</a></footer>
 </main>
 
 <script type="module" src="/static/__VER__/js/portal.js"></script>

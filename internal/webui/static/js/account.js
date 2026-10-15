@@ -78,22 +78,11 @@ function renderAccountRows(u, sessCount) {
 }
 
 function renderSecurity() {
-  const box = document.getElementById('acc-security');
-  box.innerHTML = '';
-  const r1 = h('div', 'list-row');
-  const m1 = h('div', 'list-main');
-  m1.appendChild(h('div', 'list-title', '免密码登录'));
-  m1.appendChild(h('div', 'list-sub', '输入名字即可进入；知道名字就能登录，请勿把管理员名字告诉别人'));
-  r1.appendChild(m1);
-  r1.appendChild(h('span', 'badge', '已启用'));
-  box.appendChild(r1);
-  const r2 = h('div', 'list-row');
-  const m2 = h('div', 'list-main');
-  m2.appendChild(h('div', 'list-title', 'PIN 码'));
-  m2.appendChild(h('div', 'list-sub', '给名字加一道门（开发中，暂未开放）'));
-  r2.appendChild(m2);
-  r2.appendChild(h('span', 'badge', '尚未设置'));
-  box.appendChild(r2);
+  const box = document.getElementById('acc-security'); box.replaceChildren();
+  const row = h('div', 'list-row'); const main = h('div', 'list-main');
+  main.append(h('div', 'list-title', 'Passkey 登录'), h('div', 'list-sub', '使用设备解锁或安全密钥验证身份；名字只用于显示。'));
+  row.append(main, h('span', 'badge', '已启用')); box.appendChild(row);
+  const note = h('p', 'list-sub', '恢复码只在激活或恢复时显示一次，请离线保管。Passkey 丢失后，退出并使用登录页的恢复入口；恢复成功会撤销旧凭据与所有旧登录。没有恢复码时需管理员核验归属。'); box.appendChild(note);
 }
 
 // segControl 分段开关：只建一次，之后只切 .on，选中背景由滑块滑过去（不再整段重建）

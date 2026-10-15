@@ -44,7 +44,14 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	wechatLogin := flag.Bool("wechat-login", false, "扫码登录个人微信 ClawBot（登录后退出）")
 	migratePortal := flag.Bool("migrate-portal", false, "把旧版 web:c2c:<名字> 数据迁到 Portal user_id 体系（先备份，幂等）")
+	authInvite := flag.String("auth-invite", "", "operator verified account to activate (or recover)")
+	authRecovery := flag.Bool("auth-recovery", false, "replace lost Passkeys after verifying account ownership")
+	authFile := flag.String("auth-invite-file", "", "new 0600 file for the one-time activation secret")
 	flag.Parse()
+	if *authRecovery && *authInvite == "" {
+		fmt.Fprintln(os.Stderr, "--auth-recovery requires --auth-invite")
+		os.Exit(1)
+	}
 
 	if *showVersion {
 		fmt.Printf("mineagent %s (protocol v%d)\n", version.Version, protocol.Version)
@@ -95,6 +102,34 @@ func main() {
 			log.Error("portal migration failed", "err", err)
 			os.Exit(1)
 		}
+		return
+	}
+
+	if *authInvite != "" {
+		if *authFile == "" {
+			log.Error("--auth-invite-file is required; activation secrets are never logged")
+			os.Exit(1)
+		}
+		output, err := os.OpenFile(*authFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			log.Error("cannot create activation file")
+			os.Exit(1)
+		}
+		acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
+		code, err := acct.IssueEnrollment(ctx, *authInvite, *authRecovery)
+		if err != nil {
+			_ = output.Close()
+			_ = os.Remove(*authFile)
+			log.Error("cannot issue activation", "err", err)
+			os.Exit(1)
+		}
+		_, writeErr := output.WriteString(code + "\n")
+		closeErr := output.Close()
+		if writeErr != nil || closeErr != nil {
+			log.Error("cannot save activation file")
+			os.Exit(1)
+		}
+		log.Info("activation saved; verify recipient ownership before delivering; expires in 24 hours", "file", *authFile)
 		return
 	}
 
@@ -278,15 +313,13 @@ func main() {
 		log.Info("wechat channel disabled (未登录：跑 mineagent --wechat-login 扫码)", "state", wechatStatePath)
 	}
 
-	// 网页入口：web.listen 非空即启用（默认 0.0.0.0:8766，公网访问要在
-	// 腾讯云控制台放行端口）。账号只用一个名字区分（无密码），
-	// 支持收发图片/文件，会话隔离 web:c2c:<名字>，页面允许 iframe 嵌入。
+	// 网页入口：账号由 Passkey 验证；会话按稳定 user ID 隔离。
 	var webCh *webui.Channel
 	var portalSrv *portal.Server
 	if cfg.Web.Listen != "" {
 		acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
-		// 旧版 tokens.json 惰性导入：老浏览器不用重新登录（幂等，可回滚）。
-		acct.ImportLegacyTokens(ctx, filepath.Join(dataDir, "tokens.json"))
+		// Old name-only tokens are not evidence of identity. Activation preserves user IDs/data.
+		// Legacy name-only sessions cannot prove account ownership and are not imported.
 
 		webCh = webui.NewChannel(log, cfg, acct, hub, store, ag,
 			wrapWebTools(webBaseTools, wsTools, store, sessionsFn, senderFn)).

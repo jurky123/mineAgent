@@ -47,12 +47,25 @@ export function shareLink(room) {
 export function connectRoomEvents({ gameId, onRoom, onComment }) {
   const es = new EventSource('/api/games/events?token=' + encodeURIComponent(shell.token));
   let last = Date.now();
+  let retryTimer = null;
+  let roomRevision = 0;
+  const connection = h('div', 'game-connection'); connection.setAttribute('role', 'status');
+  (document.querySelector('.crumb') || document.querySelector('main'))?.appendChild(connection);
+  const connected = () => { connection.textContent = '已连接'; connection.classList.remove('reconnecting'); };
+  connection.textContent = '正在连接…';
+  es.onopen = async () => {
+    clearTimeout(retryTimer); last = Date.now(); connected();
+    const revision = roomRevision;
+    try { const snapshot = await loadRoom(gameId); if (revision === roomRevision) onRoom(snapshot); } catch { connection.textContent = '连接已恢复，棋局同步失败，请刷新重试'; }
+  };
+
   es.addEventListener('room', (ev) => {
     last = Date.now();
     try {
       const data = JSON.parse(ev.data);
       if (!data || !data.room) return;
       if (gameId && data.room.game !== gameId) return;
+      roomRevision++;
       onRoom(data.room);
     } catch (e) { /* 忽略坏帧 */ }
   });
@@ -64,11 +77,13 @@ export function connectRoomEvents({ gameId, onRoom, onComment }) {
     } catch (e) { /* 忽略坏帧 */ }
   });
   es.onerror = () => {
-    setTimeout(async () => {
+    connection.textContent = '连接中断，正在重连…'; connection.classList.add('reconnecting');
+    clearTimeout(retryTimer); retryTimer = setTimeout(async () => {
       if (Date.now() - last < 5000) return;
       try {
+        const revision = roomRevision;
         const room = await loadRoom(gameId);
-        if (room) onRoom(room);
+        if (room && revision === roomRevision) onRoom(room);
       } catch (e) { /* 未登录 */ }
     }, 5200);
   };
@@ -550,26 +565,30 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   joinCard.appendChild(h('div', 'lobby-card-sub', '输入 6 位房间码'));
   const row = h('div', 'join-row');
   const input = h('input', 'input code-input');
-  input.maxLength = 6;
+  input.maxLength = 32;
+  input.id = 'join-room-code';
+  const label = h('label', 'field-label', '房间码'); label.htmlFor = input.id; joinCard.appendChild(label);
+  const error = h('p', 'field-err'); error.id = 'join-room-error'; error.setAttribute('role', 'status'); input.setAttribute('aria-describedby', error.id);
   input.placeholder = 'AB3K9Q';
   input.autocapitalize = 'characters';
   input.spellcheck = false;
   const join = h('button', 'btn cta', '加入');
   const doJoin = async () => {
     const code = input.value.trim().toUpperCase();
-    if (!code) { toast('先填房间码', { warn: true }); return; }
+    error.textContent = ''; input.removeAttribute('aria-invalid');
+    if (!/^[A-Z0-9]{6}$/.test(code)) { error.textContent = '请输入完整的 6 位房间码'; input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
     if (demoJoin) { onRoom(demoJoin()); return; }
     try {
       const res = await joinRoom(gameId, code);
       if (res.redirect && res.redirect !== '/games/' + gameId) { location.href = res.redirect; return; }
       onRoom(res.room);
-    } catch (e) { toast(e.message, { warn: true }); }
+    } catch (e) { error.textContent = e.message; input.setAttribute('aria-invalid', 'true'); }
   };
   join.onclick = () => withPending(join, doJoin);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doJoin(); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') join.click(); });
   row.appendChild(input);
   row.appendChild(join);
-  joinCard.appendChild(row);
+  joinCard.append(row, error);
   grid.appendChild(joinCard);
   el.appendChild(grid);
 
@@ -589,7 +608,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
     try {
       const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
       list.innerHTML = '';
-      if (!rooms.length) { list.appendChild(h('div', 'empty', '还没有等待中的房间，创建一间等人来吧')); return; }
+      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂时没有开放房间。邀请朋友，或者先看看一局怎么下。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?ui=1'; empty.appendChild(replay); list.appendChild(empty); return; }
       for (const r of rooms) {
         const item = h('div', 'list-row');
         item.appendChild(h('span', 'avatar', (r.host[0] || '?')));

@@ -2,13 +2,13 @@
 // 页面约定：<div id="shell-top"></div> + 自己的内容 + 调 shell.boot(active)。
 // 未登录时渲染整页登录态（不是弹窗），登录后才进入门户。
 
+import { passkeyForm } from './passkeys.js';
 import { h, icon, toast, gameIcon, segThumb, reducedMotion } from './ds.js';
 
 // 命令面板里的棋类图标（用真实棋子/石图）
 function gameIconEl(id, cls) { return gameIcon(id, cls); }
 
 const TOKEN_KEY = 'mineagent.token';
-const LOGIN_SLOGAN = '欢迎━(*｀∀´*)ノ亻!';
 const NAME_KEY = 'mineagent.name';
 const LAST_KEY = 'mineagent.lastName';
 const SHELL_CACHE_KEY = 'mineagent.shell';   // 上次的 apps + user：新页面首帧就画完整顶栏，不等接口
@@ -57,7 +57,8 @@ export function setTheme(mode) {
     const root = document.documentElement;
     root.classList.add('vt-theme');
     const vt = document.startViewTransition(() => applyTheme());
-    vt.finished.finally(() => root.classList.remove('vt-theme'));
+    vt.ready.catch(() => {});
+    vt.finished.then(() => root.classList.remove('vt-theme'), () => root.classList.remove('vt-theme'));
   } else {
     applyTheme();
   }
@@ -116,99 +117,22 @@ export function clearAuth() {
 }
 
 export async function logout() {
-  try { await apiPost('/api/auth/logout'); } catch (e) { /* 忽略 */ }
+  try { await apiPost('/api/auth/logout'); } catch (e) { toast('退出失败，请恢复连接后重试', { warn: true }); return; }
   clearAuth();
   location.href = '/';
 }
 
 // ---------- 整页登录态 ----------
-async function doLogin(name) {
-  const res = await fetch('/api/auth/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
-  saveAuth({ id: body.id, name: body.name, admin: !!body.admin }, body.token);
-  return shell.user;
-}
-
 function loginView() {
   return new Promise((resolve) => {
     const view = h('div', 'login-view');
     const box = h('div', 'login-box');
-    box.appendChild(h('div', 'login-mark'));
-    box.appendChild(h('h1', 'login-title', 'Mine'));
-
-    const lastName = (localStorage.getItem(LAST_KEY) || '').trim();
-    const err = h('div', 'field-err');
-
-    const submit = async (name) => {
-      err.textContent = '';
-      if (!name) { err.textContent = '先填个名字'; return; }
-      try {
-        const user = await doLogin(name);
-        view.remove();
-        resolve(user);
-      } catch (e) {
-        err.textContent = e.message;
-      }
-    };
-
-    const render = (showLast) => {
-      box.innerHTML = '';
-      const lm = h('img', 'login-mark');
-      lm.src = '/static/' + pageVersion() + '/img/logo.png';
-      lm.alt = '';
-      box.appendChild(lm);
-      box.appendChild(h('h1', 'login-title', 'Mine'));
-      if (showLast && lastName) {
-        box.appendChild(h('p', 'login-sub', LOGIN_SLOGAN));
-        const cont = h('button', 'btn primary cta login-go', '以 ' + lastName + ' 继续');
-        cont.onclick = () => submit(lastName);
-        box.appendChild(cont);
-        const other = h('button', 'btn ghost sm login-other', '使用其他名字');
-        other.onclick = () => render(false);
-        box.appendChild(other);
-      } else {
-        const frag = paintForm('', submit);
-        if (lastName) {
-          const back = h('button', 'btn ghost sm login-other', '← 用上次的名字');
-          back.onclick = () => render(true);
-          frag.appendChild(back);
-        }
-        box.appendChild(frag);
-      }
-      box.appendChild(err);
-      box.appendChild(h('p', 'login-hint', '暂时不需要密码 · 输入名字即可进入'));
-      const input = box.querySelector('input');
-      if (input) input.focus();
-    };
-    render(true);
-    view.appendChild(box);
-    document.body.appendChild(view);
+    box.appendChild(passkeyForm((data) => {
+      saveAuth({ id: data.id, name: data.name, admin: !!data.admin }, data.token);
+      view.remove(); resolve(shell.user);
+    }));
+    view.appendChild(box); document.body.appendChild(view);
   });
-}
-
-function paintForm(value, submit) {
-  const frag = document.createDocumentFragment();
-  frag.appendChild(h('p', 'login-sub', LOGIN_SLOGAN));
-  const field = h('div', 'field');
-  const input = h('input', 'input login-input');
-  input.id = 'login-name';
-  input.maxLength = 24;
-  input.placeholder = '你的名字';
-  input.value = value || '';
-  input.autocomplete = 'off';
-  input.spellcheck = false;
-  field.appendChild(input);
-  frag.appendChild(field);
-  const go = h('button', 'btn primary cta login-go', '继续');
-  const run = () => submit(input.value.trim());
-  go.onclick = run;
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
-  frag.appendChild(go);
-  return frag;
 }
 
 // ---------- 顶栏 ----------
@@ -224,14 +148,16 @@ function paintTop(active) {
   mark.src = '/static/' + pageVersion() + '/img/logo.png';
   mark.alt = '';
   brand.appendChild(mark);
-  brand.appendChild(h('span', null, 'Mine'));
+  brand.appendChild(h('span', null, 'zkun'));
   bar.appendChild(brand);
 
   const nav = h('nav', 'nav');
   const mk = (label, path, iconName) => {
-    const on = path.split('?')[0] === active;
+    const on = path.split('?')[0] === active || (path === '/games' && active.startsWith('/games/'));
+
     const a = h('a', 'nav-item' + (on ? ' on' : ''));
     a.href = path;
+    if (on) a.setAttribute('aria-current', 'page');
     if (on) a.appendChild(h('span', 'nav-pill'));
     a.appendChild(icon(iconName));
     a.appendChild(h('span', null, label));
@@ -239,15 +165,16 @@ function paintTop(active) {
   };
   mk('首页', '/', 'home');
   for (const app of shell.apps) {
-    if (app.nav && app.path) mk(app.navLabel || app.name, app.path, app.icon || 'info');
+    if (app.nav && app.path && ['agent', 'games'].includes(app.id)) mk(app.navLabel || app.name, app.path, app.icon || 'info');
   }
+  mk('Minecraft', '/minecraft', 'pickaxe');
   bar.appendChild(nav);
   bar.appendChild(h('div', 'spacer'));
 
   // 主题选择器（明确列出三个选项，不再循环切换）
   const themeWrap = h('div', 'pop-wrap theme-wrap');
   const themeBtn = h('button', 'icon-btn');
-  themeBtn.title = '外观';
+  themeBtn.title = '外观'; themeBtn.setAttribute('aria-label', '外观'); themeBtn.setAttribute('aria-expanded', 'false');
   themeBtn.appendChild(icon('sun'));
   const themePop = h('div', 'pop');
   themePop.appendChild(h('div', 'pop-head', '外观'));
@@ -275,7 +202,7 @@ function paintTop(active) {
   // 账户菜单
   const accWrap = h('div', 'pop-wrap');
   const accBtn = h('button', 'icon-btn account-btn');
-  accBtn.title = shell.user ? shell.user.name : '登录';
+  accBtn.title = shell.user ? shell.user.name : '登录'; accBtn.setAttribute('aria-label', shell.user ? shell.user.name + '的账户菜单' : '登录菜单'); accBtn.setAttribute('aria-expanded', 'false');
   if (shell.user) {
     const av = h('span', 'avatar', (shell.user.name[0] || '?'));
     // Portal → Account 的头像共享元素。账号页自己的大头像已经叫 user-avatar，
@@ -297,6 +224,7 @@ function paintTop(active) {
       b.onclick = fn;
       accPop.appendChild(b);
     };
+    item('显示屏工具', 'monitor', () => { location.href = '/screens'; });
     item('我的账号', 'user', () => { location.href = '/account'; });
     // 手机上没有主题按钮：把外观放进账号菜单（三个明确选项）
     const themeRow = h('div', 'menu-theme');
@@ -322,7 +250,7 @@ function paintTop(active) {
     const b = h('button', 'pop-item');
     b.appendChild(icon('user'));
     b.appendChild(h('span', null, '登录'));
-    b.onclick = () => location.reload();
+    b.onclick = () => { location.href = '/account'; };
     accPop.appendChild(b);
   }
   accBtn.onclick = (e) => { e.stopPropagation(); closePops(accPop); togglePop(accPop); };
@@ -333,7 +261,9 @@ function paintTop(active) {
 
   host.appendChild(bar);
   paintTabbar(active);
-  if (!paintTop.bound) { document.addEventListener('click', () => closePops()); paintTop.bound = true; }
+  if (!paintTop.bound) { document.addEventListener('click', () => closePops());
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { const open = document.querySelector('.pop.on'); if (open) { const trigger = open.parentElement.querySelector('button'); closePops(); trigger?.focus(); } } });
+    paintTop.bound = true; }
 }
 
 // 手机底部 tabbar：拇指可达；≤640px 显示（顶栏导航同时隐藏）
@@ -344,6 +274,7 @@ function paintTabbar(active) {
     { label: '首页', path: '/', icon: 'home' },
     { label: 'Agent', path: '/agent', icon: 'sparkle' },
     { label: '游戏', path: '/games', icon: 'gamepad' },
+    { label: 'Minecraft', path: '/minecraft', icon: 'pickaxe' },
     { label: '我的', path: '/account', icon: 'user' },
   ];
   const bar = h('nav', 'tabbar');
@@ -351,6 +282,7 @@ function paintTabbar(active) {
   for (const it of items) {
     const on = it.path === active || (it.path !== '/' && active.startsWith(it.path));
     const a = h('a', 'tab' + (on ? ' on' : ''));
+    if (on) a.setAttribute('aria-current', 'page');
     a.href = it.path;
     const ic = h('span', 'tab-ic');
     if (on) ic.appendChild(h('span', 'tab-pill'));
@@ -370,13 +302,14 @@ function closePops(except) {
 function hidePop(el) {
   if (!el || !el.classList.contains('on') || el.classList.contains('closing')) return;
   el.classList.remove('on');
+  el.parentElement.querySelector('button')?.setAttribute('aria-expanded', 'false');
   el.classList.add('closing');
   setTimeout(() => el.classList.remove('closing'), 130);
 }
 
 function togglePop(el) {
   if (el.classList.contains('on')) hidePop(el);
-  else { el.classList.remove('closing'); el.classList.add('on'); }
+  else { el.classList.remove('closing'); el.classList.add('on'); el.parentElement.querySelector('button')?.setAttribute('aria-expanded', 'true'); }
 }
 
 // ---------- 命令面板（Ctrl/Cmd+K）----------
@@ -460,7 +393,7 @@ export async function boot({ active = '', requireLogin = true, preview = false }
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
   mql.addEventListener('change', () => { if (themeMode() === 'system') applyTheme(); });
-  document.body.classList.add('ds');
+  if (!document.body.classList.contains('agent-page')) document.body.classList.add('ds');
 
   if (preview) {
     // 预览：不请求后端，直接用假账号/假应用，但走同一套顶栏渲染

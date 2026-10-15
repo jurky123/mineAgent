@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +26,8 @@ import (
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 )
+
+var channelFixtures sync.Map
 
 func newTestChannel(t *testing.T) (*Channel, *httptest.Server, string) {
 	t.Helper()
@@ -54,24 +58,51 @@ func newTestChannel(t *testing.T) (*Channel, *httptest.Server, string) {
 	acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
 	ch := NewChannel(log, cfg, acct, hub, store, ag, nil).WithMCStatus(nil)
 	ts := httptest.NewServer(ch.handler())
-	t.Cleanup(ts.Close)
+	channelFixtures.Store(ts.URL, ch)
+	t.Cleanup(func() { channelFixtures.Delete(ts.URL); ts.Close() })
 	return ch, ts, ws
 }
 
+// Application API tests use seeded verified sessions. Real WebAuthn ceremonies are
+// covered by the separate virtual-authenticator integration suite.
 func loginTest(t *testing.T, ts *httptest.Server, name string) string {
 	t.Helper()
-	res, err := http.Post(ts.URL+"/api/login", "application/json",
-		strings.NewReader(fmt.Sprintf(`{"name":%q}`, name)))
+	fixture, ok := channelFixtures.Load(ts.URL)
+	if !ok {
+		t.Fatal("missing test fixture")
+	}
+	ch := fixture.(*Channel)
+	ctx := context.Background()
+	u, err := ch.store.EnsureUser(ctx, name, time.Now().UnixMilli())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer res.Body.Close()
-	var body map[string]any
-	_ = json.NewDecoder(res.Body).Decode(&body)
-	if res.StatusCode != 200 {
-		t.Fatalf("login %s: status=%d body=%v", name, res.StatusCode, body)
+	if err = ch.store.SetUserAdmin(ctx, name, ch.acct.IsAdminName(name)); err != nil {
+		t.Fatal(err)
 	}
-	return body["token"].(string)
+	credentialID := []byte("fixture-credential-" + name)
+	credentials, err := ch.store.PasskeyCredentials(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(credentials) == 0 {
+		hash := fmt.Sprintf("fixture-grant-%s", name)
+		if err = ch.store.CreatePasskeyGrant(ctx, u.ID, []byte("fixture-handle-"+name), hash, time.Now().Add(time.Hour).UnixMilli(), false); err != nil {
+			t.Fatal(err)
+		}
+		if err = ch.store.CommitPasskeyEnrollment(ctx, hash, u.ID, credentialID, []byte(`{}`), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token := fmt.Sprintf("test-session-%s-%d", name, time.Now().UnixNano())
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+	if err = ch.store.CreateAuthSession(ctx, storage.AuthSession{UserID: u.ID, TokenHash: hash, CreatedAt: time.Now().UnixMilli(), ExpiresAt: time.Now().Add(time.Hour).UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if err = ch.store.MarkPasskeySession(ctx, hash, credentialID); err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 func doJSON(t *testing.T, method, url, token string, payload any, out any) int {
@@ -105,10 +136,10 @@ func doJSON(t *testing.T, method, url, token string, payload any, out any) int {
 func TestLoginAndAuth(t *testing.T) {
 	_, ts, _ := newTestChannel(t)
 
-	// 非法名字
+	// Legacy name-only login must be disabled regardless of the submitted name.
 	res, _ := http.Post(ts.URL+"/api/login", "application/json", strings.NewReader(`{"name":"a b"}`))
-	if res.StatusCode != 400 {
-		t.Fatalf("bad name status=%d", res.StatusCode)
+	if res.StatusCode != 410 {
+		t.Fatalf("legacy login status=%d", res.StatusCode)
 	}
 	_ = res.Body.Close()
 
@@ -118,13 +149,16 @@ func TestLoginAndAuth(t *testing.T) {
 	}
 
 	tok := loginTest(t, ts, "jzk")
-	// 同名二次登录：旧令牌仍然有效（多设备并存）
+	// Two verified sessions may coexist for the same account.
 	tok2 := loginTest(t, ts, "jzk")
 	if code := doJSON(t, "GET", ts.URL+"/api/me", tok, nil, nil); code != 200 {
 		t.Fatalf("旧令牌被踢: status=%d", code)
 	}
 	if code := doJSON(t, "GET", ts.URL+"/api/me", tok2, nil, nil); code != 200 {
 		t.Fatalf("新令牌不可用: status=%d", code)
+	}
+	if code := doJSON(t, "GET", ts.URL+"/api/auth/me", tok, nil, nil); code != 200 {
+		t.Fatalf("standalone identity alias status=%d", code)
 	}
 	var me map[string]any
 	if code := doJSON(t, "GET", ts.URL+"/api/me", tok, nil, &me); code != 200 {
@@ -258,9 +292,12 @@ func TestMsgFileCookieAuthAndName(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 
-	res, err := client.Post(ts.URL+"/api/login", "application/json", strings.NewReader(`{"name":"jzk"}`))
+	token := loginTest(t, ts, "jzk")
+	req, _ := http.NewRequest("GET", ts.URL+"/api/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := client.Do(req)
 	if err != nil || res.StatusCode != 200 {
-		t.Fatalf("login: %v %d", err, res.StatusCode)
+		t.Fatalf("fixture auth failed: %v", err)
 	}
 	_ = res.Body.Close()
 

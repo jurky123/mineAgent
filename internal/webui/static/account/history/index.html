@@ -28,7 +28,7 @@
 </head>
 <body>
 <div id="shell-top"><div class="topbar topbar-static">
-  <a class="brand" href="/"><img class="brand-logo" src="/static/__VER__/img/logo.png" alt=""><span>Mine</span></a>
+  <a class="brand" href="/"><img class="brand-logo" src="/static/__VER__/img/logo.png" alt=""><span>zkun</span></a>
   <nav class="nav"><span class="nav-item">首页</span></nav>
   <div class="spacer"></div>
 </div></div>
@@ -55,7 +55,7 @@
   <div id="replay-view" hidden>
     <div class="replay-head">
       <button class="btn sm ghost" id="back">← 返回列表</button>
-      <span class="replay-title" id="replay-title"></span>
+      <span class="badge">历史回放</span><span class="replay-title" id="replay-title"></span>
     </div>
     <div class="replay-layout">
       <div class="replay-board-col">
@@ -64,11 +64,11 @@
         <div class="player-line" id="replay-bottom"></div>
         <div class="replay-controls">
           <button class="btn sm" id="first" title="回到开头">首</button>
-          <button class="btn sm" id="prev">◀</button>
+          <button class="btn sm" id="prev" aria-label="上一步">◀</button>
           <span class="replay-step" id="step">0 / 0</span>
-          <button class="btn sm" id="next">▶</button>
+          <button class="btn sm" id="next" aria-label="下一步">▶</button>
           <button class="btn sm" id="last" title="跳到末尾">末</button>
-          <input type="range" id="slider" min="0" max="0" value="0" class="replay-slider">
+          <input type="range" id="slider" aria-label="回放步数" min="0" max="0" value="0" class="replay-slider">
         </div>
       </div>
       <aside class="chess-side">

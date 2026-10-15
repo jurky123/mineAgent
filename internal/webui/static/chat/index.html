@@ -61,14 +61,10 @@
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M5.6 18.4 7 17m10-10 1.4-1.4"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
 </svg>
 
+<div id="shell-top"></div>
 <div id="login">
   <div class="login-card">
-    <div class="logo-mark">M</div>
-    <h1>MineAgent</h1>
-    <p>输入名字进入 · 每个名字独立的会话与记忆</p>
-    <input id="name" class="login-input" maxlength="24" placeholder="你的名字，如 jzk" autocomplete="off" name="mineagent-account" spellcheck="false">
-    <button id="enter" class="login-btn">进入</button>
-    <div class="login-err" id="loginerr"></div>
+    <p role="status">正在准备登录…</p>
     <a class="login-home" href="/">← 回门户</a>
   </div>
 </div>
@@ -121,12 +117,12 @@
       <div id="listInner">
         <button id="loadolder" hidden>载入更早消息</button>
         <div class="empty" id="empty">
-          <h2>有什么可以帮你？</h2>
+          <div class="agent-welcome-mark" aria-hidden="true">z</div><h2>有什么可以帮你？</h2><p class="agent-welcome-sub">聊个想法、查点资料，或者看看朋友们的世界。</p>
           <div id="emptySlot"></div>
           <div class="suggests">
             <button data-q="看看服务器现在在线有谁">在线玩家</button>
             <button data-q="服务器状态怎么样，卡不卡？">服务器状态</button>
-            <button data-q="用 PIL 画一张示意图，然后发给我">画张图发我</button>
+            <button data-q="帮我整理一下这个想法，先问我需要补充什么">整理想法</button>
             <button data-q="/help">看看命令</button>
           </div>
         </div>

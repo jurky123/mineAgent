@@ -8,7 +8,7 @@ export function setUnauthorizedHandler(fn) { unauthorizedHandler = fn; }
 
 export async function api(path, opts) {
   opts = opts || {};
-  opts.headers = Object.assign({}, opts.headers, { 'Authorization': 'Bearer ' + S.token });
+  opts.headers = Object.assign({}, opts.headers, S.token ? { 'Authorization': 'Bearer ' + S.token } : {});
   const res = await fetch(path, opts);
   let body = null;
   try { body = await res.json(); } catch (e) { /* 空响应 */ }
@@ -29,7 +29,7 @@ export const apiPost = (path, payload) => api(path, {
 });
 
 export function logoutRequest() {
-  return fetch('/api/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + S.token } }).catch(() => {});
+  return apiPost('/api/logout');
 }
 
 export { bus };

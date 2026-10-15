@@ -25,7 +25,7 @@ function resultBadge(result) {
 
 // ---------- 列表 ----------
 async function load(append) {
-  if (DEMO) { renderList(demoRuns(), false); return; }
+  if (DEMO) { runs = demoRuns(); renderList(runs, false); return; }
   const url = '/api/games/history?limit=20' + (append && cursor ? '&before=' + cursor : '');
   const { runs: list } = await apiGet(url);
   if (!append) runs = [];
@@ -140,11 +140,13 @@ function openReplay(run, meta) {
   const top = document.getElementById('replay-top');
   const bottom = document.getElementById('replay-bottom');
   const opponent = meta.opponent || '对手';
-  top.textContent = (meta.side === 'white' ? opponent : '你');
-  bottom.textContent = (meta.side === 'white' ? '你' : opponent);
+  const bottomSide = game === 'gomoku' ? 'black' : 'white';
+  top.textContent = meta.side === bottomSide ? opponent : '你';
+  bottom.textContent = meta.side === bottomSide ? '你' : opponent;
   const slider = document.getElementById('slider');
   slider.max = String(steps.length - 1);
   renderReplay();
+  document.getElementById('back').focus();
 }
 
 function resultText(result) {
@@ -210,19 +212,58 @@ function renderReplay() {
       dot.classList.add('replay-stone');
       grid.appendChild(dot);
     }
-    board.appendChild(grid);
+    if (index === steps.length - 1 && replay.meta.reason === 'five') {
+      const win = winningLine(cells);
+      if (win) {
+        const line = document.createElementNS(SVG_NS, 'line');
+        line.setAttribute('x1', win[0] % 15 + .5); line.setAttribute('y1', Math.floor(win[0] / 15) + .5);
+        line.setAttribute('x2', win[1] % 15 + .5); line.setAttribute('y2', Math.floor(win[1] / 15) + .5);
+        line.setAttribute('class', 'replay-winning-line'); svg.appendChild(line);
+      }
+    }
+    const frame = h('div', 'gomoku-frame');
+    const cols = h('div', 'gomoku-cols'); const rows = h('div', 'gomoku-rows');
+    for (let i = 0; i < 15; i++) { cols.appendChild(h('span', null, String.fromCharCode(65 + i))); rows.appendChild(h('span', null, String(i + 1))); }
+    frame.append(cols, rows, grid); board.appendChild(frame);
   }
   const moves = document.getElementById('replay-moves');
   moves.innerHTML = '';
-  const display = replay.meta.display || [];
+  const display = replay.meta.display?.length ? replay.meta.display : replay.meta.movelist || [];
   if (!display.length) { moves.appendChild(h('div', 'empty', '暂无')); return; }
   const table = h('div', 'moves-grid');
   for (let i = 0; i < display.length; i += 2) {
     table.appendChild(h('span', 'mv-no', (i / 2 + 1) + '.'));
-    table.appendChild(h('span', 'mv' + (i === index - 1 ? ' last' : ''), display[i]));
-    table.appendChild(h('span', 'mv' + (i + 1 === index - 1 ? ' last' : ''), display[i + 1] || ''));
+    for (let j = i; j < i + 2; j++) {
+      if (!display[j]) { table.appendChild(h('span')); continue; }
+      const button = h('button', 'mv' + (j === index - 1 ? ' last' : ''), display[j]);
+      button.setAttribute('aria-label', '跳到第 ' + (j + 1) + ' 手：' + display[j]);
+      if (j === index - 1) button.setAttribute('aria-current', 'step');
+      button.onclick = () => { replay.index = Math.min(j + 1, steps.length - 1); renderReplay(); };
+      table.appendChild(button);
+    }
   }
   moves.appendChild(table);
+  const current = table.querySelector('[aria-current]');
+  if (current) {
+    const row = current.offsetTop - moves.offsetTop;
+    if (row < moves.scrollTop || row + current.offsetHeight > moves.scrollTop + moves.clientHeight) moves.scrollTop = Math.max(0, row - moves.clientHeight / 2);
+  }
+  document.getElementById('first').disabled = document.getElementById('prev').disabled = index === 0;
+  document.getElementById('last').disabled = document.getElementById('next').disabled = index === steps.length - 1;
+
+}
+
+function winningLine(cells) {
+  for (let i = 0; i < 225; i++) {
+    if (cells[i] === '.') continue;
+    const row = Math.floor(i / 15), col = i % 15;
+    for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+      const r = row + dr * 4, c = col + dc * 4;
+      if (r < 0 || r >= 15 || c < 0 || c >= 15) continue;
+      if ([1, 2, 3, 4].every((n) => cells[(row + dr * n) * 15 + col + dc * n] === cells[i])) return [i, r * 15 + c];
+    }
+  }
+  return null;
 }
 
 function ptName(i) { return String.fromCharCode(97 + (i % 15)) + (Math.floor(i / 15) + 1); }
@@ -233,6 +274,16 @@ function stepBy(delta) {
   renderReplay();
 }
 
+function showLoadError(error) {
+  const box = document.getElementById('runs');
+  const row = h('div', 'empty'); row.setAttribute('role', 'status'); row.appendChild(h('p', null, '历史记录加载失败：' + error.message));
+  const retry = h('button', 'btn', '重试'); retry.onclick = () => load(false).catch(showLoadError); row.appendChild(retry); box.replaceChildren(row);
+}
+document.addEventListener('keydown', (event) => {
+  if (!replay || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); stepBy(event.key === 'ArrowLeft' ? -1 : 1); }
+  else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); replay.index = event.key === 'Home' ? 0 : replay.steps.length - 1; renderReplay(); }
+});
 // ---------- demo ----------
 function demoRuns() {
   return [
@@ -247,7 +298,7 @@ function demoRuns() {
     document.getElementById('replay-view').hidden = true;
     document.getElementById('list-view').hidden = false;
   };
-  document.getElementById('more').onclick = () => load(true);
+  document.getElementById('more').onclick = () => load(true).catch(showLoadError);
   document.getElementById('first').onclick = () => { replay.index = 0; renderReplay(); };
   document.getElementById('prev').onclick = () => stepBy(-1);
   document.getElementById('next').onclick = () => stepBy(1);
@@ -256,11 +307,12 @@ function demoRuns() {
 
   if (DEMO) {
     await boot({ active: '/account', preview: true });
+    const badge = h('span', 'badge', '演示数据 · 非真实对局'); document.querySelector('.crumb').appendChild(badge);
     runs = demoRuns();
     renderList(runs, false);
     return;
   }
   const user = await boot({ active: '/account' });
   if (!user) return;
-  await load(false);
+  await load(false).catch(showLoadError);
 })();

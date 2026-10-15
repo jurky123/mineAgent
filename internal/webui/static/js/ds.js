@@ -205,6 +205,7 @@ export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: r
 
 // reveal 异步内容首次出现时淡入上浮（同一批次按顺序错开 45ms，最多错开 8 个）。
 export function reveal(nodes) {
+  if (reducedMotion()) return;
   let i = 0;
   for (const el of nodes) {
     if (!(el instanceof Element)) continue;
@@ -217,7 +218,9 @@ export function reveal(nodes) {
 // swapView 同一页面内换一屏（如大厅 ↔ 房间）：支持 View Transitions 就淡出淡入，不支持直接换。
 export function swapView(update) {
   if (!document.startViewTransition || reducedMotion() || document.hidden) { update(); return; }
-  document.startViewTransition(update);
+  const transition = document.startViewTransition(update);
+  transition.ready.catch(() => {});
+  transition.finished.catch(() => {});
 }
 
 // segThumb 给 .seg 分段控件加一个滑动的选中滑块，返回 sync()：选中项变化后调用一次。

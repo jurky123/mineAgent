@@ -1,0 +1,61 @@
+// Password migration against a real disposable Go server/database; never production accounts.
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { chromium } from 'playwright';
+const server = spawn('go', ['run', './scripts/passkey-fixture'], { stdio: ['pipe', 'pipe', 'inherit'] });
+let browser;
+try {
+  const lines = createInterface({ input: server.stdout });
+  const fixture = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('fixture startup timed out')), 90000);
+    lines.once('line', (line) => { clearTimeout(timeout); resolve(JSON.parse(line)); });
+    server.once('exit', () => { clearTimeout(timeout); reject(new Error('fixture exited')); });
+  });
+  const { origin } = fixture;
+  browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto(origin + '/account');
+  await page.getByLabel('账号名称', { exact: true }).fill('owner');
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.getByRole('heading', { name: '为账号设置密码' }).waitFor();
+  await page.getByLabel('创建密码', { exact: true }).fill('correct test phrase!');
+  await page.getByLabel('再次输入密码', { exact: true }).fill('does not match!');
+  await page.getByRole('button', { name: '设置密码并进入' }).click();
+  await page.getByRole('alert').filter({ hasText: '两次输入的密码不一致' }).waitFor();
+  await page.getByLabel('再次输入密码', { exact: true }).fill('correct test phrase!');
+  await page.getByRole('button', { name: '设置密码并进入' }).click();
+  await page.locator('#acc-name').filter({ hasText: 'owner' }).waitFor();
+  assert.equal(await page.locator('.login-view').count(), 0);
+  const token = await page.evaluate(() => localStorage.getItem('mineagent.token'));
+  const headers = { Authorization: 'Bearer ' + token };
+  const me = await context.request.get(origin + '/api/auth/me', { headers }); assert.equal(me.status(), 200);
+  const firstID = (await me.json()).id;
+  const hist = await context.request.get(origin + '/api/history?conv=', { headers }); assert.match(await hist.text(), /fixture-history-preserved/);
+  assert.equal((await context.request.get(origin + '/api/auth/me', { headers: { Authorization: 'Bearer ' + fixture.legacyToken } })).status(), 401);
+  assert.equal((await context.request.post(origin + '/api/auth/password/setup', { headers: { Origin: origin }, data: { name: 'owner', password: 'another test phrase!', confirm: 'another test phrase!' } })).status(), 409);
+  await context.request.post(origin + '/api/auth/logout', { headers });
+  await page.evaluate(() => localStorage.clear()); await page.goto(origin + '/account');
+  await page.getByLabel('账号名称', { exact: true }).fill('owner');
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  await page.getByLabel('密码', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: '设置密码并进入' }).count(), 0);
+  await page.getByLabel('密码', { exact: true }).fill('incorrect test phrase!');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: '账号或密码不正确' }).waitFor();
+  assert.equal(await page.getByLabel('密码', { exact: true }).inputValue(), 'incorrect test phrase!');
+  await page.getByLabel('密码', { exact: true }).fill('correct test phrase!');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.locator('#acc-name').filter({ hasText: 'owner' }).waitFor();
+  const secondToken = await page.evaluate(() => localStorage.getItem('mineagent.token'));
+  const second = await context.request.get(origin + '/api/auth/me', { headers: { Authorization: 'Bearer ' + secondToken } });
+  assert.equal((await second.json()).id, firstID);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.deepEqual(errors, []);
+  console.log('PASS: existing account first-login password setup, confirmation, history/ID preservation, admin role, legacy rejection, setup overwrite rejection, logout, wrong password and subsequent password login.');
+} finally {
+  if (browser) await browser.close(); server.stdin.end();
+  await new Promise((resolve) => { if (server.exitCode !== null) resolve(); else { server.once('exit', resolve); setTimeout(() => server.kill(), 3000).unref(); } });
+}

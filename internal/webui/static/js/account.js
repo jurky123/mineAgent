@@ -80,9 +80,9 @@ function renderAccountRows(u, sessCount) {
 function renderSecurity() {
   const box = document.getElementById('acc-security'); box.replaceChildren();
   const row = h('div', 'list-row'); const main = h('div', 'list-main');
-  main.append(h('div', 'list-title', 'Passkey 登录'), h('div', 'list-sub', '使用设备解锁或安全密钥验证身份；名字只用于显示。'));
+  main.append(h('div', 'list-title', '账号密码'), h('div', 'list-sub', '首次进入时创建密码，以后必须验证密码。也可使用已绑定的 Passkey。'));
   row.append(main, h('span', 'badge', '已启用')); box.appendChild(row);
-  const note = h('p', 'list-sub', '恢复码只在激活或恢复时显示一次，请离线保管。Passkey 丢失后，退出并使用登录页的恢复入口；恢复成功会撤销旧凭据与所有旧登录。没有恢复码时需管理员核验归属。'); box.appendChild(note);
+  const note = h('p', 'list-sub', '忘记密码请联系管理员核验后重置。使用 Passkey 的用户请离线保存恢复码，丢失后从 Passkey 登录页进入恢复流程。'); box.appendChild(note);
 }
 
 // segControl 分段开关：只建一次，之后只切 .on，选中背景由滑块滑过去（不再整段重建）

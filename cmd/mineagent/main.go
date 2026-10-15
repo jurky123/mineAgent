@@ -44,6 +44,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	wechatLogin := flag.Bool("wechat-login", false, "扫码登录个人微信 ClawBot（登录后退出）")
 	migratePortal := flag.Bool("migrate-portal", false, "把旧版 web:c2c:<名字> 数据迁到 Portal user_id 体系（先备份，幂等）")
+	authResetPassword := flag.String("auth-reset-password", "", "operator-only password reset after verifying ownership")
 	authInvite := flag.String("auth-invite", "", "operator verified account to activate (or recover)")
 	authRecovery := flag.Bool("auth-recovery", false, "replace lost Passkeys after verifying account ownership")
 	authFile := flag.String("auth-invite-file", "", "new 0600 file for the one-time activation secret")
@@ -105,6 +106,19 @@ func main() {
 		return
 	}
 
+	if *authResetPassword != "" {
+		if *authInvite != "" {
+			log.Error("choose only one authentication operation")
+			os.Exit(1)
+		}
+		acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
+		if err := acct.ResetPassword(ctx, *authResetPassword); err != nil {
+			log.Error("password reset failed", "err", err)
+			os.Exit(1)
+		}
+		log.Info("password removed and sessions revoked; user must create a password at next login")
+		return
+	}
 	if *authInvite != "" {
 		if *authFile == "" {
 			log.Error("--auth-invite-file is required; activation secrets are never logged")

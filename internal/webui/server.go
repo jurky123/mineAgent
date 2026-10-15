@@ -54,6 +54,7 @@ func (c *Channel) ServeOn(addr string, h http.Handler) error {
 func (c *Channel) API() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/login", c.handleLogin)
+	mux.Handle("/api/auth/password/", c.passwords)
 	mux.HandleFunc("/api/auth/passkey/", func(w http.ResponseWriter, r *http.Request) {
 		if c.passkeys == nil {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "Passkey 尚未配置，请联系管理员"})

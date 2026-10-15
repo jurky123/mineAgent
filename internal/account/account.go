@@ -81,6 +81,9 @@ func (s *Service) IsAdminName(name string) bool {
 
 // issueSession is called only after successful WebAuthn verification.
 func (s *Service) issueSession(ctx context.Context, u *storage.User, credentialID []byte, userAgent, ip string) (*storage.User, string, error) {
+	return s.issueVerifiedSession(ctx, u, userAgent, ip, func(hash string) error { return s.store.MarkPasskeySession(ctx, hash, credentialID) })
+}
+func (s *Service) issueVerifiedSession(ctx context.Context, u *storage.User, userAgent, ip string, mark func(string) error) (*storage.User, string, error) {
 	now := time.Now()
 	if !s.LoginAllowed(u.Username) {
 		return nil, "", errors.New("account is not allowed")
@@ -103,7 +106,7 @@ func (s *Service) issueSession(ctx context.Context, u *storage.User, credentialI
 	}); err != nil {
 		return nil, "", err
 	}
-	if err := s.store.MarkPasskeySession(ctx, hash, credentialID); err != nil {
+	if err := mark(hash); err != nil {
 		_ = s.store.DeleteAuthSession(ctx, hash)
 		return nil, "", err
 	}
@@ -114,7 +117,7 @@ func (s *Service) issueSession(ctx context.Context, u *storage.User, credentialI
 
 // CurrentWithSession 同 Current，但附带会话 ID（账号页"退出所有设备"用）。
 func (s *Service) CurrentWithSession(ctx context.Context, token string) (*storage.User, int64, bool) {
-	if token == "" || !s.store.IsPasskeySession(ctx, hashToken(token)) {
+	if token == "" || !s.store.IsVerifiedSession(ctx, hashToken(token)) {
 		return nil, 0, false
 	}
 	u, sid, err := s.store.AuthSessionUser(ctx, hashToken(token), time.Now().UnixMilli())
@@ -143,7 +146,7 @@ func (s *Service) RevokeOtherSessions(ctx context.Context, token string) (int64,
 
 // Current 校验 token 返回用户；无效/过期返回 nil。
 func (s *Service) Current(ctx context.Context, token string) *storage.User {
-	if token == "" || !s.store.IsPasskeySession(ctx, hashToken(token)) {
+	if token == "" || !s.store.IsVerifiedSession(ctx, hashToken(token)) {
 		return nil
 	}
 	u, _, err := s.store.AuthSessionUser(ctx, hashToken(token), time.Now().UnixMilli())

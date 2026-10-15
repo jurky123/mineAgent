@@ -1,6 +1,6 @@
 # MINE_PORTAL_DESIGN.md — Mine Portal 设计文档（v1）
 
-> 2026-10-15：账号认证已改为 Passkey 与管理员核验激活/恢复，旧文中“名字即账号”仅为历史设计。当前流程与上线前准备见 [MINE_COMMUNITY_IMPLEMENTATION.md](MINE_COMMUNITY_IMPLEMENTATION.md)。首页、Minecraft 指南与 Agent 导航也以该实施记录为准。尚未部署。
+> 2026-10-15：账号认证默认改为首次登录设置密码（站主随后确认），Passkey 为可选方式，旧文中“名字即账号”仅为历史设计。当前流程与上线前准备见 [MINE_COMMUNITY_IMPLEMENTATION.md](MINE_COMMUNITY_IMPLEMENTATION.md)。首页、Minecraft 指南与 Agent 导航也以该实施记录为准。尚未部署。
 
 > 状态：**P0/P1 已实施并上线（2026-09-25，commit f8df1f5）**；P2+ 待做（见 §14 实施记录）
 > 目标读者：实现这个仓库的 coding agent / 后续维护者

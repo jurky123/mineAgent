@@ -184,18 +184,19 @@ Bubblewrap 集成测试需要 Linux、`bwrap` 和用户命名空间；不支持�
 公开的交互原语在 `static/css/ds.css` + `static/js/ds.js`（Button/IconButton/Card/Dialog/
 ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没有 alert/prompt/confirm**；
 顶栏导航只放核心入口（首页 / Agent / 游戏 / Minecraft），显示屏收进账户菜单，主题是明确的选择器（跟随系统 / 浅色 / 深色），
-未登录时是整页登录态（共享 Passkey 登录、激活与账号恢复表单）。
+未登录时是整页登录态（共享首次设置密码/密码登录表单，另提供 Passkey 入口）。
 
 `web.portal=false` 可一键回滚成"`/` 就是聊天页"的旧版单页模式。
 
-### 账号体系（Passkey + 账号恢复）
+### 账号体系（首次设置密码）
 
-- 使用 Passkey 与设备解锁/安全密钥验证身份，昵称不再是凭据；`/api/login` 与 `/api/auth/login` 的旧名字登录返回 410。
-- 首次激活和无恢复码的人工恢复由管理员核验本人归属后，通过操作员 CLI 发放一次性激活码。不能凭旧登录 token 抢占旧账号。
-- 成功绑定后仅显示一次恢复码，用户离线保管；恢复成功会原子撤销旧 Passkey、全部旧恢复码与全部旧会话，再使用新 Passkey 登录。
-- 保留原账号 ID、对话、记忆与战绩；旧的名字登录会话不再接受，不自动导入旧 token。管理员权限仍由服务端 `web.adminUsers` 决定。
-- RP ID 默认取 `web.domain`，信任源默认 `https://<web.domain>`；开发/多源需显式配置 `web.passkeyRPID` / `web.passkeyOrigins`，不能根据请求 Host 自动信任来源。
-- **这是需要准备迁移的认证变更，尚未部署。** 激活授权、数据库备份、正式域名与真实设备验收见 [社区改造与认证迁移记录](MINE_COMMUNITY_IMPLEMENTATION.md)。
+- 按站主确认的迁移方式：未设置密码、也未绑定 Passkey 的账号，下次进入时输入名字并创建密码；原账号 ID、对话和战绩保留。首次成功设置者完成该账号认领。
+- 密码须为 12–128 个字符，必须重复确认；使用随机盐与 Argon2id 保存哈希，不保存明文。设置后不可凭名字重设密码，后续登录必须验证密码。
+- 首次设置会撤销该账号的旧免密码会话；其他旧令牌也不能访问新认证接口。Passkey 仍作为可选登录方式，已绑定 Passkey 的账号不能被名字认领流程绕过。
+- 忘记密码由管理员核验后使用本机 `--auth-reset-password USER` 撤销密码与会话，再由本人重新设置。管理员权限只看服务端 `web.adminUsers`。
+- 管理员密码登录成功后，自动以 0600 文件原子更新部署检查令牌，不输出令牌。
+- HTTPS 来源使用 `web.domain`（或显式 `web.passkeyOrigins`）；开发测试仅使用 localhost。
+- 认证和部署记录见 [社区改造与认证迁移记录](MINE_COMMUNITY_IMPLEMENTATION.md)。
 
 ### 门户扩展点（加功能不用改骨架）
 
@@ -336,7 +337,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
    `web.dataDir`、`workspace.root` 绝对路径指定；`scripts/deploy.sh` 的令牌也从这里读）。
 2. `config.json` 里 `web.listen` 默认 `0.0.0.0:8766`（空字符串=禁用网页入口）；
    公网访问要在腾讯云控制台放行 TCP 8766（ufw 未启用）
-3. 公共首页可直接浏览；登录和激活使用正式 HTTPS 域名下的 Passkey。裸 HTTP/IP 不作为 Passkey 登录入口。
+3. 公共首页可直接浏览；登录和设置密码使用正式 HTTPS 域名；裸 HTTP/IP 不作为密码登录入口。
 4. 想用 workspace 写代码/跑代码，把名字填进 `web.adminUsers`（`/myid` 可看自己身份）
 
 接口一览（`/api/auth/*`、`/api/portal/*` 是门户新路径；旧路径保留为别名）：
@@ -344,6 +345,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | 接口 | 说明 |
 |---|---|
 | `POST /api/auth/login`、`POST /api/login` | 旧名字登录已停用，返回 410 |
+| `POST /api/auth/password/status`、`/setup`、`/login` | 查询是否需设密码、首次设置、验证密码登录 |
 | `POST /api/auth/passkey/login/begin`、`/finish` | Passkey 挑战与签名登录 |
 | `POST /api/auth/passkey/register/begin`、`/finish` | 一次性激活码/恢复码验证与 Passkey 绑定 |
 | `GET /api/auth/me` | 当前用户（旧路径 `/api/me`） |

@@ -1,7 +1,7 @@
 // 入口：登录、侧栏、启动装配
 
 import { boot as bootShell, shell } from './shell.js';
-import { passkeyForm } from './passkeys.js';
+import { passwordForm } from './passwords.js';
 import { $, toast } from './ui.js';
 import { S, saveAuth, clearAuth } from './state.js';
 import { api, logoutRequest, setUnauthorizedHandler } from './api.js';
@@ -16,7 +16,7 @@ import { initPromptSettings, refreshPromptLabel } from './prompt-settings.js';
 function showLogin() {
   const el = $('login');
   const card = el.querySelector('.login-card');
-  card.replaceChildren(passkeyForm((data) => {
+  card.replaceChildren(passwordForm((data) => {
     S.token = data.token; S.me = data.name; S.admin = !!data.admin; saveAuth();
     bootShell({ active: '/agent', requireLogin: false }).catch(() => {});
     startChat().then(applyURLTarget).catch((error) => toast(error.message, 'err'));

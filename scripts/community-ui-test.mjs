@@ -78,7 +78,8 @@ try {
   assert.equal(await page.getByLabel('手动复制内容').inputValue(), 'fixture-address');
   await page.goto(base + '/account');
   await page.getByRole('button', { name: '使用 Passkey 登录', exact: true }).waitFor();
-  assert.equal(await page.locator('#login-name').count(), 0, 'name-only login form remained');
+  assert.equal(await page.locator('#login-name').count(), 1, 'account name step missing');
+  assert.equal(await page.getByRole('button', { name: '继续', exact: true }).count(), 1);
   await page.screenshot({ path: '/tmp/zkun-community-ui/passkey-login.png' });
   await page.goto(base + '/minecraft');
   failRelease = true; await page.reload();

@@ -2,7 +2,7 @@
 // 页面约定：<div id="shell-top"></div> + 自己的内容 + 调 shell.boot(active)。
 // 未登录时渲染整页登录态（不是弹窗），登录后才进入门户。
 
-import { passkeyForm } from './passkeys.js';
+import { passwordForm } from './passwords.js';
 import { h, icon, toast, gameIcon, segThumb, reducedMotion } from './ds.js';
 
 // 命令面板里的棋类图标（用真实棋子/石图）
@@ -127,7 +127,7 @@ function loginView() {
   return new Promise((resolve) => {
     const view = h('div', 'login-view');
     const box = h('div', 'login-box');
-    box.appendChild(passkeyForm((data) => {
+    box.appendChild(passwordForm((data) => {
       saveAuth({ id: data.id, name: data.name, admin: !!data.admin }, data.token);
       view.remove(); resolve(shell.user);
     }));

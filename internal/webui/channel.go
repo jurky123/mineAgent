@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -48,12 +49,13 @@ type Channel struct {
 	mcStatus      func(ctx context.Context) (string, error)
 	usage         *usage.Client
 
-	hub      *session.Hub
-	store    *storage.Store
-	acct     *account.Service
-	passkeys http.Handler
-	ag       *agent.Agent
-	webTools []tool.BaseTool
+	hub       *session.Hub
+	store     *storage.Store
+	acct      *account.Service
+	passkeys  http.Handler
+	passwords http.Handler
+	ag        *agent.Agent
+	webTools  []tool.BaseTool
 
 	// 模型切换：可选项（config.model.options 优先，否则拉网关）与加载器。
 	modelOptions   []string
@@ -112,6 +114,26 @@ func NewChannel(log *slog.Logger, cfg config.Config, acct *account.Service, hub 
 	if len(origins) == 0 && cfg.Web.Domain != "" {
 		origins = []string{"https://" + cfg.Web.Domain}
 	}
+	passwordAuth := account.NewPasswords(acct, origins)
+	passwordAuth.OnAdminLogin = func(token string) error {
+		if err := os.MkdirAll(dataDir, 0o700); err != nil {
+			return err
+		}
+		file, err := os.CreateTemp(dataDir, ".deploy-token-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(file.Name())
+		if _, err = file.WriteString(token + "\n"); err != nil {
+			_ = file.Close()
+			return err
+		}
+		if err = file.Close(); err != nil {
+			return err
+		}
+		return os.Rename(file.Name(), filepath.Join(dataDir, "deploy-token.txt"))
+	}
+	c.passwords = passwordAuth
 	if auth, err := account.NewPasskeys(acct, rpID, origins); err == nil {
 		c.passkeys = auth
 	} else {

@@ -315,3 +315,5 @@ body.ds a { color: inherit; }
 @media (max-width: 640px) { .topbar .brand span { display: inline; } }
 
 html[data-theme="dark"] .badge.brand { color: var(--link); }
+.password-fields { display: flex; flex-direction: column; gap: 10px; }
+.password-fields > .btn { margin-top: 8px; }

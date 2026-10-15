@@ -551,7 +551,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   const grid = h('div', 'lobby-grid');
   const createCard = h('article', 'card lobby-card');
   createCard.appendChild(h('div', 'lobby-card-title', '创建一个新房间'));
-  createCard.appendChild(h('div', 'lobby-card-sub', '创建后把房间码或邀请链接发给朋友'));
+  createCard.appendChild(h('div', 'lobby-card-sub', '创建后可分享房间码或邀请链接'));
   const create = h('button', 'btn primary cta', '创建房间');
   create.onclick = () => withPending(create, async () => {
     if (demoCreate) { onRoom(demoCreate()); return; }
@@ -561,7 +561,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   grid.appendChild(createCard);
 
   const joinCard = h('article', 'card lobby-card');
-  joinCard.appendChild(h('div', 'lobby-card-title', '加入朋友的房间'));
+  joinCard.appendChild(h('div', 'lobby-card-title', '加入房间'));
   joinCard.appendChild(h('div', 'lobby-card-sub', '输入 6 位房间码'));
   const row = h('div', 'join-row');
   const input = h('input', 'input code-input');
@@ -608,7 +608,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
     try {
       const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
       list.innerHTML = '';
-      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂时没有开放房间。邀请朋友，或者先看看一局怎么下。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?ui=1'; empty.appendChild(replay); list.appendChild(empty); return; }
+      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂无开放房间。可以创建房间，或观看演示回放。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?ui=1'; empty.appendChild(replay); list.appendChild(empty); return; }
       for (const r of rooms) {
         const item = h('div', 'list-row');
         item.appendChild(h('span', 'avatar', (r.host[0] || '?')));

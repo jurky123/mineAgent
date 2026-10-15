@@ -56,7 +56,7 @@ export function passkeyForm(onSuccess) {
   });
   const paint = (mode) => {
     box.replaceChildren();
-    box.append(h('p', 'eyebrow', 'ZKUN / 你的朋友空间'), h('h1', null, mode === 'login' ? '欢迎回来。' : mode === 'recover' ? '找回你的账号' : '激活你的账号'));
+    box.append(h('p', 'eyebrow', 'ZKUN / 账号'), h('h1', null, mode === 'login' ? '欢迎回来。' : mode === 'recover' ? '找回你的账号' : '激活你的账号'));
     if (mode === 'login') {
       box.appendChild(h('p', 'login-sub', '使用设备解锁或安全密钥验证身份。昵称只用于显示，不再用作登录凭证。'));
       const enter = h('button', 'btn primary cta', '使用 Passkey 登录'); enter.onclick = login; box.appendChild(enter);

@@ -230,14 +230,14 @@ function paint(data) {
   const hasRecent = !!recent?.lastTitle || recent?.count > 0;
   const welcome = h('section', 'welcome-grid');
   const copy = h('div', 'welcome-copy');
-  copy.appendChild(h('p', 'eyebrow', 'ZKUN / 朋友们的活动空间'));
-  copy.appendChild(h('p', 'welcome-greeting', data.greeting || '欢迎来坐坐'));
-  const heading = h('h1', null, '一起聊聊，'); heading.appendChild(h('br')); heading.appendChild(document.createTextNode('玩点什么。'));
-  copy.append(heading, h('p', 'welcome-description', '和 Agent 聊个想法，邀请朋友下一局，或回到我们共同的 Minecraft 世界。'));
+  copy.appendChild(h('p', 'eyebrow', 'ZKUN / 门户'));
+  copy.appendChild(h('p', 'welcome-greeting', data.greeting || '欢迎访问'));
+  const heading = h('h1', null, 'zkun 门户');
+  copy.append(heading, h('p', 'welcome-description', 'Agent 对话、在线游戏与 Minecraft 服务器入口。'));
   const actions = h('div', 'welcome-actions');
   const primary = h('a', 'btn primary cta', hasRecent ? '继续上次对话 →' : '打开 Agent →');
   primary.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
-  const explore = h('a', 'text-link', '先看看小游戏'); explore.href = '/games';
+  const explore = h('a', 'text-link', '游戏大厅'); explore.href = '/games';
   actions.append(primary, explore); copy.appendChild(actions);
   if (hasRecent) copy.appendChild(h('p', 'recent-context', '上次聊到：' + (recent.lastTitle || '未命名会话')));
   welcome.appendChild(copy);
@@ -246,9 +246,9 @@ function paint(data) {
   world.appendChild(worldVisual(releaseData, status)); welcome.appendChild(world); host.appendChild(welcome);
   const entries = h('section', 'entry-grid'); entries.setAttribute('aria-label', '快速入口');
   for (const entry of [
-    { title: 'Agent', text: '查资料、理思路，把一个想法慢慢聊清楚。', path: '/agent', label: hasRecent ? '回到对话' : '开始对话', glyph: 'sparkle' },
-    { title: '小游戏', text: '国际象棋或五子棋，叫上朋友来一局。', path: '/games', label: '进入游戏大厅', glyph: 'gamepad' },
-    { title: 'Minecraft', text: '准备客户端，一起探索我们的世界。', path: '/minecraft', label: '下载与加入指南', glyph: 'pickaxe' },
+    { title: 'Agent', text: '对话、查询资料与使用工具。', path: '/agent', label: hasRecent ? '回到对话' : '开始对话', glyph: 'sparkle' },
+    { title: '小游戏', text: '国际象棋与五子棋在线对局。', path: '/games', label: '进入游戏大厅', glyph: 'gamepad' },
+    { title: 'Minecraft', text: '客户端准备、整合包下载与服务器信息。', path: '/minecraft', label: '下载与加入指南', glyph: 'pickaxe' },
   ]) entries.appendChild(entryCard(entry));
   host.appendChild(entries);
   const minecraft = downloadCard(releaseData, { compact: true, status }); minecraft.id = 'minecraft';
@@ -265,7 +265,7 @@ function paint(data) {
   if (games?.error) {
     const error = h('p', 'field-err', '游戏状态暂时加载失败，仍可从游戏大厅进入。'); host.appendChild(error);
   } else if (games?.card?.items?.length) {
-    const section = h('section', 'section'); section.appendChild(h('h2', 'section-title', '下一局，和谁一起？'));
+    const section = h('section', 'section'); section.appendChild(h('h2', 'section-title', '游戏房间'));
     const grid = h('div', 'game-grid'); for (const item of games.card.items) grid.appendChild(gameCard(item));
     section.appendChild(grid); host.appendChild(section);
   }
@@ -311,7 +311,7 @@ async function refresh() {
   try { releaseData = await loadMinecraftRelease(); releaseError = ''; }
   catch (error) { releaseError = error.message; }
   if (DEMO) { paint(demoData()); return; }
-  if (!shell.user) { paint({ greeting: '欢迎来坐坐', apps: [] }); return; }
+  if (!shell.user) { paint({ greeting: '欢迎访问', apps: [] }); return; }
   try { paint(await apiGet('/api/portal/home')); }
   catch (error) {
     paint({ greeting: '欢迎回来', apps: [] });

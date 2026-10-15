@@ -13,7 +13,7 @@ export function passwordForm(onSuccess) {
   };
   const paint = (mode = 'name') => {
     root.replaceChildren();
-    root.append(h('p', 'eyebrow', 'ZKUN / 你的朋友空间'), h('h1', null, mode === 'setup' ? '为账号设置密码' : '欢迎回来。'));
+    root.append(h('p', 'eyebrow', 'ZKUN / 账号'), h('h1', null, mode === 'setup' ? '为账号设置密码' : '欢迎回来。'));
     const error = h('p', 'field-err'); error.setAttribute('role', 'alert');
     const form = h('form', 'password-fields');
     const label = h('label', 'field-label', '账号名称');

@@ -24,7 +24,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/api/send') { sends++; return json({}); }
     if (url.pathname.endsWith('/minecraft/release.json')) {
       if (failRelease) return json({ error: 'unavailable' }, 503);
-      return json({ name: '朋友们的 Minecraft 世界', status: 'preparing', release: null });
+      return json({ name: 'Minecraft 服务器', status: 'preparing', release: null });
     }
     if (url.pathname === '/api/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': preview\n\n');
@@ -51,14 +51,14 @@ try {
   await mkdir('/tmp/zkun-community-ui', { recursive: true });
   const checkWidth = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow');
   await page.goto(base);
-  await page.getByRole('heading', { name: /一起聊聊/ }).waitFor();
+  await page.getByRole('heading', { name: /zkun 门户/ }).waitFor();
   assert.equal(await page.locator('.login-view').count(), 0, 'public home forced login');
   assert.equal(await page.getByRole('button', { name: '整合包准备中' }).isDisabled(), true);
   assert.equal(await page.locator('a[download]').count(), 0);
   assert.equal(await page.getByText('服务器实景照片准备中').count(), 1);
   await checkWidth(); await page.screenshot({ path: '/tmp/zkun-community-ui/home-desktop.png', fullPage: true });
   await page.getByRole('link', { name: '下载与加入指南', exact: true }).click();
-  await page.getByRole('heading', { name: '从这里，加入我们。' }).waitFor();
+  await page.getByRole('heading', { name: 'Minecraft 加入指南' }).waitFor();
   assert.equal(await page.locator('.install-steps > li').count(), 4);
   await page.getByText('文件损坏 / SHA256 不匹配', { exact: true }).click();
   assert.equal(await page.locator('.guide-faq details[open]').count(), 1);
@@ -117,14 +117,14 @@ try {
     await page.setViewportSize({ width, height: 900 });
     for (const url of ['/', '/minecraft', '/account/history?ui=1']) {
       await page.goto(base + url); await page.locator('.topbar').waitFor();
-      if (url === '/') await page.getByRole('heading', { name: /一起聊聊/ }).waitFor();
+      if (url === '/') await page.getByRole('heading', { name: /zkun 门户/ }).waitFor();
       if (url.includes('history')) { await page.getByRole('button', { name: '回放', exact: true }).first().click(); }
       await checkWidth();
       if (width === 390) await page.screenshot({ path: '/tmp/zkun-community-ui/' + (url.includes('history') ? 'replay' : url.includes('minecraft') ? 'minecraft' : 'home') + '-mobile.png', fullPage: true });
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(base + '/?ui=1&theme=dark'); await page.getByRole('heading', { name: /一起聊聊/ }).waitFor();
+  await page.goto(base + '/?ui=1&theme=dark'); await page.getByRole('heading', { name: /zkun 门户/ }).waitFor();
   await page.screenshot({ path: '/tmp/zkun-community-ui/home-dark.png', fullPage: true });
   assert.deepEqual(errors, []);
   console.log('PASS: public home/guide, honest release states, retries, shared identity, prompt drafts, replay coordinates/jump/keyboard/winning line, responsive widths and dark/reduced-motion rendering.');

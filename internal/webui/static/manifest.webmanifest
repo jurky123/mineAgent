@@ -1,7 +1,7 @@
 {
   "name": "Mine",
   "short_name": "Mine",
-  "description": "私人数字空间：Agent 对话、在线棋局、Minecraft 状态",
+  "description": "门户：Agent 对话、在线棋局、Minecraft 状态",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

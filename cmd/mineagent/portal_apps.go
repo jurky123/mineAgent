@@ -33,7 +33,7 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 			Card: mcStatusCard(gw),
 		},
 		portal.App{
-			ID: "games", Name: "游戏", Desc: "和朋友玩点什么", Icon: "gamepad",
+			ID: "games", Name: "游戏", Desc: "国际象棋与五子棋在线对局", Icon: "gamepad",
 			Path: "/games", Order: 30, Enabled: true,
 			Nav: true, HomeRole: "content", Priority: 30,
 			Card: gamesCard(store, gamesMgr),

@@ -37,13 +37,13 @@ export function worldVisual(data, status) {
   } else wrap.classList.add('world-noimage');
   const placeholder = h('div', 'world-placeholder');
   placeholder.appendChild(icon('pickaxe', 'lg'));
-  placeholder.appendChild(h('span', 'world-placeholder-title', '这里留给我们的世界'));
+  placeholder.appendChild(h('span', 'world-placeholder-title', 'Minecraft 服务器'));
   placeholder.appendChild(h('span', 'world-placeholder-note', '服务器实景照片准备中'));
   wrap.appendChild(placeholder);
   const caption = h('div', 'world-caption');
   caption.appendChild(h('span', 'world-label', 'MINECRAFT'));
-  caption.appendChild(h('strong', null, data?.name || '朋友们的 Minecraft 世界'));
-  caption.appendChild(h('span', 'world-state', status || '查看加入方式，准备下一次相聚'));
+  caption.appendChild(h('strong', null, data?.name || 'Minecraft 服务器'));
+  caption.appendChild(h('span', 'world-state', status || '查看服务器与加入方式'));
   wrap.appendChild(caption);
   return wrap;
 }
@@ -72,15 +72,15 @@ export function copyButton(text, label = '复制服务器地址') {
 export function downloadCard(data, { compact = false, status = '' } = {}) {
   const section = h('section', 'minecraft-section');
   const intro = h('div', 'minecraft-intro');
-  intro.appendChild(h('p', 'eyebrow', 'MINECRAFT / 一起搭建点什么'));
-  intro.appendChild(h('h2', null, '同一个世界，下次见。'));
-  intro.appendChild(h('p', null, '和朋友一起探索、盖房子，或者只是上线待一会儿。先准备好客户端，再从这里出发。'));
+  intro.appendChild(h('p', 'eyebrow', 'MINECRAFT / 服务器'));
+  intro.appendChild(h('h2', null, '下载与加入'));
+  intro.appendChild(h('p', null, '查看服务器信息，下载整合包并按指南配置客户端。'));
   if (!compact) intro.appendChild(worldVisual(data, status));
   section.appendChild(intro);
   const card = h('div', 'card download-card');
   const release = downloadableRelease(data);
   card.appendChild(h('span', 'badge', release ? '稳定版' : '发布准备中'));
-  card.appendChild(h('h3', null, release ? '准备好，进入世界' : '整合包准备中'));
+  card.appendChild(h('h3', null, release ? '下载整合包' : '整合包准备中'));
   card.appendChild(h('p', null, release ? '下载后导入电脑端 PCL，安装为独立实例。' : '兼容版本和 PCL 导入流程验证完成后开放下载。已有玩家可先查看加入指南。'));
   const facts = h('dl', 'release-facts');
   const add = (key, value) => { const row = h('div'); row.append(h('dt', null, key), h('dd', null, value)); facts.appendChild(row); };

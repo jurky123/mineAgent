@@ -303,6 +303,7 @@ export function openModelPopover(back, query = '') {
     '<button class="po-chip' + (modelShowUnavailable ? ' on' : '') + '" id="po-showall" aria-pressed="' + modelShowUnavailable + '">显示不可用</button>' +
     '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option></select></div>' +
     '<div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
+    '<div id="po-providerstatus" class="po-providerstatus"></div>' +
     '<div class="po-scroll" id="po-list"></div>';
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
   const list = $('po-list');
@@ -373,6 +374,15 @@ export function openModelPopover(back, query = '') {
       list.appendChild(empty);
     }
   };
+  const missingProviders = new Map();
+  for (const model of all) if (model.needsKey) missingProviders.set(model.provider, model.providerLabel || model.provider);
+  for (const [provider, label] of missingProviders) {
+    const notice = document.createElement('div'); notice.className = 'po-provider-notice';
+    const text = document.createElement('p'); text.textContent = label + ' 未配置 API 密钥，暂不可使用。';
+    const show = document.createElement('button'); show.type = 'button'; show.className = 'po-chip'; show.textContent = '查看 ' + label + ' 目录';
+    show.onclick = () => { modelShowUnavailable = true; $('po-showall').classList.add('on'); $('po-showall').setAttribute('aria-pressed', 'true'); $('po-filter').value = provider + '/'; build(provider + '/'); };
+    notice.append(text, show); $('po-providerstatus').appendChild(notice);
+  }
   $('po-sort').value = modelSort;
   $('po-filter').value = query;
   build(query);

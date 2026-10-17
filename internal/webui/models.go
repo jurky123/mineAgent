@@ -64,6 +64,37 @@ func freePricing(pricing map[string]string, id string) bool {
 	return true
 }
 
+// Provider catalogs can include nested pricing metadata (for example time-based
+// overrides). Decode individual price fields so one nested field cannot discard
+// the entire catalog. Conditional pricing is not advertised as always free.
+func catalogFreePricing(pricing map[string]json.RawMessage, id string) bool {
+	if pricing == nil {
+		return isFreeModelID(id)
+	}
+	prices := make(map[string]string)
+	for field, raw := range pricing {
+		if field == "overrides" {
+			if string(raw) != "null" {
+				var overrides []json.RawMessage
+				if json.Unmarshal(raw, &overrides) != nil || len(overrides) > 0 {
+					return false
+				}
+			}
+			continue
+		}
+		var price string
+		if json.Unmarshal(raw, &price) != nil || string(raw) == "null" {
+			// Some compatible gateways encode scalar prices as JSON numbers.
+			price = string(raw)
+		}
+		prices[field] = price
+		if !zeroPrice(price) {
+			return false
+		}
+	}
+	return freePricing(prices, id)
+}
+
 func fetchModelOptions(ctx context.Context, baseURL, key string) ([]ModelOption, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
 	if err != nil {
@@ -84,11 +115,11 @@ func fetchModelOptions(ctx context.Context, baseURL, key string) ([]ModelOption,
 	}
 	var body struct {
 		Data []struct {
-			ID            string            `json:"id"`
-			Name          string            `json:"name"`
-			Created       int64             `json:"created"`
-			ContextLength int64             `json:"context_length"`
-			Pricing       map[string]string `json:"pricing"`
+			ID            string                     `json:"id"`
+			Name          string                     `json:"name"`
+			Created       int64                      `json:"created"`
+			ContextLength int64                      `json:"context_length"`
+			Pricing       map[string]json.RawMessage `json:"pricing"`
 			Architecture  struct {
 				OutputModalities []string `json:"output_modalities"`
 			} `json:"architecture"`
@@ -114,7 +145,7 @@ func fetchModelOptions(ctx context.Context, baseURL, key string) ([]ModelOption,
 		if label == "" {
 			label = id
 		}
-		opt := ModelOption{ID: id, Label: label, Free: freePricing(m.Pricing, id), Created: m.Created, ContextLength: m.ContextLength}
+		opt := ModelOption{ID: id, Label: label, Free: catalogFreePricing(m.Pricing, id), Created: m.Created, ContextLength: m.ContextLength}
 		if len(m.Architecture.OutputModalities) > 0 && !containsString(m.Architecture.OutputModalities, "text") {
 			opt.UnavailableReason = "不支持文本对话"
 		} else if m.SupportedParameters != nil && !containsString(m.SupportedParameters, "tools") {

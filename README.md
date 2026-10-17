@@ -301,6 +301,10 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
   默认网关保留 1-token 后台探测；成功显示「已验证」，404/503 暂时标不可用，20 分钟后会重新探测，
   不再永久跳过失败模型。额外提供商仅根据目录元数据判断，不批量生成付费请求。
   目录请求失败时保留上次成功缓存；读取列表不再清空账号已选模型。
+  OpenRouter 配置位于 `config.json` 的 `model.providers`，找到 `id: "openrouter"` 后填写其 `apiKey`；
+  `freeOnly: true` 仅列免费模型，设为 `false` 可列全部并使用界面的免费筛选。修改配置后按对局保护部署流程重启生效。
+  未填写 key 时可查看公开目录，但不能选择调用，面板显示未配置提示；密钥不会发送给浏览器。
+  目录支持嵌套定价元数据（如 `pricing.overrides`），分时覆盖计费或未知费用不会标为永久免费。
 - **Workspace / 外观 / 用量 / 退出登录**：收进侧栏底部的账户菜单
   （Workspace 仅 `web.adminUsers` 可见；用量弹窗有滚动/周/月三条进度条）
 - **Agent 设置**（`/agent` 顶栏齿轮、侧栏或账户菜单）：三个分区——「我的人设」提供卡片选择与正文预览；

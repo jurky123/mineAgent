@@ -241,3 +241,8 @@ html[data-theme="dark"] .reason-dot.on { background: rgba(255,255,255,.5); }
 .po-modelbody .po-modelname { white-space: normal; overflow-wrap: anywhere; }
 .po-modeldetail { color: var(--text-3); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .po-item.model:disabled { cursor: default; opacity: .55; }
+
+.po-providerstatus { padding-inline: 12px; }
+.po-provider-notice { display: flex; align-items: center; gap: 8px; padding-block: 6px; }
+.po-provider-notice p { flex: 1; min-width: 0; margin: 0; font-size: 12px; color: var(--text-2); }
+.po-provider-notice button { flex: none; }

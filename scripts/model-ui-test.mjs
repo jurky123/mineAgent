@@ -12,7 +12,7 @@ const models = [
   { id: 'old', label: 'Old', provider: 'default', providerLabel: 'Gateway', created: 100 },
   { id: 'new-free', label: 'New Free', provider: 'default', providerLabel: 'Gateway', created: 200, free: true, verified: true },
   { id: 'blocked-free', label: 'Blocked', provider: 'default', providerLabel: 'Gateway', created: 250, free: true, unavailable: true, unavailableReason: '网关暂时无法路由' },
-  { id: 'extra/needs-key', label: 'Needs Key', provider: 'extra', providerLabel: 'Extra', free: true, needsKey: true },
+  { id: 'openrouter/needs-key', label: 'Needs Key', provider: 'openrouter', providerLabel: 'OpenRouter', free: true, needsKey: true },
   { id: 'contributor', label: 'Contributor', provider: 'default', providerLabel: 'Gateway', free: false },
 ];
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
@@ -68,6 +68,7 @@ try {
   const rows = page.locator('#po-list .po-modelbody .po-modelname');
   assert.match(await rows.first().textContent(), /New Free/);
   assert.equal(await rows.count(), 3, 'known unavailable models should be hidden');
+  assert.equal(await page.getByText('OpenRouter 未配置 API 密钥，暂不可使用。', { exact: true }).isVisible(), true);
   await page.locator('#po-freeonly').click();
   assert.equal(await rows.count(), 1);
   assert.match(await rows.first().textContent(), /免费/);
@@ -104,6 +105,9 @@ try {
   await page.locator('#po-freeonly').click();
   await page.locator('#po-freeonly').click();
   assert.ok(await page.locator('#popover').evaluate((el) => el.getBoundingClientRect().right <= innerWidth));
+  await page.getByRole('button', { name: '查看 OpenRouter 目录', exact: true }).click();
+  assert.equal(await page.locator('#po-filter').inputValue(), 'openrouter/');
+  assert.equal(await page.locator('#po-list button.model:disabled').count(), 1);
   await page.screenshot({ path: '/tmp/mineagent-models-ui/mobile.png' });
   await page.goto(base + '/agent?ui=1&panel=models');
   await page.locator('#po-list .po-modelbody').first().waitFor();

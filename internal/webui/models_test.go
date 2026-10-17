@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -187,5 +188,51 @@ func TestOptionsDoesNotErasePreferenceDuringPartialDiscovery(t *testing.T) {
 	c.handleOptions(w, httptest.NewRequest("GET", "/api/options", nil), &storage.User{Username: "tester"})
 	if w.Code != 200 || c.prefsOf("tester").Model != "saved-model" {
 		t.Fatal("GET erased saved model")
+	}
+}
+
+func TestOpenRouterNestedPricingKeepsCatalogAndMissingKeyState(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/models" {
+			t.Error("discovery must not generate requests")
+		}
+		_, _ = io.WriteString(w, `{"data":[
+   {"id":"paid","pricing":{"prompt":"0.1","completion":"0.2","overrides":[{"utc_days":["saturday"],"prompt":"0.05"}]},"supported_parameters":["tools"]},
+   {"id":"free","created":200,"pricing":{"prompt":"0","completion":"0","overrides":[]},"supported_parameters":["tools"]},
+   {"id":"numeric-free","pricing":{"prompt":0,"completion":0},"supported_parameters":["tools"]},
+   {"id":"conditional-free","pricing":{"prompt":"0","completion":"0","overrides":[{"utc_days":["saturday"],"prompt":"0.01"}]}},
+   {"id":"unknown-free","pricing":{"prompt":"0","completion":"0","future_fee":{"price":"1"}}}
+  ],"total_count":5,"links":{}}`)
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	models, err := fetchModelOptions(ctx, srv.URL, "")
+	if err != nil || len(models) != 5 {
+		t.Fatalf("nested pricing discarded catalog: %v %+v", err, models)
+	}
+	for i, want := range []bool{false, true, true, false, false} {
+		if models[i].Free != want {
+			t.Fatalf("free flag for %s = %v", models[i].ID, models[i].Free)
+		}
+	}
+	c := &Channel{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	provider := config.Provider{ID: "openrouter", Label: "OpenRouter", BaseURL: srv.URL, FreeOnly: true}
+	options := c.providerOptions(ctx, provider)
+	if len(options) != 2 {
+		t.Fatalf("free provider catalog: %+v", options)
+	}
+	for _, option := range options {
+		if !option.NeedsKey || option.Provider != "openrouter" || !strings.HasPrefix(option.ID, "openrouter/") {
+			t.Fatalf("missing provider metadata: %+v", option)
+		}
+	}
+	// Simulate a fresh process after the operator adds a key; no generation is needed.
+	c.providerModels = nil
+	provider.APIKey = "test-only-key"
+	options = c.providerOptions(ctx, provider)
+	for _, option := range options {
+		if option.NeedsKey {
+			t.Fatal("configured provider remained disabled")
+		}
 	}
 }

@@ -349,7 +349,9 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	}
 
 	a.httpClient = &http.Client{
-		Timeout: 90 * time.Second,
+		// A model may spend over 90 seconds reasoning before returning headers.
+		// The run context is authoritative; do not impose a shorter hidden cutoff.
+		Timeout: a.runTimeout(),
 		Transport: &headerTransport{
 			base:      http.DefaultTransport,
 			userAgent: "MineAgent/" + version.Version,
@@ -390,7 +392,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	})
 	a.model = cm
 	a.enabled = true
-	log.Info("agent enabled", "model", cfg.Model.Name, "baseURL", cfg.Model.BaseURL)
+	log.Info("agent enabled", "model", cfg.Model.Name, "baseURL", cfg.Model.BaseURL, "runTimeoutSec", int(a.runTimeout().Seconds()))
 	return a, nil
 }
 
@@ -455,6 +457,13 @@ func (a *Agent) chatModel(ctx context.Context, name, effort string) (model.BaseM
 }
 
 func (a *Agent) Enabled() bool { return a.enabled }
+
+func (a *Agent) runTimeout() time.Duration {
+	if a.cfg.RunTimeoutSec <= 0 {
+		return 5 * time.Minute
+	}
+	return time.Duration(a.cfg.RunTimeoutSec) * time.Second
+}
 
 func (a *Agent) Submit(req Request) bool {
 	if !a.enabled {
@@ -551,11 +560,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 			}
 		}()
 	}
-	timeout := time.Duration(a.cfg.RunTimeoutSec) * time.Second
-	if timeout <= 0 {
-		timeout = 5 * time.Minute
-	}
-	rctx, cancel := context.WithTimeout(ctx, timeout)
+	rctx, cancel := context.WithTimeout(ctx, a.runTimeout())
 	defer cancel()
 	if req.Context != nil {
 		stop := context.AfterFunc(req.Context, cancel)
@@ -789,10 +794,7 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 				modelName = a.modelCfg.Name
 			}
 			a.log.Error("agent run failed", "model", modelName, "err", ev.Err)
-			hint := "稍后再试"
-			if strings.Contains(ev.Err.Error(), "503") || strings.Contains(ev.Err.Error(), "unavailable") {
-				hint = "这个模型网关当前不可用，在输入框的模型选择里换一个再发"
-			}
+			hint := modelFailureHint(ev.Err)
 			_ = req.Session.Reply(ctx, "抱歉，模型调用失败（"+modelName+"）："+hint+"。", a.target(req))
 			return true
 		}
@@ -952,7 +954,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	if run.request.Context != nil && run.request.Context.Err() != nil {
 		return
 	}
-	rctx, cancel := context.WithTimeout(ctx, time.Duration(a.cfg.RunTimeoutSec)*time.Second)
+	rctx, cancel := context.WithTimeout(ctx, a.runTimeout())
 	defer cancel()
 	if run.request.Context != nil {
 		stop := context.AfterFunc(run.request.Context, cancel)

@@ -284,7 +284,7 @@ type Agent struct {
 	// QQ 通道单轮最大工具调用迭代数（默认 80）。MC 通道保持 8（游戏聊天要短平快）。
 	QQMaxIterations int `json:"qqMaxIterations"`
 	// 单轮 run 超时秒数（默认 300=5 分钟，卡着 QQ 群被动 5 分钟窗口）。
-	// 超时后转后台任务继续跑（见 BackgroundAfterSec），不会直接掐掉。
+	// 同时约束整轮运行与单次模型 HTTP 等待；到期终止，后台提示不会延长预算。
 	RunTimeoutSec int `json:"runTimeoutSec"`
 	// 每次 run 喂给模型的历史消息条数（默认 200）。越大记得越多、token 越多。
 	HistoryLimit int `json:"historyLimit"`

@@ -428,3 +428,7 @@ node scripts/ui-preview.mjs --base https://zkun.art --only shots
 游戏大厅的演示回放使用 `/account/history?demo=gomoku`，保留真实账户与导航，演示战绩单独标注；支持播放、暂停与速度。显示屏普通用户仅可读取状态；管理员操作、白名单确认与服务端授权分别生效，成功白名单变更写审计日志。
 
 回归：`npm run test:review`、`npm run test:community`、`npm run test:models`、`npm run test:prompts`；Go 用 `go test -p 1 ./...`，并对 agent/storage/webui/portal 运行竞态检测。部署继续使用 `scripts/deploy.sh`。真实素材、整合包发布及 Windows/PCL 端到端验证仍须实际完成后才能标为可用。
+
+### 模型调用超时
+
+`agent.runTimeoutSec`（默认 300 秒）统一约束每个运行阶段（含审批后恢复）的预算与模型 HTTP 请求；较短的上下文超时（例如主动停止、进度摘要）仍然优先生效。模型客户端不再额外写死 90 秒等待上限。`backgroundAfterSec` 只控制长任务提示，不延长总预算。超时不自动重发，避免重复计费或重复执行外部操作；可按需要降低思考强度或切换模型后手动发起新请求。

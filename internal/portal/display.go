@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -19,9 +20,23 @@ var displayHTTPClient = &http.Client{Timeout: 8 * time.Second}
 // GET 任意登录用户；写操作限管理员（开屏/关屏/改白名单都能影响游戏内）。
 func (s *Server) handleDisplayProxy(w http.ResponseWriter, r *http.Request) {
 	s.requireUser(func(w http.ResponseWriter, r *http.Request, u *storage.User) {
-		if r.Method != http.MethodGet && (u == nil || !u.IsAdmin) {
+		if !u.IsAdmin && (r.Method != http.MethodGet || r.URL.Path != "/api/display/status") {
 			writeJSONError(w, http.StatusForbidden, "需要管理员")
 			return
+		}
+		var change struct {
+			Action  string `json:"action"`
+			Host    string `json:"host"`
+			Enabled bool   `json:"enabled"`
+		}
+		whitelistChange := r.Method != http.MethodGet && r.URL.Path == "/api/display/whitelist"
+		if whitelistChange {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
+			if err != nil || json.Unmarshal(body, &change) != nil {
+				writeJSONError(w, 400, "白名单参数无效")
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
 		}
 		base := strings.TrimRight(s.cfg.DisplayAPI, "/")
 		if base == "" {
@@ -50,6 +65,9 @@ func (s *Server) handleDisplayProxy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer resp.Body.Close()
+		if whitelistChange && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			s.log.Info("display whitelist changed", "userID", u.ID, "action", change.Action, "host", change.Host, "enabled", change.Enabled)
+		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(resp.StatusCode)

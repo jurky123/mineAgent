@@ -139,11 +139,12 @@ function feedSection(app) {
   sec.appendChild(head);
 
   const list = h('div', 'card feed');
-  const items = c.items || [];
+  const items = (c.items || []).slice(0, 3);
   if (!items.length) {
     list.appendChild(h('div', 'empty', c.empty || '还没有动态'));
   } else {
-    for (const it of items) {
+    for (let it of items) {
+      if (/名字即账号|输入名字即可|知道名字就能登录/.test(it.text || '')) it = { ...it, text: '【历史公告 · 已失效】' + it.text + '\n当前请使用密码或 Passkey 登录。' };
       const row = h('div', 'feed-row');
       if (it.kind === 'game') {
         row.appendChild(h('span', 'feed-dot game'));
@@ -239,7 +240,10 @@ function paint(data) {
   primary.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
   const explore = h('a', 'text-link', '游戏大厅'); explore.href = '/games';
   actions.append(primary, explore); copy.appendChild(actions);
-  if (hasRecent) copy.appendChild(h('p', 'recent-context', '上次聊到：' + (recent.lastTitle || '未命名会话')));
+  if (hasRecent) {
+    copy.appendChild(h('p', 'recent-context', (recent.lastTitle || '未命名会话') + (recent.lastUpdated ? ' · ' + fmtTime(recent.lastUpdated) : '')));
+    if (recent.lastSummary) copy.appendChild(h('p', 'recent-summary', recent.lastSummary));
+  }
   welcome.appendChild(copy);
   const status = mc?.error ? '状态暂不可用' : mc?.card?.online === true ? '服务器在线' : mc?.card?.online === false ? '离线' : '登录后查看实时状态';
   const world = h('a', 'world-link'); world.href = '#minecraft'; world.setAttribute('aria-label', '查看 Minecraft 加入方式');

@@ -180,9 +180,10 @@ type Web struct {
 
 // Skill 是网页 + 菜单里的快捷指令。
 type Skill struct {
-	Name   string `json:"name"`
-	Prompt string `json:"prompt"`
-	Desc   string `json:"desc,omitempty"`
+	Tools  []string `json:"tools,omitempty"`
+	Name   string   `json:"name"`
+	Prompt string   `json:"prompt"`
+	Desc   string   `json:"desc,omitempty"`
 }
 
 func DefaultSkills() []Skill {
@@ -190,7 +191,7 @@ func DefaultSkills() []Skill {
 		{Name: "查服务器", Desc: "在线玩家 / 负载 / 时间天气", Prompt: "看看服务器现在的情况：在线玩家、TPS 和内存、游戏时间与天气"},
 		{Name: "画张图", Desc: "用 PIL 画好直接发给我", Prompt: "用 PIL 画一张图并发给我，内容："},
 		{Name: "写代码跑一下", Desc: "workspace 里写脚本并执行（管理员）", Prompt: "在 workspace 里写一个 Python 脚本并跑一下，需求："},
-		{Name: "查资料", Desc: "联网查了再回答（管理员）", Prompt: "帮我查一下，先查资料再回答（可以用 curl 抓公开页面），问题："},
+		{Name: "查资料", Desc: "联网搜索与读取公开网页", Prompt: "帮我查询公开资料并附上来源，问题："},
 	}
 }
 

@@ -16,39 +16,50 @@ export function autoGrow() {
 }
 
 export function updateSendBtn() {
-  const ready = ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done && !p.err);
+  const ready = !S.sending && !S.waiting && ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done && !p.err);
   $('send').classList.toggle('ready', !!ready);
   $('send').disabled = !ready;
+  $('text').placeholder = S.waiting ? '回答结束后可发送，草稿会保留' : '给 MineAgent 发消息';
 }
 
 // ---------- 发送 ----------
 export async function sendMsg() {
+  if (S.sending || S.waiting) { toast('回答结束后可发送，当前草稿会保留'); return; }
   const text = $('text').value.trim();
   const files = S.pending.filter((p) => p.done).map((p) => p.file);
   if (!text && !files.length) return;
   if (S.pending.some((p) => !p.done && !p.err)) { showError('还有文件在上传，稍等'); return; }
+  const originConv = S.conv;
+  const sentPending = S.pending;
+  S.sending = true;
+  $('text').value = ''; S.pending = []; renderPending(); autoGrow();
   $('send').disabled = true;
   try {
     const payload = { text: text, files: files };
-    if (S.conv !== null) payload.conv = S.conv; // null = 草稿，由服务端新建
-    const wasDraft = S.conv === null;
+    if (originConv !== null) payload.conv = originConv; // null = 草稿，由服务端新建
+    const wasDraft = originConv === null;
     const res = await apiPost('/api/send', payload);
-    if (wasDraft && res && res.conv) {
+    if (wasDraft && S.conv === originConv && res && res.conv) {
       // 第一条消息诞生了新会话：回填并补拉历史（SSE 那条消息可能早于本响应到达）
       setConv(res.conv);
       await refreshConversations();
       await syncAfter();
     }
-    $('text').value = ''; autoGrow();
-    S.pending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
-    S.pending = []; renderPending();
-    setTyping(true, '正在思考…');
-    setTimeout(() => { if (S.waiting) setTyping(false); }, 180000);
+    sentPending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+    if (res?.running && S.conv === res.conv) setTyping(true, res.running.text, res.running.startedAt);
+    await syncAfter();
     if (!wasDraft) bus.emit('conversations-changed');
   } catch (e) {
-    showError(e.message);
+    // An uncertain HTTP result is never automatically retried. Preserve the snapshot separately.
+    const recovery = document.createElement('div'); recovery.className = 'send-recovery'; recovery.setAttribute('role', 'alert');
+    recovery.append(document.createTextNode('发送未确认：' + e.message + '。请先查看聊天记录，避免重复执行操作。'));
+    const restore = document.createElement('button'); restore.className = 'btn'; restore.textContent = '恢复发送内容到草稿';
+    restore.onclick = () => {
+      $('text').value = text + ($('text').value ? '\n\n' + $('text').value : '');
+      S.pending = sentPending.concat(S.pending); renderPending(); autoGrow(); recovery.remove(); $('text').focus();
+    }; recovery.appendChild(restore); $('composer').prepend(recovery);
   } finally {
-    updateSendBtn();
+    S.sending = false; updateSendBtn();
   }
 }
 
@@ -254,14 +265,18 @@ function renderPlusMenu() {
     '<button class="po-item" id="pm-image"><svg class="i"><use href="#i-image"/></svg>上传图片</button>' +
     (skills.length
       ? '<div class="po-sep"></div><div class="po-title">技能</div>' +
-        skills.map((s, i) => '<button class="po-item" data-skill="' + i + '"><svg class="i"><use href="#i-spark"/></svg><span>' + esc(s.name) +
-          '</span><span class="po-desc" style="margin-left:auto">' + esc(s.desc || '') + '</span></button>').join('')
+        skills.map((s, i) => '<button class="po-item" data-skill="' + i + '" title="' + esc(s.reason || '') + '"><svg class="i"><use href="#i-spark"/></svg><span>' + esc(s.name) +
+          '</span><span class="po-desc" style="margin-left:auto">' + esc((s.status === 'admin' || s.status === 'unavailable') ? s.reason : (s.status === 'approval' ? '需审批 · ' : '') + (s.desc || '')) + '</span></button>').join('')
       : '');
   $('pm-file').onclick = () => { closePopovers(); $('file').click(); };
   $('pm-image').onclick = () => { closePopovers(); $('file').click(); };
+  const capabilities = S.options?.capabilities || [];
+  if (capabilities.length) { const details = document.createElement('details'); details.className = 'capability-list'; const summary = document.createElement('summary'); summary.textContent = '当前工具与权限'; details.appendChild(summary);
+    for (const entry of capabilities) { const row = document.createElement('p'); const labels = { available: '可用', approval: '需审批', admin: '管理员专属', unavailable: '当前不可用' }; row.textContent = entry.name + ' · ' + entry.kind + ' · ' + (labels[entry.status] || '当前不可用'); details.appendChild(row); } box.appendChild(details); }
   box.querySelectorAll('[data-skill]').forEach((b) => {
     b.onclick = () => {
       const s = skills[+b.dataset.skill];
+      if (s.status === 'admin' || s.status === 'unavailable') { toast(s.reason || '当前不可用'); return; }
       closePopovers();
       $('text').value = s.prompt || s.name;
       autoGrow(); $('text').focus();
@@ -596,3 +611,5 @@ window.addEventListener('drop', (e) => {
   e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on');
   if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
 });
+
+bus.on('running-changed', updateSendBtn);

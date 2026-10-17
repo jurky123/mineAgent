@@ -55,10 +55,15 @@ const systemInstruction = `你在 Minecraft 服务器「jzk 的服务器」里�
   如果玩家问起这些命令，你照着 help 文案介绍，不要自己编命令列表。`
 
 type Request struct {
-	Session     *session.Session
-	SessionKey  string
-	Player      string
-	RequesterID string
+	// Context is an optional per-request cancellation signal, independent of the HTTP request.
+	Context       context.Context
+	Done          func()
+	ToolEvent     func(ToolEvent)
+	pendingEvents []ToolEvent
+	Session       *session.Session
+	SessionKey    string
+	Player        string
+	RequesterID   string
 	// MCRequester 只有 QQ 通道会填：QQ 身份绑定的 MC 玩家名（可能为空=未绑定）。
 	// 传给 Gateway.Call 作为发给 MC 插件的 requester；审批/审计用的请求者
 	// 仍是 Player（qq:<openid> 形式），见 pendingRun.mcRequester。
@@ -82,7 +87,18 @@ type Request struct {
 	ReasoningEffort string
 }
 
+// ToolEvent contains lifecycle metadata only; arguments and raw results may contain private data.
+type ToolEvent struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	At         int64  `json:"at"`
+	DurationMS int64  `json:"durationMs,omitempty"`
+}
+
 type pendingRun struct {
+	request Request
+
 	session     *session.Session
 	sessionKey  string
 	player      string
@@ -474,6 +490,9 @@ func (a *Agent) Run(ctx context.Context) {
 			if !a.pool.enqueue(ctx, key, func() { a.respond(ctx, req) }) {
 				a.log.Warn("agent session queue full, dropping request", "session", key, "player", req.Player)
 				_ = req.Session.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", a.target(req))
+				if req.Done != nil {
+					req.Done()
+				}
 			}
 		case <-decided:
 			for _, outcome := range a.approvals.DrainDecided() {
@@ -513,12 +532,38 @@ func (a *Agent) target(req Request) string {
 }
 
 func (a *Agent) respond(ctx context.Context, req Request) {
+	if req.Done != nil {
+		req.Done = sync.OnceFunc(req.Done)
+	}
+	if req.Done != nil {
+		defer func() {
+			a.mu.Lock()
+			pending := false
+			for _, run := range a.pending {
+				if req.Context != nil && run.request.Context == req.Context {
+					pending = true
+					break
+				}
+			}
+			a.mu.Unlock()
+			if !pending {
+				req.Done()
+			}
+		}()
+	}
 	timeout := time.Duration(a.cfg.RunTimeoutSec) * time.Second
 	if timeout <= 0 {
 		timeout = 5 * time.Minute
 	}
 	rctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if req.Context != nil {
+		stop := context.AfterFunc(req.Context, cancel)
+		defer stop()
+		if req.Context.Err() != nil {
+			return
+		}
+	}
 	sessionKey := req.SessionKey
 	if sessionKey == "" {
 		sessionKey = a.sessionKey
@@ -552,7 +597,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	}
 	progress := &runProgress{}
 	if req.Progress != nil {
-		req.Progress("正在思考…")
+		req.Progress("正在生成回复…")
 	}
 	iter := runner.Run(rctx, msgs, adk.WithCheckPointID(cpID))
 	// 后台任务：只有 QQ 请求（ReplyTarget 非空）且配了 BackgroundAfterSec 才启用。
@@ -702,12 +747,43 @@ func (a *Agent) summarizeProgress(ctx context.Context, req Request, progress *ru
 
 func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey, cpID string, iter *adk.AsyncIterator[*adk.AgentEvent], progress *runProgress) bool {
 	var reply string
+	started := make(map[string]ToolEvent)
+	for _, event := range req.pendingEvents {
+		started[event.ID] = event
+	}
+	req.pendingEvents = nil
+	defer func() {
+		if ctx.Err() != nil {
+			_ = a.store.DeleteCheckpoint(context.WithoutCancel(ctx), cpID)
+		}
+		if req.ToolEvent != nil {
+			for _, event := range started {
+				event.Status = "unconfirmed"
+				if ctx.Err() != nil {
+					event.Status = "cancelled"
+				}
+				req.ToolEvent(event)
+			}
+		}
+	}()
 	for {
 		ev, ok := iter.Next()
 		if !ok {
 			break
 		}
 		if ev.Err != nil {
+			if ctx.Err() != nil {
+				if req.Context != nil && req.Context.Err() != nil {
+					text := "已停止本次回答。已完成的外部操作不会撤销。"
+					if reply != "" {
+						text = reply + "\n\n" + text
+					}
+					_ = req.Session.Reply(context.WithoutCancel(ctx), text, a.target(req))
+				} else {
+					_ = req.Session.Reply(context.WithoutCancel(ctx), "本次请求超时，已结束。请查看已有结果后再决定是否重试。", a.target(req))
+				}
+				return true
+			}
 			modelName := req.Model
 			if modelName == "" {
 				modelName = a.modelCfg.Name
@@ -721,6 +797,14 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 			return true
 		}
 		if ev.Action != nil && ev.Action.Interrupted != nil {
+			for _, event := range started {
+				event.Status = "approval"
+				req.pendingEvents = append(req.pendingEvents, event)
+				if req.ToolEvent != nil {
+					req.ToolEvent(event)
+				}
+			}
+			started = make(map[string]ToolEvent)
 			a.handleInterrupt(ctx, req, sessionKey, runnerKey, cpID, ev.Action.Interrupted)
 			return true
 		}
@@ -733,8 +817,30 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 			continue
 		}
 		for _, tc := range msg.ToolCalls {
+			if req.ToolEvent != nil {
+				event := ToolEvent{ID: tc.ID, Name: tc.Function.Name, Status: "started", At: time.Now().UnixMilli()}
+				started[tc.ID] = event
+				req.ToolEvent(event)
+			}
 			kind, call, text := toolProgress(tc.Function.Name, tc.Function.Arguments)
 			progress.note(kind, call, text, req.Progress)
+		}
+		if msg.Role == schema.Tool && req.ToolEvent != nil {
+			if event, ok := started[msg.ToolCallID]; ok {
+				event.Status = "returned" // A returned value is not proof that an external action succeeded.
+				var result map[string]json.RawMessage
+				if json.Unmarshal([]byte(msg.Content), &result) == nil {
+					if value, exists := result["error"]; exists && string(value) != "null" && string(value) != `""` && string(value) != "false" {
+						event.Status = "failed"
+					}
+				}
+				event.DurationMS = time.Now().UnixMilli() - event.At
+				req.ToolEvent(event)
+				delete(started, msg.ToolCallID)
+			}
+		}
+		if msg.Role == schema.Tool && req.Progress != nil && len(started) == 0 {
+			req.Progress("工具已返回，正在整理回复…")
 		}
 		if a.cfg.ProgressSummary && req.Progress != nil && progress.needsSummary() {
 			progress.markSummarized()
@@ -743,6 +849,17 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 		if msg.Role == schema.Assistant && strings.TrimSpace(msg.Content) != "" {
 			reply = strings.TrimSpace(msg.Content)
 		}
+	}
+	if ctx.Err() != nil {
+		text := "本次请求已结束。"
+		if req.Context != nil && req.Context.Err() != nil {
+			text = "已停止本次回答。已完成的外部操作不会撤销。"
+		}
+		if reply != "" {
+			text = reply + "\n\n" + text
+		}
+		_ = req.Session.Reply(context.WithoutCancel(ctx), text, a.target(req))
+		return true
 	}
 
 	if err := a.store.DeleteCheckpoint(ctx, cpID); err != nil {
@@ -768,7 +885,12 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, ru
 			continue
 		}
 		a.mu.Lock()
+		if req.Context != nil && req.Context.Err() != nil {
+			a.mu.Unlock()
+			continue
+		}
 		a.pending[ai.ApprovalID] = &pendingRun{
+			request:     req,
 			session:     req.Session,
 			sessionKey:  sessionKey,
 			player:      req.Player,
@@ -794,6 +916,9 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, ru
 		return
 	}
 	_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", a.target(req))
+	if req.Progress != nil {
+		req.Progress("等待管理员审批…")
+	}
 }
 
 func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
@@ -808,8 +933,31 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		return
 	}
 
+	if run.request.Done != nil {
+		defer func() {
+			a.mu.Lock()
+			pending := false
+			for _, candidate := range a.pending {
+				if run.request.Context != nil && candidate.request.Context == run.request.Context {
+					pending = true
+					break
+				}
+			}
+			a.mu.Unlock()
+			if !pending {
+				run.request.Done()
+			}
+		}()
+	}
+	if run.request.Context != nil && run.request.Context.Err() != nil {
+		return
+	}
 	rctx, cancel := context.WithTimeout(ctx, time.Duration(a.cfg.RunTimeoutSec)*time.Second)
 	defer cancel()
+	if run.request.Context != nil {
+		stop := context.AfterFunc(run.request.Context, cancel)
+		defer stop()
+	}
 	rctx = tools.WithRequester(rctx, run.player)
 	rctx = tools.WithRequesterID(rctx, run.requesterID)
 	if run.mcRequester != "" {
@@ -826,7 +974,13 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		"operator", out.Decision.Operator,
 	)
 	runner := a.mcRunner
-	resumeReq := Request{Session: run.session, SessionKey: run.sessionKey, Player: run.player, ReplyTarget: run.replyTarget, Tools: run.tools, SystemInstruction: run.instruction}
+	resumeReq := run.request
+	resumeReq.Session = run.session
+	resumeReq.SessionKey = run.sessionKey
+	resumeReq.Player = run.player
+	resumeReq.ReplyTarget = run.replyTarget
+	resumeReq.Tools = run.tools
+	resumeReq.SystemInstruction = run.instruction
 	if run.runnerKey != "" {
 		a.mu.Lock()
 		r, ok := a.runners[run.runnerKey]
@@ -971,4 +1125,35 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 		}
 	}
 	return msgs, cutoff, nil
+}
+
+// CancelPending detaches suspended approvals; late approval outcomes cannot resume them.
+func (a *Agent) CancelPending(sessionKey string) {
+	var requests []Request
+	var checkpoints []string
+	a.mu.Lock()
+	for id, run := range a.pending {
+		if run.sessionKey == sessionKey && run.request.Context != nil && run.request.Context.Err() != nil {
+			requests = append(requests, run.request)
+			checkpoints = append(checkpoints, run.cpID)
+			delete(a.pending, id)
+		}
+	}
+	a.mu.Unlock()
+	for _, cpID := range checkpoints {
+		if a.store != nil {
+			_ = a.store.DeleteCheckpoint(context.Background(), cpID)
+		}
+	}
+	for _, req := range requests {
+		for _, event := range req.pendingEvents {
+			event.Status = "cancelled"
+			if req.ToolEvent != nil {
+				req.ToolEvent(event)
+			}
+		}
+		if req.Done != nil {
+			req.Done()
+		}
+	}
 }

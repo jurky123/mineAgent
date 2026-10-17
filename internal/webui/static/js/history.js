@@ -3,7 +3,7 @@ import { boot, apiGet, fmtTime } from './shell.js';
 import { h, icon, gameIcon, reveal } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
-const DEMO = qs.get('ui') === '1';
+const DEMO = qs.get('demo') === 'gomoku' || qs.get('ui') === '1';
 const GAME_NAME = { chess: '国际象棋', gomoku: '五子棋' };
 const SIDE_NAME = { white: '白方', black: '黑方' };
 const REASON = {
@@ -15,6 +15,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 let runs = [];
 let cursor = 0;
+let playback = null;
+function stopPlayback() { clearInterval(playback); playback = null; const button = document.getElementById('play'); if (button) button.textContent = '播放'; }
 let replay = null; // {run, steps:[], index}
 
 function resultBadge(result) {
@@ -40,7 +42,7 @@ function renderList(list, hasMore) {
   const stats = { win: 0, lose: 0, draw: 0 };
   for (const r of runs) if (stats[r.result] !== undefined) stats[r.result]++;
   document.getElementById('summary').textContent =
-    runs.length ? ('胜 ' + stats.win + ' · 负 ' + stats.lose + ' · 和 ' + stats.draw) : '';
+    runs.length ? ((DEMO ? '演示战绩 · ' : '') + '胜 ' + stats.win + ' · 负 ' + stats.lose + ' · 和 ' + stats.draw) : '';
   if (!list.length) {
     box.appendChild(h('div', 'empty', '还没有对局记录，去游戏里下一局吧'));
     document.getElementById('more').hidden = true;
@@ -128,6 +130,7 @@ function gomokuSteps(movelist) {
 }
 
 function openReplay(run, meta) {
+  stopPlayback();
   const game = run.gameId;
   const steps = game === 'chess' ? chessSteps(meta.movelist || []) : gomokuSteps(meta.movelist || []);
   replay = { run, meta, steps, index: steps.length - 1, game };
@@ -136,13 +139,13 @@ function openReplay(run, meta) {
   const side = SIDE_NAME[meta.side] || meta.side || '';
   document.getElementById('replay-title').textContent =
     (GAME_NAME[game] || game) + ' · ' + (meta.opponent ? 'vs ' + meta.opponent : '') +
-    ' · ' + (resultText(run.result)) + (side ? '（你执' + side + '）' : '');
+    ' · ' + (resultText(run.result)) + (side ? '（' + (DEMO ? '演示玩家 A 执' : '你执') + side + '）' : '');
   const top = document.getElementById('replay-top');
   const bottom = document.getElementById('replay-bottom');
   const opponent = meta.opponent || '对手';
   const bottomSide = game === 'gomoku' ? 'black' : 'white';
-  top.textContent = meta.side === bottomSide ? opponent : '你';
-  bottom.textContent = meta.side === bottomSide ? '你' : opponent;
+  top.textContent = meta.side === bottomSide ? opponent : (DEMO ? '演示玩家 A' : '你');
+  bottom.textContent = meta.side === bottomSide ? (DEMO ? '演示玩家 A' : '你') : opponent;
   const slider = document.getElementById('slider');
   slider.max = String(steps.length - 1);
   renderReplay();
@@ -238,7 +241,7 @@ function renderReplay() {
       const button = h('button', 'mv' + (j === index - 1 ? ' last' : ''), display[j]);
       button.setAttribute('aria-label', '跳到第 ' + (j + 1) + ' 手：' + display[j]);
       if (j === index - 1) button.setAttribute('aria-current', 'step');
-      button.onclick = () => { replay.index = Math.min(j + 1, steps.length - 1); renderReplay(); };
+      button.onclick = () => { stopPlayback(); replay.index = Math.min(j + 1, steps.length - 1); renderReplay(); };
       table.appendChild(button);
     }
   }
@@ -269,6 +272,7 @@ function winningLine(cells) {
 function ptName(i) { return String.fromCharCode(97 + (i % 15)) + (Math.floor(i / 15) + 1); }
 
 function stepBy(delta) {
+  stopPlayback();
   if (!replay) return;
   replay.index = Math.max(0, Math.min(replay.steps.length - 1, replay.index + delta));
   renderReplay();
@@ -287,26 +291,44 @@ document.addEventListener('keydown', (event) => {
 // ---------- demo ----------
 function demoRuns() {
   return [
-    { id: 3, gameId: 'gomoku', result: 'win', metadata: JSON.stringify({ opponent: '朋友', side: 'black', moves: 9, reason: 'five', movelist: ['h8', 'i9', 'h9', 'i8', 'h10', 'i7', 'h11', 'i6', 'h12'], display: ['h8', 'i9', 'h9', 'i8', 'h10', 'i7', 'h11', 'i6', 'h12'] }), createdAt: Date.now() - 3600e3 },
-    { id: 2, gameId: 'chess', result: 'lose', metadata: JSON.stringify({ opponent: 'Alice', side: 'white', moves: 4, reason: 'checkmate', movelist: ['f2f3', 'e7e5', 'g2g4', 'd8h4'], display: ['f3', 'e5', 'g4', 'Qh4#'] }), createdAt: Date.now() - 86400e3 },
+    { id: 3, gameId: 'gomoku', result: 'win', metadata: JSON.stringify({ opponent: '演示玩家 B', side: 'black', moves: 9, reason: 'five', movelist: ['h8', 'i9', 'h9', 'i8', 'h10', 'i7', 'h11', 'i6', 'h12'], display: ['h8', 'i9', 'h9', 'i8', 'h10', 'i7', 'h11', 'i6', 'h12'] }), createdAt: Date.now() - 3600e3 },
+    { id: 2, gameId: 'chess', result: 'lose', metadata: JSON.stringify({ opponent: '演示玩家 B', side: 'white', moves: 4, reason: 'checkmate', movelist: ['f2f3', 'e7e5', 'g2g4', 'd8h4'], display: ['f3', 'e5', 'g4', 'Qh4#'] }), createdAt: Date.now() - 86400e3 },
   ];
 }
 
 (async () => {
   document.getElementById('back').onclick = () => {
+    stopPlayback();
     replay = null;
     document.getElementById('replay-view').hidden = true;
     document.getElementById('list-view').hidden = false;
   };
   document.getElementById('more').onclick = () => load(true).catch(showLoadError);
-  document.getElementById('first').onclick = () => { replay.index = 0; renderReplay(); };
+  document.getElementById('first').onclick = () => { stopPlayback(); replay.index = 0; renderReplay(); };
   document.getElementById('prev').onclick = () => stepBy(-1);
   document.getElementById('next').onclick = () => stepBy(1);
-  document.getElementById('last').onclick = () => { replay.index = replay.steps.length - 1; renderReplay(); };
-  document.getElementById('slider').oninput = (e) => { replay.index = Number(e.target.value); renderReplay(); };
+  document.getElementById('last').onclick = () => { stopPlayback(); replay.index = replay.steps.length - 1; renderReplay(); };
+  document.getElementById('slider').oninput = (e) => { stopPlayback(); replay.index = Number(e.target.value); renderReplay(); };
+
+  const controls = document.querySelector('.replay-controls');
+  const play = h('button', 'btn sm', '播放'); play.id = 'play';
+  const speed = h('select', 'input'); speed.setAttribute('aria-label', '回放速度');
+  for (const [value, label] of [['1500', '慢速'], ['800', '正常'], ['300', '快速']]) { const option = h('option', null, label); option.value = value; speed.appendChild(option); } speed.value = '800';
+  play.onclick = () => {
+    if (playback) { stopPlayback(); return; } if (!replay) return;
+    if (replay.index === replay.steps.length - 1) replay.index = 0;
+    renderReplay(); play.textContent = '暂停';
+    playback = setInterval(() => { if (!replay || document.hidden) { stopPlayback(); return; } replay.index = Math.min(replay.index + 1, replay.steps.length - 1); renderReplay(); if (replay.index === replay.steps.length - 1) stopPlayback(); }, Number(speed.value));
+  }; speed.onchange = stopPlayback; controls.append(play, speed);
+  const hint = h('p', 'field-hint', '← / → 逐步查看，Home / End 跳到首末；末手有标记，终局连线表示五连。'); controls.after(hint);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopPlayback(); });
 
   if (DEMO) {
-    await boot({ active: '/account', preview: true });
+    await boot({ active: '/account', requireLogin: false });
+    const banner = h('aside', 'demo-banner'); banner.setAttribute('role', 'status');
+    banner.appendChild(h('strong', null, '演示回放，不影响真实战绩'));
+    const exit = h('a', 'btn', '退出演示'); exit.href = '/games/gomoku'; banner.appendChild(exit);
+    document.querySelector('main').prepend(banner);
     const badge = h('span', 'badge', '演示数据 · 非真实对局'); document.querySelector('.crumb').appendChild(badge);
     runs = demoRuns();
     renderList(runs, false);

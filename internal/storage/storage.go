@@ -195,7 +195,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.migratePortal(ctx); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, passkeySchema+passwordSchema)
+	_, err := s.db.ExecContext(ctx, passkeySchema+passwordSchema+webSchema)
 	return err
 }
 
@@ -346,7 +346,8 @@ func (s *Store) ClearSession(ctx context.Context, sessionID string) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM summaries WHERE session_id=?`, sessionID); err != nil {
 		return err
 	}
-	return nil
+	_, err := s.db.ExecContext(ctx, `DELETE FROM web_run_events WHERE session_id=?`, sessionID)
+	return err
 }
 
 func (s *Store) UpsertIdentity(ctx context.Context, platform, platformID, displayName string, now int64) error {

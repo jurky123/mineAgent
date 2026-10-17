@@ -41,13 +41,13 @@ export function renderMsg(m, prepend) {
   const isAgent = m.role !== 'user';
   const row = document.createElement('div');
   row.className = 'msg ' + (isAgent ? 'assistant' : 'user');
-  row.dataset.raw = m.text || '';
+  row.dataset.raw = m.text || ''; row.dataset.messageId = m.id;
   let html = '<div class="body">';
   if (isAgent) {
     html += '<div class="content"></div>' +
       (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
       '<div class="actions"><span class="time">' + fmtTime(m.at) + '</span>' +
-      '<button class="act copy">' + ICON.copy + '复制</button></div>';
+      '<button class="act copy">' + ICON.copy + '复制 Markdown</button><button class="act copy-text">复制文本</button></div>';
   } else {
     html += '<div class="content"></div>' +
       (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
@@ -65,19 +65,24 @@ export function renderMsg(m, prepend) {
   const copy = row.querySelector('.copy');
   if (copy) copy.onclick = () => {
     navigator.clipboard.writeText(row.dataset.raw).then(() => {
-      copy.innerHTML = ICON.check + '已复制'; setTimeout(() => { copy.innerHTML = ICON.copy + '复制'; }, 1200);
-    });
+      copy.innerHTML = ICON.check + '已复制'; setTimeout(() => { copy.innerHTML = ICON.copy + (isAgent ? '复制 Markdown' : '复制'); }, 1200);
+    }).catch(() => showError('复制失败，请手动选择文本'));
   };
+  const plainCopy = row.querySelector('.copy-text');
+  if (plainCopy) plainCopy.onclick = () => navigator.clipboard.writeText(content.innerText).then(() => { plainCopy.textContent = '已复制'; setTimeout(() => { plainCopy.textContent = '复制文本'; }, 1200); }).catch(() => showError('复制失败，请手动选择文本'));
   oldestId = oldestId ? Math.min(oldestId, m.id) : m.id;
   const near = scrollNearBottom();
   if (prepend) $('listInner').insertBefore(row, $('loadolder').nextSibling);
   else $('listInner').appendChild(row);
-  if (!prepend && near) toBottom(); else updateToBottom();
+  if (!prepend && near) toBottom(); else {
+    if (!prepend && isAgent) { $('tobottom').classList.add('has-new'); $('tobottom').setAttribute('aria-label', '有新回复，回到底部'); if (!$('tobottom').querySelector('span')) { const label = document.createElement('span'); label.textContent = '有新回复'; $('tobottom').appendChild(label); } }
+    updateToBottom();
+  }
   layout();
 }
 
 export function clearMessages() {
-  $('listInner').querySelectorAll('.msg,.typing').forEach((n) => n.remove());
+  $('listInner').querySelectorAll('.msg,.typing,.run-events').forEach((n) => n.remove());
   msgIds.clear(); lastId = 0; oldestId = 0; hasMore = false;
   updateLoadOlder(); setTyping(false); layout(true);
 }
@@ -88,6 +93,8 @@ let typingTimer = null, typingStart = 0, typingLabel = '正在思考…';
 // startedAt 由服务端给出（恢复状态时保持真实已用时间）。
 export function setTyping(on, text, startedAt) {
   S.waiting = on;
+  const stop = $('stop'); if (stop) stop.hidden = !on;
+  bus.emit('running-changed');
   const box = $('listInner');
   let row = box.querySelector('.typing');
   if (!on) {
@@ -119,7 +126,7 @@ export function scrollNearBottom() {
   const el = $('list');
   return el.scrollHeight - el.scrollTop - el.clientHeight < 140;
 }
-export function toBottom() { const el = $('list'); el.scrollTop = el.scrollHeight; updateToBottom(); }
+export function toBottom() { $('tobottom').classList.remove('has-new'); $('tobottom').querySelector('span')?.remove(); $('tobottom').setAttribute('aria-label', '回到底部'); const el = $('list'); el.scrollTop = el.scrollHeight; updateToBottom(); }
 export function updateToBottom() {
   const el = $('list');
   $('tobottom').classList.toggle('on', el.scrollHeight - el.scrollTop - el.clientHeight > 300);
@@ -178,17 +185,19 @@ function dockComposer(atBottom, animate) {
 }
 
 // ---------- 历史 ----------
-export async function loadHistory() {
+export async function loadHistory(around) {
   clearMessages();
   if (S.conv === null) return; // 草稿：没有历史
   try {
-    const body = await api('/api/history?conv=' + encodeURIComponent(convParam() || ''));
+    const body = await api('/api/history?conv=' + encodeURIComponent(convParam() || '') + (around ? '&around=' + encodeURIComponent(around) : ''));
     for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
     hasMore = !!body.hasMore;
     updateLoadOlder();
     layout(true);
-    if ((body.messages || []).length) toBottom();
+    if (around) requestAnimationFrame(() => { const hit = document.querySelector('[data-message-id="' + around + '"]'); if (hit) { hit.classList.add('search-hit'); hit.scrollIntoView({ block: 'center' }); } });
+    if (!around && (body.messages || []).length) toBottom();
     // 切走再回来/刷新页面：恢复"正在处理"状态行（服务端持久化了当前进度）
+    renderRunEvents(body.runEvents || []);
     if (body.running && body.running.text) setTyping(true, body.running.text, body.running.startedAt);
   } catch (e) { showError(e.message); }
 }
@@ -198,7 +207,9 @@ export async function syncAfter() {
   try {
     const body = await api('/api/history?after=' + lastId + '&conv=' + encodeURIComponent(convParam() || ''));
     for (const m of body.messages || []) { lastId = Math.max(lastId, m.id); renderMsg(m); }
-  } catch (e) { /* SSE 会推 */ }
+    renderRunEvents(body.runEvents || []);
+    setTyping(!!body.running, body.running?.text, body.running?.startedAt);
+  } catch (e) { /* SSE reconnect will retry; do not resubmit user actions */ }
 }
 
 export function updateLoadOlder() { $('loadolder').hidden = !hasMore; }
@@ -240,11 +251,16 @@ export function connectSSE() {
       }
       lastId = Math.max(lastId, data.message.id);
       renderMsg(data.message);
-      if (data.message.role === 'agent') setTyping(false);
+
     } else if (data.type === 'cleared') {
       if (S.conv !== null && data.conv === S.conv) clearMessages();
     } else if (data.type === 'progress') {
       if (S.conv !== null && (data.conv || '') === S.conv) setTyping(true, data.text || '正在思考…');
+    } else if (data.type === 'run_done') {
+      bus.emit('conversations-changed');
+      if (S.conv !== null && (data.conv || '') === S.conv) { setTyping(false); syncAfter(); }
+    } else if (data.type === 'run_event') {
+      if (S.conv !== null && (data.conv || '') === S.conv) renderRunEvents([data.event], true);
     } else if (data.type === 'conversations') {
       bus.emit('conversations-changed');
     }
@@ -264,3 +280,16 @@ $('list').addEventListener('click', (e) => {
   const target = hit.tagName === 'IMG' ? hit : hit.closest('.imgbox').querySelector('img[data-zoom]');
   openViewer(imgs.map((n) => ({ url: n.dataset.zoom, name: n.dataset.name || '' })), Math.max(0, imgs.indexOf(target)));
 });
+
+function renderRunEvents(events, append = false) {
+  if (!events.length) return;
+  let details = $('listInner').querySelector('.run-events');
+  if (!details) { details = document.createElement('details'); details.className = 'run-events'; details.innerHTML = '<summary>工具记录</summary><div class="run-event-list"></div>'; $('listInner').appendChild(details); }
+  const list = details.querySelector('.run-event-list'); if (!append) list.replaceChildren();
+  for (const event of events) {
+    let row = Array.from(list.children).find((el) => el.dataset.callId === event.id);
+    if (!row) { row = document.createElement('p'); row.dataset.callId = event.id; list.appendChild(row); }
+    const labels = { started: '请求调用', returned: '已返回（结果以回复为准）', failed: '调用失败', cancelled: '已停止或未完成', unconfirmed: '未收到完成事件', approval: '等待管理员审批' };
+    row.textContent = (event.at ? new Date(event.at).toLocaleTimeString() + ' · ' : '') + event.name + ' · ' + (labels[event.status] || event.status) + (event.durationMs ? ' · ' + (event.durationMs / 1000).toFixed(1) + 's' : '');
+  }
+}

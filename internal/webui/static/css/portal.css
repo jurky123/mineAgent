@@ -203,3 +203,5 @@
 
 /* 动态流：对局结果用一个小奖杯色点区分 */
 .feed-dot.game { background: #f59e0b; }
+
+.demo-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px; margin: 0 0 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }

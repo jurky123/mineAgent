@@ -198,3 +198,27 @@ header {
 .agent-page .login-card { max-width: 420px; padding-block: 24px; }
 .agent-page .agent-welcome-mark { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; color: var(--brand); border: 1px solid var(--border); margin: 0 auto 16px; font-size: 24px; font-weight: 700; }
 .agent-page .agent-welcome-sub { color: var(--text-2); font-size: 14px; margin: 0 0 24px; }
+
+.conv-open { display: flex; flex-direction: column; align-items: stretch; flex: 1; min-width: 0; background: transparent; color: inherit; border: 0; padding: 6px 0; text-align: left; font: inherit; }
+.conv-snippet { display: block; margin-top: 6px; font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-menu { position: relative; flex: none; }
+.conv-menu summary { cursor: pointer; list-style: none; padding: 8px; min-width: 32px; text-align: center; }
+.conv-menu summary::-webkit-details-marker { display: none; }
+.conv-menu-actions { position: absolute; top: 100%; right: 0; z-index: 30; min-width: 130px; padding: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); }
+.conv-menu-actions button { display: block; width: 100%; padding: 10px; text-align: left; border: 0; border-radius: 6px; background: none; color: var(--text); }
+.conv-menu-actions button:hover { background: var(--surface-hover); }
+.side-archive-toggle { border: 0; background: none; color: var(--text-2); padding: 8px 16px; text-align: left; }
+.send-recovery { padding: 12px; font-size: 13px; border-bottom: 1px solid var(--border); }
+.send-recovery button { display: block; margin-top: 8px; }
+.run-events { margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 13px; color: var(--text-2); }
+.run-events summary { cursor: pointer; }
+.run-event-list p { overflow-wrap: anywhere; }
+#stop[hidden] { display: none; }
+@media(max-width: 600px) { .agent-page #shell-top { display: none; } .agent-page #app { height: 100%; } .agent-page #sidebar, .agent-page #login { top: 0; } .agent-page header { min-height: 56px; } }
+
+.capability-list { padding: 8px 12px; font-size: 12px; color: var(--text-2); max-height: 220px; overflow-y: auto; }
+.capability-list p { overflow-wrap: anywhere; margin-block: 8px; }
+#tobottom.has-new { width: auto; border-radius: 20px; padding: 6px 12px; gap: 6px; }
+
+.title { min-width: 0; }
+@media (hover: none) { .conv-menu summary { min-width: 44px; min-height: 44px; } }

@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const staticRoot = path.join(root, 'internal/webui/static');
 let loggedIn = false, failRelease = false, sends = 0;
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
@@ -55,7 +55,7 @@ try {
   assert.equal(await page.locator('.login-view').count(), 0, 'public home forced login');
   assert.equal(await page.getByRole('button', { name: '整合包准备中' }).isDisabled(), true);
   assert.equal(await page.locator('a[download]').count(), 0);
-  assert.equal(await page.getByText('服务器实景照片准备中').count(), 1);
+  assert.equal(await page.getByText('服务器信息与加入指南').count(), 1);
   await checkWidth(); await page.screenshot({ path: '/tmp/zkun-community-ui/home-desktop.png', fullPage: true });
   await page.getByRole('link', { name: '下载与加入指南', exact: true }).click();
   await page.getByRole('heading', { name: 'Minecraft 加入指南' }).waitFor();

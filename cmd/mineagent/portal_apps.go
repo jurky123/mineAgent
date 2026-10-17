@@ -11,6 +11,7 @@ import (
 	"mineagent/internal/portal"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
+	"mineagent/internal/webui"
 )
 
 // registerPortalApps 往门户里注册应用/卡片。
@@ -58,6 +59,17 @@ func agentHeroCard(store *storage.Store) portal.CardFunc {
 		if err != nil {
 			return nil, err
 		}
+		settings, err := store.ConversationSettings(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		visible := list[:0]
+		for _, cv := range list {
+			if !settings[cv.Conv].Archived {
+				visible = append(visible, cv)
+			}
+		}
+		list = visible
 		out := map[string]any{
 			"type":     "hero",
 			"title":    "MineAgent",
@@ -76,6 +88,20 @@ func agentHeroCard(store *storage.Store) portal.CardFunc {
 			out["continuePath"] = "/agent"
 		} else {
 			out["continuePath"] = "/agent"
+		}
+		if len(list) > 0 {
+			key := fmt.Sprintf("web:user:%d", u.ID)
+			if list[0].Conv != "" {
+				key += ":" + list[0].Conv
+			}
+			if messages, e := store.RecentMessages(ctx, key, 1); e == nil && len(messages) > 0 {
+				text, _ := webui.ParseFileMarkers(messages[0].Text)
+				runes := []rune(text)
+				if len(runes) > 100 {
+					text = string(runes[:100]) + "…"
+				}
+				out["lastSummary"] = text
+			}
 		}
 		return out, nil
 	}

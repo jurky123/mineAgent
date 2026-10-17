@@ -631,6 +631,9 @@ func (s *Store) ConversationFor(ctx context.Context, userID int64, account, conv
 }
 
 func (s *Store) DeleteConversationFor(ctx context.Context, userID int64, account, conv string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM web_conversation_settings WHERE user_id=? AND conv=?`, userID, conv); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM web_conversations WHERE (user_id=? OR (user_id=0 AND account=?)) AND conv=?`,
 		userID, account, conv)

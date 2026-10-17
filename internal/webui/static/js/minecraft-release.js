@@ -38,7 +38,7 @@ export function worldVisual(data, status) {
   const placeholder = h('div', 'world-placeholder');
   placeholder.appendChild(icon('pickaxe', 'lg'));
   placeholder.appendChild(h('span', 'world-placeholder-title', 'Minecraft 服务器'));
-  placeholder.appendChild(h('span', 'world-placeholder-note', '服务器实景照片准备中'));
+  placeholder.appendChild(h('span', 'world-placeholder-note', '服务器信息与加入指南'));
   wrap.appendChild(placeholder);
   const caption = h('div', 'world-caption');
   caption.appendChild(h('span', 'world-label', 'MINECRAFT'));
@@ -80,7 +80,8 @@ export function downloadCard(data, { compact = false, status = '' } = {}) {
   const card = h('div', 'card download-card');
   const release = downloadableRelease(data);
   card.appendChild(h('span', 'badge', release ? '稳定版' : '发布准备中'));
-  card.appendChild(h('h3', null, release ? '下载整合包' : '整合包准备中'));
+  card.appendChild(h('h3', null, release ? '下载整合包' : '发布进度'));
+  if (!release) { const checklist = h('ol', 'release-checklist'); for (const text of ['客户端版本确认：待验证', 'PCL 导入验证：待验证', '服务器连接验证：待验证']) checklist.appendChild(h('li', null, text)); card.appendChild(checklist); }
   card.appendChild(h('p', null, release ? '下载后导入电脑端 PCL，安装为独立实例。' : '兼容版本和 PCL 导入流程验证完成后开放下载。已有玩家可先查看加入指南。'));
   const facts = h('dl', 'release-facts');
   const add = (key, value) => { const row = h('div'); row.append(h('dt', null, key), h('dd', null, value)); facts.appendChild(row); };
@@ -102,7 +103,7 @@ export function downloadCard(data, { compact = false, status = '' } = {}) {
   card.appendChild(guide);
   if (data?.serverAddress) {
     const label = h('div', 'server-address'); label.append(h('span', null, '服务器地址'), h('code', null, data.serverAddress));
-    card.append(label, copyButton(data.serverAddress));
+    card.append(label, copyButton(data.serverAddress, '已有客户端？复制服务器地址'));
   } else card.appendChild(h('p', 'guide-note', '进服地址待管理员确认，请勿使用猜测地址。'));
   if (status === '离线') card.appendChild(h('p', 'guide-note', '服务器暂时离线，仍可安装；恢复后再加入。'));
   if (!compact) card.appendChild(copyButton(location.origin + '/minecraft', '复制指南链接'));

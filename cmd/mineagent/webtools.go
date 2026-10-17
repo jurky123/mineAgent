@@ -41,6 +41,10 @@ func (g *webToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ..
 	name := strings.TrimPrefix(tools.RequesterFromContext(ctx), "web:")
 
 	switch {
+	case info.Name == "web_file":
+		if !strings.HasPrefix(tools.RequesterFromContext(ctx), "web:") || g.ws == nil || !g.ws.IsAdmin("web", name) {
+			return errorJSON("发送 workspace 文件需要管理员权限"), nil
+		}
 	case strings.HasPrefix(info.Name, "workspace_"):
 		ctx = tools.WithQQAdmin(ctx, strings.HasPrefix(tools.RequesterFromContext(ctx), "web:") && g.ws.IsAdmin("web", name))
 	case info.Name == "qq_bind" || info.Name == "qq_unbind":

@@ -7,17 +7,19 @@ const DEMO = qs.get('ui') === '1';
 
 // 每个游戏卡片的"额外状态"数据源（有就展示，没有就只显示简介）
 async function gameStatus(gameId) {
-  const [rooms, runs] = await Promise.all([
-    apiGet('/api/games/' + gameId + '/rooms').catch(() => ({ rooms: [] })),
-    apiGet('/api/games/' + gameId + '/runs?limit=50').catch(() => ({ runs: [] })),
+  const [roomResult, historyResult] = await Promise.allSettled([
+    apiGet('/api/games/' + gameId + '/rooms'),
+    apiGet('/api/games/' + gameId + '/runs?limit=50'),
   ]);
+  const rooms = roomResult.status === 'fulfilled' ? roomResult.value.rooms || [] : [];
+  const runs = historyResult.status === 'fulfilled' ? historyResult.value.runs || [] : [];
   let wins = 0, losses = 0, draws = 0;
-  for (const r of runs.runs || []) {
+  for (const r of runs) {
     if (r.result === 'win') wins++;
     else if (r.result === 'lose') losses++;
-    else draws++;
+    else if (r.result === 'draw') draws++;
   }
-  return { openRooms: (rooms.rooms || []).length, wins, losses, draws, total: (runs.runs || []).length };
+  return { openRooms: rooms.length, wins, losses, draws, total: runs.length, roomsFailed: roomResult.status === 'rejected', historyFailed: historyResult.status === 'rejected' };
 }
 
 function catalogCard(game, status) {
@@ -27,7 +29,7 @@ function catalogCard(game, status) {
   // 视觉头：棋盘/点阵 pattern + 大棋子（纯 CSS + 已有棋子图，不用插画）
   const art = h('a', 'catalog-art art-' + game.id);
   art.href = game.path;
-  art.setAttribute('aria-hidden', 'true');
+  art.setAttribute('aria-hidden', 'true'); art.tabIndex = -1;
   const big = h('img', 'catalog-art-piece');
   big.src = gameIcon(game.id).src;
   big.alt = '';
@@ -41,11 +43,13 @@ function catalogCard(game, status) {
   if (status && status.openRooms) head.appendChild(h('span', 'badge brand', status.openRooms + ' 个房间等待'));
   body.appendChild(head);
 
+  body.appendChild(h('p', 'game-description', '2 人 · ' + (game.desc || (game.id === 'gomoku' ? '15 路棋盘，先连五子获胜' : '国际象棋在线对局'))));
   const bits = [];
   if (status && status.total) bits.push('最近 ' + status.wins + ' 胜 ' + status.losses + ' 负' + (status.draws ? ' ' + status.draws + ' 和' : ''));
-  body.appendChild(h('div', 'game-stats', bits.length ? bits.join(' · ') : '还没有对局记录'));
+  body.appendChild(h('div', 'game-stats', status?.historyFailed ? '战绩暂时不可用' : bits.length ? bits.join(' · ') : '还没有对局记录'));
 
-  const go = h('a', 'catalog-go', '进入游戏 →');
+  if (status?.roomsFailed) body.appendChild(h('p', 'field-hint', '房间状态暂时不可用，可进入大厅重试'));
+  const go = h('a', 'catalog-go', '进入' + game.name + ' →');
   go.href = game.path;
   body.appendChild(go);
   card.appendChild(body);

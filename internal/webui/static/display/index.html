@@ -32,8 +32,8 @@
 <main class="wrap narrow">
   <section class="hero">
     <h1>显示屏</h1>
-    <p class="sub">世界里的浏览器屏：开屏 / 换网址 / 关屏，以及导航白名单</p>
-  </section>
+    <p class="sub">查看屏幕与当前内容；管理操作按账号权限开放。</p>
+  <p id="screen-permission" class="field-hint" role="status"></p></section>
 
   <section class="section">
     <div class="section-head">
@@ -42,17 +42,17 @@
       <span class="badge" id="screens-meta">加载中…</span>
     </div>
     <div class="settings" id="screens-list"></div>
-    <div class="screens-form">
-      <input id="open-id" class="input" placeholder="屏幕 ID（字母数字，如 demo）">
-      <input id="open-url" class="input" placeholder="https://example.com/">
+    <div data-admin hidden><div class="screens-form">
+      <label for="open-id">屏幕名称 / ID</label><input id="open-id" class="input" placeholder="屏幕 ID（字母数字，如 demo）">
+      <label for="open-url">网页地址</label><input id="open-url" class="input" placeholder="https://example.com/">
       <button id="open-btn" class="btn primary">打开 / 更新</button>
     </div>
-    <p class="field-hint">打开后到游戏里瞄准墙面执行 <code>/minedisplay browser place &lt;id&gt;</code> 摆到世界（没摆的屏只有操作层能看）。</p>
+    <p class="field-hint">打开后到游戏里瞄准墙面执行 <code>/minedisplay browser place &lt;id&gt;</code> 摆到世界（没摆的屏只有操作层能看）。</p></div>
   </section>
 
-  <section class="section">
+  <section class="section" data-admin hidden>
     <div class="section-head">
-      <h2 class="section-title">导航白名单</h2>
+      <h2 class="section-title">管理员设置 · 导航白名单</h2>
       <div class="spacer"></div>
       <label class="toggle">
         <input type="checkbox" id="wl-enabled">
@@ -63,7 +63,7 @@
     <p class="field-hint">关闭（默认）＝任意公网站点都能打开/跳转，仍然拦截内网地址；启用＝只有下面列出的站可以（子域自动匹配）。</p>
     <div id="wl-hosts" class="screens-chips"></div>
     <div class="screens-form">
-      <input id="wl-host" class="input" placeholder="example.com（子域自动匹配）">
+      <label for="wl-host">允许的域名</label><input id="wl-host" class="input" placeholder="example.com（子域自动匹配）">
       <button id="wl-add" class="btn">添加</button>
       <button id="wl-presets" class="btn">一键加入常用站</button>
     </div>

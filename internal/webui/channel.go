@@ -38,7 +38,7 @@ import (
 //   - agent 发文件：web_file 工具（tools.WebSend）+ webToolGate，
 //     消息 Target 前缀 file:，网页端内联图片/下载链接。
 //
-// 安全：账号由 internal/account 的 Passkey 登录与经过验证的令牌负责，
+// 安全：账号由 internal/account 的密码 / Passkey 登录与经过验证的令牌负责，
 // web.users 可配白名单；workspace/审批权限只给 web.adminUsers。
 type Channel struct {
 	log *slog.Logger
@@ -76,6 +76,7 @@ type Channel struct {
 	prefsPath string
 	// running: 会话 key -> 当前运行的进度状态（内存态，重启即清）。
 	running map[string]runState
+	active  map[string]context.CancelFunc
 }
 
 func NewChannel(log *slog.Logger, cfg config.Config, acct *account.Service, hub *session.Hub, store *storage.Store,
@@ -105,6 +106,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, acct *account.Service, hub 
 		prefs:          make(map[string]accountPrefs),
 		prefsPath:      filepath.Join(dataDir, "prefs.json"),
 		running:        make(map[string]runState),
+		active:         make(map[string]context.CancelFunc),
 	}
 	c.models = newModelLister(cfg.Model.BaseURL, cfg.Model.APIKey, dataDir, func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) })
 	rpID, origins := cfg.Web.PasskeyRPID, cfg.Web.PasskeyOrigins
@@ -202,7 +204,6 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 		return nil
 	}
 	conv := convOfSession(msg.SessionID)
-	c.clearRunning(msg.SessionID)
 	// 用 ToWire 而不是手拼：文件/图片消息（Target 前缀 file:）必须带上 files，
 	// 否则网页端只有刷新走 history 才能看到附件（线上踩过）。
 	c.publish(name, conv, ToWire(msg))
@@ -460,6 +461,43 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		return convID, err
 	}
 
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	c.mu.Lock()
+	if c.active == nil {
+		c.active = make(map[string]context.CancelFunc)
+	}
+	if _, busy := c.active[sessionKey]; busy {
+		c.mu.Unlock()
+		cancelRun()
+		return convID, fmt.Errorf("当前会话仍在处理，请结束后再发送")
+	}
+	c.active[sessionKey] = cancelRun
+	c.mu.Unlock()
+	var finishOnce sync.Once
+	finish := func() {
+		finishOnce.Do(func() {
+			_ = c.store.UpsertConversationFor(context.Background(), u.ID, name, convID, "", time.Now().UnixMilli())
+			if isNew {
+				if messages, err := c.store.RecentMessages(context.Background(), sessionKey, 1); err == nil && len(messages) > 0 && messages[0].AuthorKind == "agent" {
+					title := suggestConversationTitle(text, messages[0].Text)
+					_ = c.store.RenameAutomaticConversation(context.Background(), u.ID, name, convID, conversationTitle(text, files), title)
+				}
+			}
+			cancelRun()
+			c.mu.Lock()
+			delete(c.active, sessionKey)
+			delete(c.running, sessionKey)
+			c.mu.Unlock()
+			c.publishRaw(name, map[string]any{"type": "run_done", "conv": convID})
+		})
+	}
+	submitted := false
+	defer func() {
+		if !submitted {
+			finish()
+		}
+	}()
+
 	// 系统命令硬编码直回（与其它通道一致），不进 agent 队列。
 	// 先把用户这条命令入库/广播，聊天里才能看到自己发了什么。
 	if text != "" {
@@ -528,7 +566,21 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		"files", len(files), "boundMC", mcName, "query", text, "messageId", stored.ID)
 
 	prefs := c.prefsOf(name)
+	c.setRunning(sessionKey, "已提交，等待处理…")
+	if c.ag == nil {
+		return convID, fmt.Errorf("助手尚未就绪")
+	}
 	if !c.ag.Submit(agent.Request{
+		Context: runCtx,
+		Done:    finish,
+		ToolEvent: func(event agent.ToolEvent) {
+			event.ID = fmt.Sprintf("%d:%s", stored.ID, event.ID)
+			payload, err := json.Marshal(event)
+			if err == nil {
+				_ = c.store.SaveWebRunEvent(context.Background(), sessionKey, event.ID, string(payload))
+			}
+			c.publishRaw(name, map[string]any{"type": "run_event", "conv": convID, "event": event})
+		},
 		Session:           sess,
 		SessionKey:        sessionKey,
 		Player:            "web:" + name,
@@ -537,16 +589,21 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		Query:             body,
 		TriggerMessageID:  stored.ID,
 		ReplyTarget:       target,
-		Tools:             c.webTools,
-		SystemInstruction: prompts.Resolve("web", name, webInstruction),
+		Tools:             c.toolsForUser(ctx, u),
+		SystemInstruction: prompts.Resolve("web", name, webInstruction) + c.capabilityInstruction(ctx, u),
 		Model:             prefs.Model,
 		ReasoningEffort:   prefs.Effort,
 		Progress: func(text string) {
+			if runCtx.Err() != nil {
+				return
+			}
 			c.setRunning(sessionKey, text)
 			c.publishRaw(name, map[string]any{"type": "progress", "conv": convID, "text": text})
 		},
 	}) {
 		_ = sess.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", target)
+	} else {
+		submitted = true
 	}
 
 	c.mu.Lock()
@@ -591,3 +648,27 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
   这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。
 - 对话管理命令（/help /status /memory /usage /bind /unbind /myid）由系统层直接回复，
   你照着 help 文案介绍，不要自己编命令列表。`
+
+// A concise local title avoids extra model calls. Explicit renames are preserved by compare-and-set.
+func suggestConversationTitle(query, reply string) string {
+	candidates := []string{}
+	for _, line := range strings.Split(reply, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			candidates = append(candidates, strings.TrimLeft(strings.TrimSpace(line), "# "))
+		}
+	}
+	candidates = append(candidates, strings.FieldsFunc(query, func(r rune) bool { return r == '。' || r == '；' || r == '\n' || r == '！' })...)
+	for _, candidate := range candidates {
+		t := strings.TrimSpace(candidate)
+		if t == "" || strings.Contains(t, "体验测试") || strings.Contains(t, "虚构") || strings.Contains(t, "只在对话") {
+			continue
+		}
+		t = strings.TrimLeft(t, "#* ")
+		runes := []rune(t)
+		if len(runes) > 20 {
+			t = string(runes[:20])
+		}
+		return t
+	}
+	return conversationTitle(query, nil)
+}

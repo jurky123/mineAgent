@@ -87,6 +87,8 @@ func (c *Channel) API() http.Handler {
 	mux.HandleFunc("/api/events", c.handleEvents) // SSE 用 ?token=，自己校验
 	mux.HandleFunc("/api/upload", c.withAuth(c.handleUpload))
 	mux.HandleFunc("/api/send", c.withAuth(c.handleSend))
+	mux.HandleFunc("/api/stop", c.withAuth(c.handleStop))
+	mux.HandleFunc("/api/conversations/settings", c.withAuth(c.handleConversationSettings))
 	mux.HandleFunc("/api/msgfile", c.handleMsgFile) // <img> 拿不到 header，支持 ?token=
 	mux.HandleFunc("/api/options", c.withAuth(c.handleOptions))
 	mux.HandleFunc("/api/prefs", c.withAuth(c.handlePrefs))
@@ -277,7 +279,7 @@ func (c *Channel) withAuth(next func(w http.ResponseWriter, r *http.Request, u *
 
 // Name-only authentication is deliberately disabled, including legacy aliases.
 func (c *Channel) handleLogin(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusGone, map[string]string{"error": "名字不能用于身份验证，请使用 Passkey 登录或联系管理员激活账号"})
+	writeJSON(w, http.StatusGone, map[string]string{"error": "名字不能用于身份验证，请使用密码或 Passkey 登录"})
 }
 
 // handleLogout 注销当前令牌并清 cookie。
@@ -315,12 +317,30 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, u *stora
 	sessionKey := webSessionKey(u.ID, conv)
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	around, _ := strconv.ParseInt(r.URL.Query().Get("around"), 10, 64)
 	var (
 		raw     []storage.Message
 		err     error
 		hasMore bool
 	)
 	switch {
+	case around > 0:
+		var target *storage.Message
+		target, err = c.store.MessageByID(r.Context(), around)
+		if err != nil || target == nil || target.SessionID != sessionKey {
+			writeJSON(w, 404, map[string]string{"error": "消息不存在"})
+			return
+		}
+		raw, err = c.store.MessagesBetween(r.Context(), sessionKey, 0, around, 51)
+		hasMore = len(raw) > 50
+		if hasMore {
+			raw = raw[1:]
+		}
+		if err == nil {
+			var next []storage.Message
+			next, err = c.store.MessagesAfter(r.Context(), sessionKey, around, 50)
+			raw = append(raw, next...)
+		}
 	case after > 0:
 		raw, err = c.store.MessagesAfter(r.Context(), sessionKey, after, 200)
 	case before > 0:
@@ -341,7 +361,13 @@ func (c *Channel) handleHistory(w http.ResponseWriter, r *http.Request, u *stora
 	for _, m := range raw {
 		msgs = append(msgs, ToWire(m))
 	}
-	resp := map[string]any{"messages": msgs, "hasMore": hasMore}
+	events := []json.RawMessage{}
+	if rows, e := c.store.WebRunEvents(r.Context(), sessionKey); e == nil {
+		for _, row := range rows {
+			events = append(events, json.RawMessage(row))
+		}
+	}
+	resp := map[string]any{"messages": msgs, "hasMore": hasMore, "runEvents": events}
 	if st, ok := c.RunningState(sessionKey); ok {
 		resp["running"] = st
 	}
@@ -358,7 +384,8 @@ func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, u *stora
 	prefs := c.prefsOf(u.Username)
 	// Discovery can be partial or temporarily unavailable. GET must not erase preferences.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"skills":          c.cfg.Skills,
+		"skills":          c.skillsForUser(r.Context(), u),
+		"capabilities":    c.capabilities(r.Context(), u),
 		"models":          catalog,
 		"efforts":         effortLevels,
 		"model":           prefs.Model,
@@ -520,6 +547,13 @@ func (c *Channel) handleClear(w http.ResponseWriter, r *http.Request, u *storage
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
 		return
 	}
+	c.mu.Lock()
+	_, busy := c.active[webSessionKey(u.ID, req.Conv)]
+	c.mu.Unlock()
+	if busy {
+		writeJSON(w, 409, map[string]string{"error": "请先停止当前任务，再删除会话"})
+		return
+	}
 	if err := c.store.ClearSession(r.Context(), webSessionKey(u.ID, req.Conv)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -572,8 +606,68 @@ func (c *Channel) handleConversations(w http.ResponseWriter, r *http.Request, u 
 			list = append(list, storage.Conversation{Account: u.Username, Conv: "", Title: title, CreatedAt: at, UpdatedAt: at})
 		}
 	}
-	sort.SliceStable(list, func(i, j int) bool { return list[i].UpdatedAt > list[j].UpdatedAt })
-	writeJSON(w, http.StatusOK, map[string]any{"conversations": list})
+	settings, err := c.store.ConversationSettings(ctx, u.ID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "无法读取会话设置"})
+		return
+	}
+	type entry struct {
+		storage.Conversation
+		storage.ConversationSettings
+		Snippet string `json:"snippet,omitempty"`
+		MatchID int64  `json:"matchId,omitempty"`
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(q)) > 100 {
+		writeJSON(w, 400, map[string]string{"error": "搜索词过长"})
+		return
+	}
+	matches := map[string]storage.Message{}
+	if q != "" {
+		rows, e := c.store.SearchWebMessages(ctx, u.ID, q)
+		if e != nil {
+			writeJSON(w, 500, map[string]string{"error": "搜索失败"})
+			return
+		}
+		for _, m := range rows {
+			conv := convOfSession(m.SessionID)
+			if _, ok := matches[conv]; !ok {
+				matches[conv] = m
+			}
+		}
+	}
+	out := []entry{}
+	for _, cv := range list {
+		item := entry{Conversation: cv, ConversationSettings: settings[cv.Conv]}
+		if m, ok := matches[cv.Conv]; ok {
+			runes := []rune(m.Text)
+			at := strings.Index(strings.ToLower(m.Text), strings.ToLower(q))
+			start := 0
+			if at > 0 {
+				start = len([]rune(strings.ToLower(m.Text)[:at])) - 24
+				if start < 0 {
+					start = 0
+				}
+			}
+			end := start + 120
+			if end > len(runes) {
+				end = len(runes)
+			}
+			item.Snippet = string(runes[start:end])
+			item.MatchID = m.ID
+		}
+		if q != "" && item.MatchID == 0 && !strings.Contains(strings.ToLower(cv.Title), strings.ToLower(q)) {
+			continue
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Pinned != out[j].Pinned {
+			return out[i].Pinned
+		}
+		return out[i].UpdatedAt > out[j].UpdatedAt
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"conversations": out})
 }
 
 // handleConversationDelete 删除会话（含消息与摘要）。
@@ -587,6 +681,13 @@ func (c *Channel) handleConversationDelete(w http.ResponseWriter, r *http.Reques
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&req); err != nil || !ValidConv(req.Conv) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "会话 id 非法"})
+		return
+	}
+	c.mu.Lock()
+	_, busy := c.active[webSessionKey(u.ID, req.Conv)]
+	c.mu.Unlock()
+	if busy {
+		writeJSON(w, 409, map[string]string{"error": "请先停止当前任务，再删除会话"})
 		return
 	}
 	if err := c.store.ClearSession(r.Context(), webSessionKey(u.ID, req.Conv)); err != nil {
@@ -786,7 +887,12 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, u *storage.
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "conv": convID})
+	st, running := c.RunningState(webSessionKey(u.ID, convID))
+	response := map[string]any{"ok": true, "conv": convID}
+	if running {
+		response["running"] = st
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // handleMsgFile 下载消息附件：

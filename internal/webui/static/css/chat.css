@@ -144,3 +144,20 @@
 }
 .typing .dots span:nth-child(2) { animation-delay: .2s; }
 .typing .dots span:nth-child(3) { animation-delay: .4s; }
+
+/* Review: keep dense data readable and expose touch actions. */
+.msg.assistant .body { width: 100%; }
+.content { line-height: 1.7; }
+.content li > ul, .content li > ol { margin: 4px 0; padding-left: 24px; }
+.tablewrap table { min-width: max-content; max-width: none; }
+.tablewrap th, .tablewrap td { min-width: 7em; max-width: 28em; overflow-wrap: normal; word-break: normal; }
+.tablewrap th { white-space: nowrap; }
+.codeblock .codetools { position: static; opacity: 1; width: auto; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.content pre { white-space: pre; overflow-wrap: normal; word-break: normal; }
+.actions { opacity: 1; flex-wrap: wrap; }
+.blocktools:focus-within { opacity: 1; }
+@media (hover: none), (max-width: 600px) { .blocktools { opacity: 1; position: static; text-align: right; } .act { min-height: 40px; } }
+.msg.search-hit { outline: 2px solid var(--brand, #2563eb); outline-offset: 4px; border-radius: 8px; }
+
+.export-stage { width: max-content; max-width: none; }
+.export-stage .tablewrap { overflow: visible; }

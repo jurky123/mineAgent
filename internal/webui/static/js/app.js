@@ -2,9 +2,9 @@
 
 import { boot as bootShell, shell } from './shell.js';
 import { passwordForm } from './passwords.js';
-import { $, toast } from './ui.js';
+import { $, toast, bus } from './ui.js';
 import { S, saveAuth, clearAuth } from './state.js';
-import { api, logoutRequest, setUnauthorizedHandler } from './api.js';
+import { api, apiPost, logoutRequest, setUnauthorizedHandler } from './api.js';
 import { initTheme, openAppearance } from './theme.js';
 import { initWorkspace, openWorkspace } from './workspace.js';
 import * as conversations from './conversations.js';
@@ -98,8 +98,8 @@ async function openUsage() {
 }
 
 // ---------- 侧栏 ----------
-function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); }
-function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); }
+function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); $('menu').setAttribute('aria-expanded', 'true'); $('sidebar').setAttribute('role', 'dialog'); $('sidebar').setAttribute('aria-modal', 'true'); $('list').closest('main').inert = true; $('shell-top') && ($('shell-top').inert = true); $('conv-search').focus(); }
+function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); $('sidebar').removeAttribute('role'); $('sidebar').removeAttribute('aria-modal'); $('list').closest('main').inert = false; $('shell-top') && ($('shell-top').inert = false); $('menu').setAttribute('aria-expanded', 'false'); $('menu').focus(); }
 
 // 页面比服务端旧（开着标签页时后端更新过）→ 自动带新参数刷新一次，避免旧 JS 一直用下去
 async function ensureFresh() {
@@ -148,6 +148,22 @@ async function boot() {
   $('menu-logout').onclick = async () => { closeAccount(); try { await logoutRequest(); logout(false); bootShell({ active: '/agent', requireLogin: false }).catch(() => {}); } catch (error) { toast('退出失败，请恢复连接后重试', 'err'); } };
   $('menu').onclick = () => $('sidebar').classList.contains('open') ? closeSidebar() : openSidebar();
   $('backdrop').onclick = closeSidebar;
+  document.addEventListener('keydown', (event) => {
+    if (!$('sidebar').classList.contains('open')) return;
+    if (event.key === 'Escape') { event.preventDefault(); closeSidebar(); }
+    if (event.key === 'Tab') {
+      const nodes = Array.from($('sidebar').querySelectorAll('button,input,a[href]')).filter((el) => !el.disabled && el.getClientRects().length);
+      const first = nodes[0], last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  });
+  bus.on('sidebar-close', closeSidebar);
+  $('stop').onclick = async () => {
+    if (S.conv === null) return; $('stop').disabled = true;
+    try { const result = await apiPost('/api/stop', { conv: S.conv }); if (!result.stopping) chat.setTyping(false); } catch (error) { toast(error.message, 'err'); }
+    finally { $('stop').disabled = false; }
+  };
   $('collapse').onclick = () => {
     const collapsed = document.body.classList.toggle('collapsed');
     localStorage.setItem('mineagent.sidebar', collapsed ? 'collapsed' : '');

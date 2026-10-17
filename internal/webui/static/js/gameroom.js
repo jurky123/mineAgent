@@ -608,7 +608,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
     try {
       const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
       list.innerHTML = '';
-      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂无开放房间。可以创建房间，或观看演示回放。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?ui=1'; empty.appendChild(replay); list.appendChild(empty); return; }
+      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂无开放房间。可以创建房间，或观看演示回放。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?demo=gomoku'; empty.appendChild(replay); list.appendChild(empty); return; }
       for (const r of rooms) {
         const item = h('div', 'list-row');
         item.appendChild(h('span', 'avatar', (r.host[0] || '?')));

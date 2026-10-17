@@ -10,6 +10,7 @@ export const S = {
   conv: localStorage.getItem('mineagent.conv'),
   conversations: [],
   unread: new Set(),
+  sending: false,
   waiting: false
 };
 

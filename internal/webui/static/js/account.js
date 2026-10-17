@@ -144,7 +144,7 @@ function renderStats(games) {
   const box = document.getElementById('acc-stats');
   box.innerHTML = '';
   if (!games || !games.length) return;
-  const names = { chess: '国际象棋' };
+  const names = { chess: '国际象棋', gomoku: '五子棋' };
   for (const g of games) {
     const rate = g.total ? Math.round((g.wins / g.total) * 100) : 0;
     const row = h('div', 'list-row');

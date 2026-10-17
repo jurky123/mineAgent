@@ -363,6 +363,9 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 | `GET /api/conversations` | 会话列表（纯读；旧单会话会合成返回） |
 | `POST /api/conversations/delete`、`/rename` | 删除 / 重命名会话 |
 | `POST /api/prefs` `{model, effort}` | 保存本账号的模型与思考强度 |
+| `POST /api/stop` | 停止本人指定会话的任务；已完成的外部操作不撤销 |
+| `GET /api/conversations?q=关键词` | 标题和正文搜索，返回命中片段与消息 ID |
+| `POST /api/conversations/settings` | 本人会话置顶、归档（支持取消） |
 | `GET/POST /api/prompts` | 人设与提示词：登录用户可预览模板正文，管理员可看渠道规则；POST `scope=service-settings`（一起保存渠道人设与规则）、`capability`、`service-persona`、`persona-save`/`persona-delete`（以上仅管理员）、`user-persona`（本人网页人设） |
 | `GET /api/usage` | 模型 key 额度（滚动/周/月，网关 `/usage`，60s 缓存） |
 | `GET /api/workspace?path=` | 列 workspace 目录（仅管理员） |
@@ -411,3 +414,13 @@ node scripts/ui-preview.mjs --base https://zkun.art --only shots
   客户端+小号，封号率高（社区统计 WCF 用户几乎无一幸免），不做。
 - **iPad/Android 协议**：能当真实好友+进群，但属灰产、要小号+付费跟版本，
   风控触发概率高（社区实测：每天交互 >500 次账号寿命通常 <72 小时），不做。
+
+### 第二轮体验修复（2026-10-17）
+
+发送时立即快照文本和附件并清空本次输入，等待期间的新草稿不被请求结果覆盖；未确认发送提供恢复草稿入口，不自动重发。当前会话运行期间保留草稿并禁止再次提交，支持服务端停止、刷新后恢复运行状态、工具记录与审批等待提示。
+
+会话支持正文搜索和命中定位、重命名、置顶及归档。首轮回复后按标题/主题片段生成简短标题，显式改名优先；首页显示主题、更新时间和最近回复摘要。Markdown 使用本地 markdown-it 15.0.3（MIT），保留列表编号和嵌套、独立滚动表格、代码高亮与原文复制，禁用原始 HTML。
+
+游戏大厅的演示回放使用 `/account/history?demo=gomoku`，保留真实账户与导航，演示战绩单独标注；支持播放、暂停与速度。显示屏普通用户仅可读取状态；管理员操作、白名单确认与服务端授权分别生效，成功白名单变更写审计日志。
+
+回归：`npm run test:review`、`npm run test:community`、`npm run test:models`、`npm run test:prompts`；Go 用 `go test -p 1 ./...`，并对 agent/storage/webui/portal 运行竞态检测。部署继续使用 `scripts/deploy.sh`。真实素材、整合包发布及 Windows/PCL 端到端验证仍须实际完成后才能标为可用。

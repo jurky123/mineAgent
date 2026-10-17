@@ -93,3 +93,11 @@
 .community-home .btn, .guide-wrap .btn { min-height: 44px; }
 
 html[data-theme="dark"] :is(.text-link, .install-steps a, .step-number) { color: var(--link) !important; }
+
+.world-noimage { min-height: 160px; align-self: center; flex-direction: column; align-items: stretch; }
+.world-noimage .world-placeholder { display: none; }
+.world-noimage .world-caption { position: static; padding: 24px; }
+.world-link:has(.world-noimage) { align-self: center; }
+.release-checklist { padding-left: 20px; line-height: 1.8; font-size: 14px; color: var(--text-secondary); }
+
+.recent-summary { font-size: 13px; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; margin-top: 8px; }

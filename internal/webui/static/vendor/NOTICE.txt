@@ -9,3 +9,5 @@
   用于把表格/公式导出成图片（客户端栅格化）
 
 只在使用到时才由前端懒加载；不需要构建步骤。
+
+markdown-it 15.0.3 — MIT license; see markdown-it/LICENSE. Browser ESM from the npm release, SHA512 integrity verified.

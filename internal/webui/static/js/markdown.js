@@ -1,3 +1,4 @@
+import MarkdownIt from '../vendor/markdown-it/markdown-it.mjs';
 // Markdown 渲染 + 公式/代码高亮的渐进增强
 // 渲染：标题/段落/列表（含有序、任务列表）/引用/表格/分隔线/代码块/图片/链接/删除线/行内样式 + LaTeX
 // 增强（enhanceContent）：按需懒加载 KaTeX 与 highlight.js（自托管在 /vendor 下），渲染公式与代码高亮
@@ -6,13 +7,6 @@ import { esc } from './ui.js';
 
 const ICON_COPY = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 const ICON_IMG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
-
-const blocks = []; // 占位块（代码块 / 公式），先抽出避免被 markdown 处理
-
-function stash(html) {
-  blocks.push(html);
-  return '\u0000' + (blocks.length - 1) + '\u0000';
-}
 
 // ---------- 懒加载 vendor ----------
 const loaded = {};
@@ -102,99 +96,72 @@ async function exportNodeImage(node, name) {
   }
 }
 
-// ---------- 渲染 ----------
-export function renderContent(el, text) {
-  blocks.length = 0;
-  const src = String(text || '');
-
-  // 1) 围栏代码块：语言标签 + 复制按钮（ChatGPT 那种代码框）
-  let withPh = src.replace(/```(\w*)\n?([\s\S]*?)```/g, (m, lang, code) => {
-    const language = (lang || '').trim().toLowerCase();
-    const label = language || 'text';
-    // 复制按钮/语言标签浮动在代码块内部右上角（hover 出现，触屏常显）
-    return stash(
-      '<div class="codeblock">' +
-      '<pre><code class="language-' + esc(label) + '">' + esc(code.replace(/\n$/, '')) + '</code></pre>' +
-      '<div class="codetools"><span class="codelang">' + esc(label) + '</span>' +
-      '<button class="codecopy" type="button">' + ICON_COPY + '复制</button></div>' +
-      '</div>'
-    );
-  });
-
-  // 2) 块级公式：$$...$$（可跨行）与 \[...\]
-  const mathBlock = (tex) =>
-    stash('<div class="blockwrap" data-kind="math">' +
-      '<div class="blocktools"><button class="blockimg" type="button">' + ICON_IMG + '导出图片</button></div>' +
-      '<span class="math-display" data-tex="' + esc(tex.trim()) + '"></span></div>');
-  withPh = withPh.replace(/\$\$([\s\S]+?)\$\$/g, (m, tex) => mathBlock(tex));
-  withPh = withPh.replace(/\\\[([\s\S]+?)\\\]/g, (m, tex) => mathBlock(tex));
-
-  const lines = withPh.split('\n');
-  const out = [];
-  const inline = (s) => esc(s)
-    // 行内公式：$...$ 与 \(...\)（先抽走，避免 _ * 等被 markdown 处理）
-    .replace(/\$([^$\n]{1,200}?)\$/g, (m, tex) =>
-      stash('<span class="math-inline" data-tex="' + esc(tex) + '"></span>'))
-    .replace(/\\\(([^\n]{1,200}?)\\\)/g, (m, tex) =>
-      stash('<span class="math-inline" data-tex="' + esc(tex) + '"></span>'))
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, '<img class="mdimg" src="$2" alt="$1" loading="lazy">')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[\s(（])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
-    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[^"'>\w])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-  const cells = (line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
-  const isBlockStart = (t) => t === '' || /^\u0000\d+\u0000$/.test(t) || /^#{1,6}\s/.test(t) ||
-    /^>\s?/.test(t) || /^[-*]\s+/.test(t) || /^\d+[.)]\s+/.test(t) || /^(-{3,}|\*{3,}|_{3,})$/.test(t);
-  const taskItem = (x) => {
-    const m = x.match(/^\[([ xX])\]\s*(.*)$/);
-    if (!m) return '<li>' + inline(x) + '</li>';
-    const done = m[1].toLowerCase() === 'x';
-    return '<li class="task' + (done ? ' done' : '') + '"><span class="taskbox">' + (done ? '✓' : '') + '</span>' + inline(m[2]) + '</li>';
-  };
-  let i = 0;
-  while (i < lines.length) {
-    const t = lines[i].trim();
-    if (t === '') { i++; continue; }
-    if (/^\u0000\d+\u0000$/.test(t)) { out.push('<div>' + t + '</div>'); i++; continue; }
-    const h = t.match(/^(#{1,6})\s+(.*)$/);
-    if (h) { const lv = Math.min(h[1].length + 1, 6); out.push('<h' + lv + '>' + inline(h[2]) + '</h' + lv + '>'); i++; continue; }
-    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { out.push('<hr>'); i++; continue; }
-    if (/^>\s?/.test(t)) {
-      const buf = [];
-      while (i < lines.length && /^>\s?/.test(lines[i].trim())) { buf.push(lines[i].trim().replace(/^>\s?/, '')); i++; }
-      out.push('<blockquote>' + buf.map((x) => '<div>' + inline(x) + '</div>').join('') + '</blockquote>');
-      continue;
+// CommonMark parser: HTML is escaped and unsafe link schemes are rejected.
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+md.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index];
+  const language = (token.info.trim().split(/\s+/)[0] || 'text').replace(/[^a-zA-Z0-9_+-]/g, '');
+  return '<div class="codeblock"><div class="codetools"><span class="codelang">' + esc(language) +
+    '</span><button class="codecopy" type="button">' + ICON_COPY + '复制</button></div>' +
+    '<pre><code class="language-' + esc(language) + '">' + esc(token.content) + '</code></pre></div>\n';
+};
+md.renderer.rules.table_open = () => '<div class="blockwrap" data-kind="table"><div class="blocktools"><button class="blockimg" type="button">' + ICON_IMG + '导出图片</button></div><div class="tablewrap" tabindex="0" role="region" aria-label="表格，可横向滚动"><table>';
+md.renderer.rules.table_close = () => '</table></div></div>\n';
+const linkOpen = md.renderer.rules.link_open;
+md.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
+  tokens[index].attrSet('target', '_blank'); tokens[index].attrSet('rel', 'noopener noreferrer');
+  return linkOpen ? linkOpen(tokens, index, options, env, renderer) : renderer.renderToken(tokens, index, options);
+};
+// Math rules run within Markdown's syntax tree, so code fences and inline code stay literal.
+md.inline.ruler.before('escape', 'math', (state, silent) => {
+  const start = state.pos;
+  const paren = state.src.startsWith('\\(', start);
+  if (!paren && (state.src[start] !== '$' || state.src[start + 1] === '$')) return false;
+  const open = paren ? 2 : 1, closing = paren ? '\\)' : '$';
+  const end = state.src.indexOf(closing, start + open);
+  if (end < 0 || state.src.slice(start + open, end).includes('\n')) return false;
+  if (!silent) { const token = state.push('math_inline', '', 0); token.content = state.src.slice(start + open, end); }
+  state.pos = end + closing.length; return true;
+});
+md.renderer.rules.math_inline = (tokens, index) => '<span class="math-inline" data-tex="' + esc(tokens[index].content) + '"></span>';
+md.block.ruler.before('fence', 'math_block', (state, start, end, silent) => {
+  const first = state.src.slice(state.bMarks[start] + state.tShift[start], state.eMarks[start]);
+  const opening = first.startsWith('$$') ? '$$' : first.startsWith('\\[') ? '\\[' : '';
+  if (!opening) return false;
+  const closing = opening === '$$' ? '$$' : '\\]';
+  const rest = first.slice(2); let body = '', last = start;
+  const same = rest.indexOf(closing);
+  if (same >= 0) { if (rest.slice(same + closing.length).trim()) return false; body = rest.slice(0, same); }
+  else {
+    body = rest;
+    for (last = start + 1; last < end; last++) {
+      const line = state.src.slice(state.bMarks[last] + state.tShift[last], state.eMarks[last]);
+      const at = line.indexOf(closing);
+      body += '\n' + (at >= 0 ? line.slice(0, at) : line);
+      if (at >= 0) { if (line.slice(at + closing.length).trim()) return false; break; }
     }
-    if (t.includes('|') && i + 1 < lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?[\s:|-]*$/.test(lines[i + 1].trim()) && lines[i + 1].includes('-')) {
-      const head = cells(t); i += 2;
-      const rows = [];
-      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') { rows.push(cells(lines[i])); i++; }
-      out.push('<div class="blockwrap" data-kind="table">' +
-        '<div class="blocktools"><button class="blockimg" type="button">' + ICON_IMG + '导出图片</button></div>' +
-        '<div class="tablewrap"><table><thead><tr>' + head.map((c) => '<th>' + inline(c) + '</th>').join('') + '</tr></thead><tbody>' +
-        rows.map((r) => '<tr>' + r.map((c) => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div></div>');
-      continue;
-    }
-    if (/^[-*]\s+/.test(t)) {
-      const items = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items.push(lines[i].trim().replace(/^\s*[-*]\s+/, '')); i++; }
-      out.push('<ul>' + items.map(taskItem).join('') + '</ul>');
-      continue;
-    }
-    if (/^\d+[.)]\s+/.test(t)) {
-      const items = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) { items.push(lines[i].trim().replace(/^\s*\d+[.)]\s+/, '')); i++; }
-      out.push('<ol>' + items.map((x) => '<li>' + inline(x) + '</li>').join('') + '</ol>');
-      continue;
-    }
-    const buf = [t];
-    i++;
-    while (i < lines.length && !isBlockStart(lines[i].trim())) { buf.push(lines[i].trim()); i++; }
-    out.push('<p>' + buf.map((x) => inline(x)).join('<br>') + '</p>');
+    if (last === end) return false;
   }
-  el.innerHTML = out.join('').replace(/\u0000(\d+)\u0000/g, (m, n) => (blocks[+n] !== undefined ? blocks[+n] : m));
+  if (silent) return true;
+  const token = state.push('math_block', '', 0); token.content = body.trim(); token.map = [start, last + 1];
+  state.line = last + 1; return true;
+});
+md.renderer.rules.math_block = (tokens, index) => '<div class="blockwrap" data-kind="math"><div class="blocktools"><button class="blockimg" type="button">' + ICON_IMG + '导出图片</button></div><span class="math-display" data-tex="' + esc(tokens[index].content) + '"></span></div>\n';
+
+export function renderContent(el, text) {
+  el.innerHTML = md.render(String(text || ''));
+  el.querySelectorAll('img').forEach((img) => { img.classList.add('mdimg'); img.loading = 'lazy'; });
+  el.querySelectorAll('li > p:first-child, li').forEach((node) => {
+    const first = node.firstChild;
+    if (first?.nodeType !== Node.TEXT_NODE) return;
+    const match = first.textContent.match(/^\[([ xX])\]\s+/);
+    if (!match) return;
+    first.textContent = first.textContent.slice(match[0].length);
+    const li = node.closest('li'); li.classList.add('task');
+    if (match[1] !== ' ') li.classList.add('done');
+    const box = document.createElement('span'); box.className = 'taskbox'; box.textContent = match[1] !== ' ' ? '✓' : '';
+    node.prepend(box);
+  });
 }
 
 // ---------- 渐进增强：代码高亮 + 公式渲染 + 复制按钮 ----------
@@ -235,7 +202,7 @@ export async function enhanceContent(el) {
       const code = box.querySelector('code');
       navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
         btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制'; }, 1200);
-      });
+      }).catch(() => { btn.textContent = '复制失败，请选中文本'; });
     };
   });
 }

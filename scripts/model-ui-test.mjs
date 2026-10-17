@@ -15,7 +15,7 @@ const models = [
   { id: 'extra/needs-key', label: 'Needs Key', provider: 'extra', providerLabel: 'Extra', free: true, needsKey: true },
   { id: 'contributor', label: 'Contributor', provider: 'default', providerLabel: 'Gateway', free: false },
 ];
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -150,6 +151,8 @@ type Web struct {
 	// 站点域名：设置后用 Let's Encrypt 自动给该域名签发/续期 HTTPS 证书
 	//（80 端口同时服务 ACME HTTP-01 验证；证书缓存在 certDir）。
 	Domain string `json:"domain"`
+	// 下载分享链接的 HTTPS origin；留空时使用本站，私有配置可指向独立 Worker。
+	DownloadPublicOrigin string `json:"downloadPublicOrigin,omitempty"`
 	// Passkey identity is pinned to configuration, never inferred from Host headers.
 	PasskeyRPID    string   `json:"passkeyRPID,omitempty"`
 	PasskeyOrigins []string `json:"passkeyOrigins,omitempty"`
@@ -411,6 +414,15 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Web.DataDir == "" {
 		cfg.Web.DataDir = dweb.DataDir
+	}
+	if origin := cfg.Web.DownloadPublicOrigin; origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" ||
+			(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			return cfg, fmt.Errorf("web.downloadPublicOrigin 必须是 HTTPS 域名地址，不能包含路径、凭据、查询参数或片段")
+		}
+		u.Path = ""
+		cfg.Web.DownloadPublicOrigin = u.String()
 	}
 	if cfg.Web.DisplayAPI == "" {
 		cfg.Web.DisplayAPI = dweb.DisplayAPI

@@ -53,6 +53,7 @@ func main() {
 	origin := fmt.Sprintf("http://localhost:%d", listener.Addr().(*net.TCPAddr).Port)
 	cfg := config.Default()
 	cfg.Web.DataDir = dir
+	cfg.Web.DownloadPublicOrigin = os.Getenv("MINEAGENT_TEST_DOWNLOAD_ORIGIN")
 	cfg.Workspace.Root = filepath.Join(dir, "workspace")
 	cfg.Web.PasskeyRPID = "localhost"
 	cfg.Web.PasskeyOrigins = []string{origin}

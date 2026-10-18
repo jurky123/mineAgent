@@ -89,6 +89,47 @@ func uploadDownloadFixture(t *testing.T, call func(string, string, string, strin
 	return result.File, key
 }
 
+func TestDownloadShareLinksUseConfiguredOrigin(t *testing.T) {
+	s, call := downloadFixture(t)
+	s.cfg.DownloadPublicOrigin = "https://download.example.workers.dev"
+	w := call("POST", "/api/downloads?name=tool.bin", "fixture contents", "admin")
+	if w.Code != http.StatusCreated {
+		t.Fatal("upload failed")
+	}
+	var upload struct {
+		File storage.DownloadFile `json:"file"`
+		Link string               `json:"link"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &upload); err != nil {
+		t.Fatal(err)
+	}
+	prefix := s.cfg.DownloadPublicOrigin + "/download#"
+	if !strings.HasPrefix(upload.Link, prefix) {
+		t.Fatal("upload share link did not use public origin")
+	}
+	key := strings.TrimPrefix(upload.Link, prefix)
+	if w := call("POST", "/api/downloads/info", "key="+key, ""); w.Code != 200 {
+		t.Fatal("configured share link key unusable")
+	}
+	w = call("POST", "/api/downloads/link", fmt.Sprintf(`{"id":%q}`, upload.File.ID), "admin")
+	var rotated struct {
+		Link string `json:"link"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &rotated) != nil || !strings.HasPrefix(rotated.Link, prefix) {
+		t.Fatal("rotated link did not use public origin")
+	}
+	if rotated.Link == upload.Link {
+		t.Fatal("rotation retained old secret")
+	}
+	w = call("POST", "/api/downloads/revoke", fmt.Sprintf(`{"id":%q}`, upload.File.ID), "admin")
+	var revoked struct {
+		Link string `json:"link"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &revoked) != nil || revoked.Link != "" {
+		t.Fatal("revocation returned a link")
+	}
+}
+
 func TestDownloadAuthorizationAndTransport(t *testing.T) {
 	s, call := downloadFixture(t)
 	for _, path := range []string{"/api/downloads", "/api/downloads/events?id=anything", "/api/downloads/link", "/api/downloads/revoke"} {

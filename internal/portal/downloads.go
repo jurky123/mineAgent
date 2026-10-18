@@ -135,18 +135,18 @@ func (s *Server) manageDownloads(w http.ResponseWriter, r *http.Request, _ *stor
 			writeJSONError(w, 404, "文件不存在")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "link": downloadLink(secret)})
+		writeJSON(w, 200, map[string]any{"ok": true, "link": s.downloadLink(secret)})
 	default:
 		http.NotFound(w, r)
 	}
 }
 
 // secret 仅在 URL fragment 中，浏览器不会把它放进请求路径、查询或 Referer。
-func downloadLink(secret string) string {
+func (s *Server) downloadLink(secret string) string {
 	if secret == "" {
 		return ""
 	}
-	return "/download#" + secret
+	return s.cfg.DownloadPublicOrigin + "/download#" + secret
 }
 
 func (s *Server) uploadDownload(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +208,7 @@ func (s *Server) uploadDownload(w http.ResponseWriter, r *http.Request) {
 		s.downloadError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"file": file, "link": downloadLink(secret)})
+	writeJSON(w, http.StatusCreated, map[string]any{"file": file, "link": s.downloadLink(secret)})
 }
 
 func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {

@@ -230,7 +230,7 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 
 没有额外域名时，可使用账号的 `workers.dev` 地址。打开 Cloudflare 控制台的 **Workers & Pages → 你的 Worker → Edit code（编辑代码）**，把示例代码完整替换为 [cloudflare-download-worker.mjs](scripts/cloudflare-download-worker.mjs)，点击 Deploy（部署）。无需配置 Secret、KV、R2 或修改主站 DNS；该脚本只调用现有公开领取 API，不修改主站配置、不需要重启。
 
-主站 `/downloads` 仍用于管理员上传和统计。把生成链接的域名替换成 `https://<你的 Worker 地址>`，保留原来的 `/download#` 及其后完整秘密，再发送给接收者。单独打开 Worker 地址应出现通用下载页并提示链接不完整；这是正常状态，不会展示文件清单。页面、脚本和表单只访问 Worker 域名，文件由 Worker 流式转发；不重定向回主站，不暴露管理员入口，不缓存文件。
+主站 `/downloads` 仍用于管理员上传和统计。在私有配置中设置 `web.downloadPublicOrigin` 为 Worker 的 HTTPS 域名地址（仅 origin，不带路径、查询或片段），按部署流程生效后，上传及“生成新链接”都会自动返回 Worker 的完整分享链接；留空则沿用本站地址。域名只写私有配置，不硬编码在公共源码中。此设置不重置文件、次数或既有领取密钥；手头的旧链接也可仅替换域名，保留 `/download#` 及其后完整秘密。单独打开 Worker 地址应出现通用下载页并提示链接不完整；这是正常状态，不会展示文件清单。页面、脚本和表单只访问 Worker 域名，文件由 Worker 流式转发；不重定向回主站，不暴露管理员入口，不缓存文件。
 
 次数仍由主站记录，IP **暂时是 Cloudflare 回源的连接地址，不是接收者真实 IP**；脚本不允许客户端伪造转发头。需要真实 IP 时应另行实现 Worker 到源站的签名校验，不能直接信任公开 HTTP 请求里的 `CF-Connecting-IP` / `X-Forwarded-For`。Cloudflare 作为中转方能接触请求和文件，下载统计的“完成”也只表示源站完成向中转发送。此入口降低普通下载者看到主域名的机会，不承诺无法通过文件内容或其他线索关联。
 

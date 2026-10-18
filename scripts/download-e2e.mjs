@@ -5,7 +5,11 @@ import { createInterface } from 'node:readline';
 import { mkdir, readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
-const server = spawn('go', ['run', './scripts/passkey-fixture'], { stdio: ['pipe', 'pipe', 'inherit'] });
+const shareOrigin = 'https://download.example.workers.dev';
+const server = spawn('go', ['run', './scripts/passkey-fixture'], {
+  stdio: ['pipe', 'pipe', 'inherit'],
+  env: { ...process.env, MINEAGENT_TEST_DOWNLOAD_ORIGIN: shareOrigin },
+});
 let browser;
 try {
   const lines = createInterface({ input: server.stdout });
@@ -32,7 +36,7 @@ try {
   await page.getByRole('button', { name: '上传并生成链接' }).click();
   await page.locator('#new-link').waitFor({ state: 'visible' });
   const link = await page.locator('#share-link').inputValue();
-  assert.ok(link.startsWith(origin + '/download#'));
+  assert.ok(link.startsWith(shareOrigin + '/download#'));
   await page.getByText('下载请求 0 次 · 传输完成 0 次', { exact: true }).waitFor();
   await mkdir('/tmp/zkun-download-ui', { recursive: true });
   await page.screenshot({ path: '/tmp/zkun-download-ui/admin-desktop.png', fullPage: true });
@@ -40,6 +44,14 @@ try {
   // Recipient has no account, cookies or login token. Reading metadata must not count.
   const recipient = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
   recipient.setDefaultTimeout(15000);
+  // Model the relay with the real temporary origin, without contacting a third-party account.
+  await recipient.route(shareOrigin + '/**', async (route) => {
+    const incoming = route.request();
+    const headers = { ...incoming.headers() };
+    for (const name of ['origin', 'sec-fetch-site', 'cookie', 'authorization']) delete headers[name];
+    const target = origin + new URL(incoming.url()).pathname;
+    await route.fulfill({ response: await route.fetch({ url: target, headers }) });
+  });
   const downloadPage = await recipient.newPage();
   downloadPage.on('pageerror', (error) => errors.push(error.message));
   await downloadPage.goto(link);
@@ -76,11 +88,12 @@ try {
   await page.getByRole('button', { name: '生成', exact: true }).click();
   await page.locator('#new-link').waitFor({ state: 'visible' });
   const next = await page.locator('#share-link').inputValue();
+  assert.ok(next.startsWith(shareOrigin + '/download#'));
   assert.notEqual(next, link);
   await downloadPage.goto(next);
   await downloadPage.getByRole('heading', { name: '测试工具.bin' }).waitFor();
   assert.deepEqual(errors, []);
-  console.log('PASS: admin upload, anonymous native download, exact byte/name preservation, request/completion counts, IP records, revocation/rotation, desktop and mobile layout.');
+  console.log('PASS: configured public-origin links on upload and rotation, anonymous native download, exact byte/name preservation, request/completion counts, IP records, revocation/rotation, desktop and mobile layout.');
 } finally {
   if (browser) await browser.close();
   server.stdin.end();

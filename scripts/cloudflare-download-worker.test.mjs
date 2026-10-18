@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import worker from './cloudflare-download-worker.mjs';
+import { createHmac, createHash } from 'node:crypto';
 
 const base = 'https://download.example.workers.dev';
 const key = 'a'.repeat(64);
@@ -75,6 +76,40 @@ test('never forward origin redirects or raw error pages', async (t) => {
     assert.doesNotMatch(await response.text(), /zkun/i);
     t.mock.restoreAll();
   }
+});
+
+test('sign the Cloudflare visitor address, bound to method/path/token, and ignore forged identity headers', async (t) => {
+  const secret = 'ab'.repeat(32), ip = '2001:db8::8';
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const headers = new Headers(options.headers);
+    assert.equal(headers.get('X-Download-Client-IP'), ip);
+    const stamp = headers.get('X-Download-Timestamp');
+    assert.ok(Math.abs(Number(stamp) - Date.now() / 1000) < 5);
+    const tokenHash = createHash('sha256').update(key).digest('hex');
+    const expected = createHmac('sha256', Buffer.from(secret, 'hex')).update(['v1', stamp, 'POST', '/api/downloads/file', ip, tokenHash].join('\n')).digest('hex');
+    assert.equal(headers.get('X-Download-Signature'), expected);
+    assert.equal(headers.has('X-Forwarded-For'), false);
+    assert.equal(headers.has('CF-Connecting-IP'), false);
+    assert.ok(!JSON.stringify(options.headers).includes(secret));
+    return new Response('tool', { headers: { 'Content-Type': 'application/octet-stream' } });
+  });
+  const response = await worker.fetch(request('/api/downloads/file', { headers: {
+    'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': ip,
+    'X-Forwarded-For': '198.51.100.99', 'X-Download-Client-IP': '198.51.100.99', 'X-Download-Signature': 'forged',
+  } }), { DOWNLOAD_PROXY_SECRET: secret });
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'tool');
+  assert.equal(response.headers.has('X-Download-Signature'), false);
+});
+
+test('a configured signer never substitutes browser forwarding headers for a missing Cloudflare IP', async (t) => {
+  let called = false;
+  t.mock.method(globalThis, 'fetch', async () => { called = true; return new Response('unexpected'); });
+  const response = await worker.fetch(request('/api/downloads/file', { headers: {
+    'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': '198.51.100.99',
+  } }), { DOWNLOAD_PROXY_SECRET: 'ab'.repeat(32) });
+  assert.equal(response.status, 502);
+  assert.equal(called, false);
 });
 
 test('daily key relay forwards only program credential and batch, never messages or admin paths', async (t) => {

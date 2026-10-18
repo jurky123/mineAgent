@@ -221,18 +221,18 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 - 分享秘密由 32 字节安全随机数生成，放在 URL fragment 中，仅通过 POST 表单提交；数据库只存 SHA256 校验值。原链接仅生成时显示，刷新后不可找回；“生成新链接”会立即撤销旧链接。文件名、大小与 SHA256 只向持有有效链接的人返回。
 - 记录保存在 SQLite 新增的 `download_files` / `download_events` 表；管理、记录查询、生成及停用链接均需服务端管理员权限。统计页展示全部累计次数与最近 200 条时间、连接 IP、字节数、传输状态。
 - **次数口径**：每个有效的文件领取 POST 请求计一次；页面访问、元数据、GET/HEAD、无效/停用链接、缺失文件不计数。重复下载分别计数。不支持断点续传，每次从头传输。中断占一次请求，单独标记；“传输完成”表示服务器已发送全部字节，不能证明文件已保存。进程在传输期间退出会留下“未确认结束”记录。
-- IP 只记录 TCP 连接来源，不信任客户端的 `X-Forwarded-For` 等头。现有 IPv6 Xray 透传可能使来源显示为内网地址；代理、NAT 或共享网络也意味着 IP 不能代表人数或真实身份。
+- 直接下载记录 TCP 连接来源，不信任公开请求的 `X-Forwarded-For` / `CF-Connecting-IP` 等头。配置签名中转后，Worker 以 HMAC-SHA256 签名访客地址、时间、方法、路径与领取秘密摘要，源站只在 HTTPS 且签名有效、时间差不超过 120 秒时使用该地址；伪造、篡改或过期签名在计数前拒绝。现有 IPv6 Xray 透传可能使未签名连接显示为内网地址；代理、NAT 或共享网络意味着访客出口 IP 不能代表人数或真实身份。
 - 停用链接阻止后续领取，保留文件与记录；已开始的传输及已下载文件无法收回。备份时应一致备份 SQLite，并同时备份此文件目录。
 
 验证：`go test -p 1 ./...`、`npm run test:downloads`（真实 Go handler + 临时 SQLite/上传目录，测试文件不进入生产数据；截图在 `/tmp/zkun-download-ui/`）。构建输出到临时路径，部署仍用 `scripts/deploy.sh` 检查在线对局。
 
 **可选：Cloudflare Worker 下载入口**
 
-没有额外域名时，可使用账号的 `workers.dev` 地址。打开 Cloudflare 控制台的 **Workers & Pages → 你的 Worker → Edit code（编辑代码）**，把示例代码完整替换为 [cloudflare-download-worker.mjs](scripts/cloudflare-download-worker.mjs)，点击 Deploy（部署）。无需配置 Secret、KV、R2 或修改主站 DNS；该脚本只调用现有公开领取 API，不修改主站配置、不需要重启。
+没有额外域名时，可使用账号的 `workers.dev` 地址。打开 Cloudflare 控制台的 **Workers & Pages → 你的 Worker → Edit code（编辑代码）**，把示例代码完整替换为 [cloudflare-download-worker.mjs](scripts/cloudflare-download-worker.mjs)，点击 Deploy（部署）。无需 KV、R2 或修改主站 DNS；没有配置签名密钥时可继续下载，但记录的是回源连接 IP。
 
 主站 `/downloads` 仍用于管理员上传和统计。在私有配置中设置 `web.downloadPublicOrigin` 为 Worker 的 HTTPS 域名地址（仅 origin，不带路径、查询或片段），按部署流程生效后，上传及“生成新链接”都会自动返回 Worker 的完整分享链接；留空则沿用本站地址。域名只写私有配置，不硬编码在公共源码中。此设置不重置文件、次数或既有领取密钥；手头的旧链接也可仅替换域名，保留 `/download#` 及其后完整秘密。单独打开 Worker 地址应出现通用下载页并提示链接不完整；这是正常状态，不会展示文件清单。页面、脚本和表单只访问 Worker 域名，文件由 Worker 流式转发；不重定向回主站，不暴露管理员入口，不缓存文件。
 
-次数仍由主站记录，IP **暂时是 Cloudflare 回源的连接地址，不是接收者真实 IP**；脚本不允许客户端伪造转发头。需要真实 IP 时应另行实现 Worker 到源站的签名校验，不能直接信任公开 HTTP 请求里的 `CF-Connecting-IP` / `X-Forwarded-For`。Cloudflare 作为中转方能接触请求和文件，下载统计的“完成”也只表示源站完成向中转发送。此入口降低普通下载者看到主域名的机会，不承诺无法通过文件内容或其他线索关联。
+记录访客出口 IP 时，生成独立的随机 32 字节十六进制签名密钥，写入源站私有配置 `web.downloadProxySecret`，按部署流程生效；在 Worker 设置同值的 Secret `DOWNLOAD_PROXY_SECRET`，再部署新脚本。也可由操作员生成带私有签名配置的完整 Worker 副本供账号持有人部署；副本必须放在 0700 私有目录、0600 文件，不得提交到 Git 或公开分发。Worker 只读取 Cloudflare 的 `CF-Connecting-IP`，不沿用浏览器提交的转发/签名头；签名密钥不进入网页、下载内容或响应。老 Worker 不带签名时继续记录连接来源，不能冒充访客；既有连接 IP 记录无法还原。访客开代理时记录的是其代理出口。Cloudflare 作为中转方能接触请求和文件，下载统计的“完成”也只表示源站完成向中转发送。此入口降低普通下载者看到主域名的机会，不承诺无法通过文件内容或其他线索关联。
 
 Worker 代码测试：`node --test scripts/cloudflare-download-worker.test.mjs`。Worker 默认子域名的国内可达性需接收者实测；上游不可用时返回通用错误，不回传源站地址。此脚本须由账号持有人在 Cloudflare 控制台部署，本地文件存在不代表远端 Worker 已更新。
 

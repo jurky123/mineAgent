@@ -112,8 +112,26 @@ async function keyFrom(request) {
   return /^[a-f0-9]{64}$/.test(key) ? key : '';
 }
 
+// CF-Connecting-IP is supplied by Cloudflare on the incoming request. Never use
+// a browser's forwarding headers. The origin only trusts our short-lived HMAC.
+async function visitorProof(request, env, path, key) {
+  const secret = env?.DOWNLOAD_PROXY_SECRET;
+  if (!secret) return {};
+  if (!/^[a-f0-9]{64}$/.test(secret)) throw new Error('invalid private configuration');
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (!ip || ip.length > 45 || !/^[a-fA-F0-9:.]+$/.test(ip)) throw new Error('missing client address');
+  const encoder = new TextEncoder();
+  const bytes = new Uint8Array(secret.match(/../g).map(h => parseInt(h, 16)));
+  const signingKey = await crypto.subtle.importKey('raw', bytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const tokenHash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(key)))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const stamp = String(Math.floor(Date.now() / 1000));
+  const message = ['v1', stamp, 'POST', path, ip, tokenHash].join('\n');
+  const signature = [...new Uint8Array(await crypto.subtle.sign('HMAC', signingKey, encoder.encode(message)))].map(b => b.toString(16).padStart(2, '0')).join('');
+  return { 'X-Download-Client-IP': ip, 'X-Download-Timestamp': stamp, 'X-Download-Signature': signature };
+}
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     if (url.protocol !== 'https:') return error(426, '请使用 HTTPS');
     if (url.search) return error(400, '链接格式无效');
@@ -135,9 +153,10 @@ export default {
     try { key = await keyFrom(request); } catch { return error(400, '请求无效'); }
     if (!key) return error(404, '链接无效或已停用');
     try {
+      const proof = url.pathname.endsWith('/file') ? await visitorProof(request, env, url.pathname, key) : {};
       const upstream = await fetch(ORIGIN + url.pathname, {
         method: 'POST', body: new URLSearchParams({ key }),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...proof },
         redirect: 'manual', cache: 'no-store', signal: request.signal,
       });
       if (upstream.status !== 200) {

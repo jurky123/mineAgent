@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -256,10 +255,10 @@ func (s *Server) serveDownload(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, 409, "文件状态异常，请联系发送者")
 		return
 	}
-	// 只用 TCP 连接来源；客户端可伪造的 X-Forwarded-For / X-Real-IP 不作为证据。
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	ip, err := s.downloadVisitorIP(r, secret, time.Now())
 	if err != nil {
-		ip = r.RemoteAddr
+		writeJSONError(w, http.StatusForbidden, "下载来源校验失败")
+		return
 	}
 	event, err := s.store.BeginDownload(r.Context(), f.ID, hash, ip, time.Now().UnixMilli())
 	if err != nil {

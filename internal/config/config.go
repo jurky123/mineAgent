@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -153,6 +154,8 @@ type Web struct {
 	Domain string `json:"domain"`
 	// 下载分享链接的 HTTPS origin；留空时使用本站，私有配置可指向独立 Worker。
 	DownloadPublicOrigin string `json:"downloadPublicOrigin,omitempty"`
+	// Worker 访客 IP 签名密钥（32 字节十六进制）；只写私有配置与 Worker Secret。
+	DownloadProxySecret string `json:"downloadProxySecret,omitempty"`
 	// Passkey identity is pinned to configuration, never inferred from Host headers.
 	PasskeyRPID    string   `json:"passkeyRPID,omitempty"`
 	PasskeyOrigins []string `json:"passkeyOrigins,omitempty"`
@@ -423,6 +426,12 @@ func Load(path string) (Config, error) {
 		}
 		u.Path = ""
 		cfg.Web.DownloadPublicOrigin = u.String()
+	}
+	if secret := cfg.Web.DownloadProxySecret; secret != "" {
+		decoded, err := hex.DecodeString(secret)
+		if err != nil || len(decoded) != 32 {
+			return cfg, fmt.Errorf("web.downloadProxySecret 必须是 32 字节十六进制密钥")
+		}
 	}
 	if cfg.Web.DisplayAPI == "" {
 		cfg.Web.DisplayAPI = dweb.DisplayAPI

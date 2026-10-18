@@ -41,8 +41,8 @@
     </section>
     <section class="section card download-card" id="events-panel" hidden>
       <h2 id="events-title">下载记录</h2>
-      <p class="field-hint">显示最近 200 条，累计次数包含全部记录。IP 为连接来源；经 IPv6 转发可能只显示内网地址，无法据此识别本人或准确统计人数。</p>
-      <div class="download-table-wrap"><table class="download-table"><thead><tr><th>时间</th><th>连接 IP</th><th>传输状态</th><th>字节数</th></tr></thead><tbody id="events-body"></tbody></table></div>
+      <p class="field-hint">显示最近 200 条，累计次数包含全部记录。已配置签名转发时记录访客出口 IP；旧记录或未签名请求为服务器连接来源。访客使用代理时显示其代理出口，不能据此识别本人或准确统计人数。</p>
+      <div class="download-table-wrap"><table class="download-table"><thead><tr><th>时间</th><th>来源 IP</th><th>传输状态</th><th>字节数</th></tr></thead><tbody id="events-body"></tbody></table></div>
       <p id="events-empty" hidden>暂无下载记录。</p>
     </section>
   </div>

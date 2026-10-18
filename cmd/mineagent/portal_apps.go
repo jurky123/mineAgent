@@ -21,6 +21,7 @@ import (
 // content（内容区）/ feed（动态流）。Nav 决定是否出现在顶栏。
 func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gateway, gamesMgr *games.Manager) {
 	p.Register(
+		portal.App{ID: "textcrypt", Name: "文本工具密钥", Desc: "通信程序批次与每日密钥", Icon: "lock", Path: "/textcrypt-admin", Order: 37, Enabled: true, AdminOnly: true, HomeRole: "hidden"},
 		portal.App{
 			ID: "downloads", Name: "文件分发", Desc: "上传文件与查看下载记录", Icon: "download",
 			Path: "/downloads", Order: 36, Enabled: true, AdminOnly: true, HomeRole: "hidden",

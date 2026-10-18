@@ -55,6 +55,42 @@ function error(status, message) {
   });
 }
 
+async function relayDailyKey(request) {
+  if (request.method !== 'POST') return error(405, '只支持 POST');
+  if (request.headers.get('Origin')) return error(403, '此接口仅供通信程序使用');
+  const authorization = request.headers.get('Authorization') || '';
+  if (!/^Bearer [a-f0-9]{64}$/.test(authorization)) return error(403, '程序未授权或已停用');
+  const reader = request.body?.getReader();
+  if (!reader) return error(400, '请求格式无效');
+  let text = '', count = 0;
+  const decoder = new TextDecoder();
+  try {
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      count += value.byteLength;
+      if (count > 2048) { await reader.cancel(); return error(413, '请求过长'); }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    const body = JSON.parse(text);
+    if (Object.keys(body).length !== 1 || !/^[a-f0-9]{16}$/.test(body.group)) return error(400, '请求格式无效');
+    const response = await fetch(ORIGIN + '/api/textcrypt/key', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authorization },
+      body: JSON.stringify({ group: body.group }), redirect: 'manual', cache: 'no-store', signal: request.signal,
+    });
+    if (response.status !== 200) {
+      await response.body?.cancel();
+      if (response.status === 403) return error(403, '程序未授权或已停用');
+      if (response.status === 410) return error(410, '当天密钥已被管理员清除');
+      return error(502, '密钥服务暂不可用');
+    }
+    const data = await response.json();
+    if (data.group !== body.group || !/^\d{4}-\d{2}-\d{2}$/.test(data.day) || !/^[A-Za-z0-9+/]{43}=$/.test(data.key) || !Number.isSafeInteger(data.serverTime) || !Number.isSafeInteger(data.expiresAt)) return error(502, '密钥服务返回无效数据');
+    return new Response(JSON.stringify({ group: data.group, day: data.day, serverTime: data.serverTime, expiresAt: data.expiresAt, key: data.key }), { headers: { ...HEADERS, 'Content-Type': 'application/json; charset=utf-8' } });
+  } catch { return error(502, '密钥服务连接失败'); }
+  finally { reader.releaseLock(); }
+}
+
 async function keyFrom(request) {
   if (!(request.headers.get('content-type') || '').startsWith('application/x-www-form-urlencoded')) return '';
   if (Number(request.headers.get('content-length')) > 4096) return '';
@@ -81,6 +117,7 @@ export default {
     const url = new URL(request.url);
     if (url.protocol !== 'https:') return error(426, '请使用 HTTPS');
     if (url.search) return error(400, '链接格式无效');
+    if (url.pathname === '/api/textcrypt/key') return relayDailyKey(request);
     if (url.pathname === '/' || url.pathname === '/download') {
       if (!['GET', 'HEAD'].includes(request.method)) return error(405, '只支持 GET / HEAD');
       return new Response(request.method === 'HEAD' ? null : PAGE, { headers: {

@@ -76,3 +76,27 @@ test('never forward origin redirects or raw error pages', async (t) => {
     t.mock.restoreAll();
   }
 });
+
+test('daily key relay forwards only program credential and batch, never messages or admin paths', async (t) => {
+  const group='0123456789abcdef', token='a'.repeat(64), key=Buffer.alloc(32,7).toString('base64');
+  let calls=0;
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    calls++;
+    assert.equal(url,'https://zkun.art/api/textcrypt/key');
+    assert.deepEqual(JSON.parse(options.body),{group});
+    const headers=new Headers(options.headers);
+    assert.equal(headers.get('Authorization'),'Bearer '+token);
+    assert.equal(headers.has('Cookie'),false);
+    assert.equal(options.redirect,'manual');
+    return Response.json({group,day:'2026-10-18',serverTime:1792300000000,expiresAt:1792339200000,key,origin:'https://zkun.art'});
+  });
+  const make=(body)=>new Request(base+'/api/textcrypt/key',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',Cookie:'not-forwarded'},body:JSON.stringify(body)});
+  const response=await worker.fetch(make({group}));
+  assert.equal(response.status,200);
+  assert.match(response.headers.get('Cache-Control'),/no-store/);
+  const data=await response.json();assert.equal(data.key,key);assert.equal(data.origin,undefined);
+  assert.equal((await worker.fetch(make({group,plaintext:'must-not-forward'}))).status,400);
+  assert.equal(calls,1);
+  assert.equal((await worker.fetch(new Request(base+'/api/textcrypt/key'))).status,405);
+  assert.equal((await worker.fetch(new Request(base+'/api/textcrypt/admin'))).status,404);
+});

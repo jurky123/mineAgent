@@ -9,6 +9,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,19 +18,21 @@ import (
 	"mineagent/internal/games"
 	"mineagent/internal/rinkujcef"
 	"mineagent/internal/storage"
+	"mineagent/internal/textcrypt"
 	"mineagent/internal/webui"
 
 	"golang.org/x/crypto/acme/autocert"
 )
 
 type Server struct {
-	log   *slog.Logger
-	cfg   config.Web
-	store *storage.Store
-	acct  *account.Service
-	web   *webui.Channel
-	apps  []App
-	games http.Handler // 小游戏 API（main 注入，见 WithGames）
+	log      *slog.Logger
+	cfg      config.Web
+	store    *storage.Store
+	acct     *account.Service
+	web      *webui.Channel
+	apps     []App
+	games    http.Handler // 小游戏 API（main 注入，见 WithGames）
+	textKeys *textcrypt.Vault
 
 	rinkuJcef *rinkujcef.Handler // JCEF 内核镜像（Rinku download-mirror 用，可为 nil）
 
@@ -41,7 +44,11 @@ type Server struct {
 }
 
 func New(log *slog.Logger, cfg config.Config, store *storage.Store, acct *account.Service, web *webui.Channel) *Server {
-	return &Server{log: log, cfg: cfg.Web, store: store, acct: acct, web: web}
+	dir := cfg.Web.DataDir
+	if dir == "" {
+		dir = "data/webui"
+	}
+	return &Server{log: log, cfg: cfg.Web, store: store, acct: acct, web: web, textKeys: textcrypt.New(filepath.Join(dir, "textcrypt-vault"))}
 }
 
 // PortalEnabled 门户是否启用（默认启用；web.portal=false 回滚为旧的单页模式）。
@@ -104,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/prompts", s.requireUser(s.handlePrompts))
 	mux.HandleFunc("/api/downloads", s.handleDownloads)
 	mux.HandleFunc("/api/downloads/", s.handleDownloads)
+	mux.HandleFunc("/api/textcrypt/", s.handleTextCrypt)
 
 	// Portal API
 	mux.HandleFunc("/api/portal/apps", s.handleApps)
@@ -209,6 +217,7 @@ var pages = map[string]string{
 	"/minecraft":       "minecraft/index.html",
 	"/download":        "download/index.html",
 	"/downloads":       "downloads/index.html",
+	"/textcrypt-admin": "textcrypt/index.html",
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {

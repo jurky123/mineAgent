@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import worker from './cloudflare-download-worker.mjs';
+import module from './cloudflare-download-worker.mjs';
 import { createHmac, createHash } from 'node:crypto';
 
 const base = 'https://download.example.workers.dev';
 const key = 'a'.repeat(64);
+const env = { DOWNLOAD_PROXY_SECRET: 'ab'.repeat(32) };
+const worker = { fetch: (request, bindings = env) => module.fetch(request, bindings) };
 function request(path, options = {}) {
-  return new Request(base + path, { method: 'POST', body: new URLSearchParams({ key }), ...options });
+  const headers = new Headers({ 'Content-Type': 'application/x-www-form-urlencoded', 'CF-Connecting-IP': '198.51.100.8' });
+  for (const [key, value] of new Headers(options.headers)) headers.set(key, value);
+  return new Request(base + path, { method: 'POST', body: new URLSearchParams({ key }), ...options, headers });
 }
 
 test('standalone page contains no origin address, site branding or external assets', async () => {
@@ -105,11 +109,33 @@ test('sign the Cloudflare visitor address, bound to method/path/token, and ignor
 test('a configured signer never substitutes browser forwarding headers for a missing Cloudflare IP', async (t) => {
   let called = false;
   t.mock.method(globalThis, 'fetch', async () => { called = true; return new Response('unexpected'); });
-  const response = await worker.fetch(request('/api/downloads/file', { headers: {
+  const req = request('/api/downloads/file', { headers: {
     'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-For': '198.51.100.99',
-  } }), { DOWNLOAD_PROXY_SECRET: 'ab'.repeat(32) });
+  } });
+  req.headers.delete('CF-Connecting-IP');
+  const response = await worker.fetch(req, { DOWNLOAD_PROXY_SECRET: 'ab'.repeat(32) });
   assert.equal(response.status, 502);
   assert.equal(called, false);
+});
+
+test('missing or malformed signing configuration is explicit and never silently records an origin IP', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('unexpected'); });
+  for (const bindings of [{}, { DOWNLOAD_PROXY_SECRET: 'invalid' }]) {
+    const response = await worker.fetch(request('/api/downloads/file'), bindings);
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).error, /配置未完成/);
+  }
+  assert.equal(calls, 0);
+});
+
+test('public status reports only the deployed version and configuration state, without keys or origin', async () => {
+  for (const [bindings, signedIP] of [[env, true], [{}, false]]) {
+    const response = await worker.fetch(new Request(base + '/api/downloads/status'), bindings);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { version: 'ip-signature-20261018-v3', signedIP });
+    assert.match(response.headers.get('Cache-Control'), /no-store/);
+  }
 });
 
 test('daily key relay forwards only program credential and batch, never messages or admin paths', async (t) => {

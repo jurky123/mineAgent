@@ -1,8 +1,13 @@
 // Paste this complete module into the Cloudflare Worker editor, replacing Hello World.
 // This URL is used only on the server side and is never included in the served page.
 const ORIGIN = 'https://zkun.art';
+const WORKER_VERSION = 'ip-signature-20261018-v3';
+// Filled only in an operator's private deployment copy. Never commit a secret.
+const PRIVATE_SIGNING_SECRET = '';
+const signingSecret = env => PRIVATE_SIGNING_SECRET || env?.DOWNLOAD_PROXY_SECRET || '';
 
 const HEADERS = {
+  'X-Download-Worker-Version': WORKER_VERSION,
   'Cache-Control': 'no-store, private',
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',
@@ -114,10 +119,10 @@ async function keyFrom(request) {
 
 // CF-Connecting-IP is supplied by Cloudflare on the incoming request. Never use
 // a browser's forwarding headers. The origin only trusts our short-lived HMAC.
+class ProxyConfigurationError extends Error {}
 async function visitorProof(request, env, path, key) {
-  const secret = env?.DOWNLOAD_PROXY_SECRET;
-  if (!secret) return {};
-  if (!/^[a-f0-9]{64}$/.test(secret)) throw new Error('invalid private configuration');
+  const secret = signingSecret(env);
+  if (!/^[a-f0-9]{64}$/.test(secret)) throw new ProxyConfigurationError();
   const ip = request.headers.get('CF-Connecting-IP') || '';
   if (!ip || ip.length > 45 || !/^[a-fA-F0-9:.]+$/.test(ip)) throw new Error('missing client address');
   const encoder = new TextEncoder();
@@ -135,6 +140,11 @@ export default {
     const url = new URL(request.url);
     if (url.protocol !== 'https:') return error(426, '请使用 HTTPS');
     if (url.search) return error(400, '链接格式无效');
+    if (url.pathname === '/api/downloads/status') {
+      if (!['GET', 'HEAD'].includes(request.method)) return error(405, '只支持 GET / HEAD');
+      const state = { version: WORKER_VERSION, signedIP: /^[a-f0-9]{64}$/.test(signingSecret(env)) };
+      return new Response(request.method === 'HEAD' ? null : JSON.stringify(state), { headers: { ...HEADERS, 'Content-Type': 'application/json; charset=utf-8' } });
+    }
     if (url.pathname === '/api/textcrypt/key') return relayDailyKey(request);
     if (url.pathname === '/' || url.pathname === '/download') {
       if (!['GET', 'HEAD'].includes(request.method)) return error(405, '只支持 GET / HEAD');
@@ -177,6 +187,9 @@ export default {
       }
       // Stream directly: do not buffer/cache the tool or emit origin response headers/redirects.
       return new Response(upstream.body, { headers });
-    } catch { return error(502, '下载服务连接失败，请稍后重试'); }
+    } catch (cause) {
+      if (cause instanceof ProxyConfigurationError) return error(503, '下载服务配置未完成，请联系发送者');
+      return error(502, '下载服务连接失败，请稍后重试');
+    }
   },
 };

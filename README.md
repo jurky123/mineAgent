@@ -228,11 +228,11 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 
 **可选：Cloudflare Worker 下载入口**
 
-没有额外域名时，可使用账号的 `workers.dev` 地址。打开 Cloudflare 控制台的 **Workers & Pages → 你的 Worker → Edit code（编辑代码）**，把示例代码完整替换为 [cloudflare-download-worker.mjs](scripts/cloudflare-download-worker.mjs)，点击 Deploy（部署）。无需 KV、R2 或修改主站 DNS；没有配置签名密钥时可继续下载，但记录的是回源连接 IP。
+没有额外域名时，可使用账号的 `workers.dev` 地址。打开 Cloudflare 控制台的 **Workers & Pages → 你的 Worker → Edit code（编辑代码）**，把示例代码完整替换为 [cloudflare-download-worker.mjs](scripts/cloudflare-download-worker.mjs)，配置签名 Secret 后点击 Deploy（部署）。无需 KV、R2 或修改主站 DNS。缺少或错误的签名配置会明确拒绝文件下载，不再静默退回记录 Cloudflare 回源 IP；文件信息与当日密钥接口不受此检查影响。
 
 主站 `/downloads` 仍用于管理员上传和统计。在私有配置中设置 `web.downloadPublicOrigin` 为 Worker 的 HTTPS 域名地址（仅 origin，不带路径、查询或片段），按部署流程生效后，上传及“生成新链接”都会自动返回 Worker 的完整分享链接；留空则沿用本站地址。域名只写私有配置，不硬编码在公共源码中。此设置不重置文件、次数或既有领取密钥；手头的旧链接也可仅替换域名，保留 `/download#` 及其后完整秘密。单独打开 Worker 地址应出现通用下载页并提示链接不完整；这是正常状态，不会展示文件清单。页面、脚本和表单只访问 Worker 域名，文件由 Worker 流式转发；不重定向回主站，不暴露管理员入口，不缓存文件。
 
-记录访客出口 IP 时，生成独立的随机 32 字节十六进制签名密钥，写入源站私有配置 `web.downloadProxySecret`，按部署流程生效；在 Worker 设置同值的 Secret `DOWNLOAD_PROXY_SECRET`，再部署新脚本。也可由操作员生成带私有签名配置的完整 Worker 副本供账号持有人部署；副本必须放在 0700 私有目录、0600 文件，不得提交到 Git 或公开分发。Worker 只读取 Cloudflare 的 `CF-Connecting-IP`，不沿用浏览器提交的转发/签名头；签名密钥不进入网页、下载内容或响应。老 Worker 不带签名时继续记录连接来源，不能冒充访客；既有连接 IP 记录无法还原。访客开代理时记录的是其代理出口。Cloudflare 作为中转方能接触请求和文件，下载统计的“完成”也只表示源站完成向中转发送。此入口降低普通下载者看到主域名的机会，不承诺无法通过文件内容或其他线索关联。
+记录访客出口 IP 时，生成独立的随机 32 字节十六进制签名密钥，写入源站私有配置 `web.downloadProxySecret`，按部署流程生效；在 Worker 设置同值的 Secret `DOWNLOAD_PROXY_SECRET`，再部署新脚本。也可用 `python3 scripts/build_download_worker.py --config /private/config.json --output /private/worker/deploy.mjs` 生成带固定签名配置的完整私有副本，副本中的配置优先于旧的 Worker Secret；文件只能输出到仓库外的 0700 私有目录，文件 0600，不得提交到 Git 或公开分发。部署后访问 Worker 的 `/api/downloads/status`，必须返回当前 `version` 和 `signedIP: true`；该状态不暴露签名密钥、IP 或源站地址。响应头也包含版本标识，用于区分预览、旧版本与正式发布。Worker 只读取 Cloudflare 的 `CF-Connecting-IP`，不沿用浏览器提交的转发/签名头；签名密钥不进入网页、下载内容或响应。尚未更新的老 Worker 不带签名时，源站仍记录连接来源，不能冒充访客；既有连接 IP 记录无法还原。访客开代理时记录的是其代理出口。Cloudflare 作为中转方能接触请求和文件，下载统计的“完成”也只表示源站完成向中转发送。此入口降低普通下载者看到主域名的机会，不承诺无法通过文件内容或其他线索关联。
 
 Worker 代码测试：`node --test scripts/cloudflare-download-worker.test.mjs`。Worker 默认子域名的国内可达性需接收者实测；上游不可用时返回通用错误，不回传源站地址。此脚本须由账号持有人在 Cloudflare 控制台部署，本地文件存在不代表远端 Worker 已更新。
 

@@ -226,6 +226,16 @@ ConfirmDialog/Toast/Field/Avatar/Badge/EmptyState/Skeleton），**页面里没�
 
 验证：`go test -p 1 ./...`、`npm run test:downloads`（真实 Go handler + 临时 SQLite/上传目录，测试文件不进入生产数据；截图在 `/tmp/zkun-download-ui/`）。构建输出到临时路径，部署仍用 `scripts/deploy.sh` 检查在线对局。
 
+**可选：Cloudflare Worker 下载入口**
+
+没有额外域名时，可使用账号的 `workers.dev` 地址。打开 Cloudflare 控制台的 **Workers & Pages → 你的 Worker → Edit code（编辑代码）**，把示例代码完整替换为 [cloudflare-download-worker.mjs](scripts/cloudflare-download-worker.mjs)，点击 Deploy（部署）。无需配置 Secret、KV、R2 或修改主站 DNS；该脚本只调用现有公开领取 API，不修改主站配置、不需要重启。
+
+主站 `/downloads` 仍用于管理员上传和统计。把生成链接的域名替换成 `https://<你的 Worker 地址>`，保留原来的 `/download#` 及其后完整秘密，再发送给接收者。单独打开 Worker 地址应出现通用下载页并提示链接不完整；这是正常状态，不会展示文件清单。页面、脚本和表单只访问 Worker 域名，文件由 Worker 流式转发；不重定向回主站，不暴露管理员入口，不缓存文件。
+
+次数仍由主站记录，IP **暂时是 Cloudflare 回源的连接地址，不是接收者真实 IP**；脚本不允许客户端伪造转发头。需要真实 IP 时应另行实现 Worker 到源站的签名校验，不能直接信任公开 HTTP 请求里的 `CF-Connecting-IP` / `X-Forwarded-For`。Cloudflare 作为中转方能接触请求和文件，下载统计的“完成”也只表示源站完成向中转发送。此入口降低普通下载者看到主域名的机会，不承诺无法通过文件内容或其他线索关联。
+
+Worker 代码测试：`node --test scripts/cloudflare-download-worker.test.mjs`。Worker 默认子域名的国内可达性需接收者实测；上游不可用时返回通用错误，不回传源站地址。此脚本须由账号持有人在 Cloudflare 控制台部署，本地文件存在不代表远端 Worker 已更新。
+
 ### 小游戏（`/games`：国际象棋、五子棋）
 
 `/games` 是游戏目录（每张卡显示开放房间数与最近战绩），点进各自游戏页：

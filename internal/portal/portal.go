@@ -102,6 +102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/account/stats", s.requireUser(s.handleAccountStats))
 	mux.HandleFunc("/api/account/sessions/revoke", s.requireUser(s.handleSessionsRevoke))
 	mux.HandleFunc("/api/prompts", s.requireUser(s.handlePrompts))
+	mux.HandleFunc("/api/downloads", s.handleDownloads)
+	mux.HandleFunc("/api/downloads/", s.handleDownloads)
 
 	// Portal API
 	mux.HandleFunc("/api/portal/apps", s.handleApps)
@@ -205,6 +207,8 @@ var pages = map[string]string{
 	"/games":           "games/index.html",
 	"/screens":         "display/index.html",
 	"/minecraft":       "minecraft/index.html",
+	"/download":        "download/index.html",
+	"/downloads":       "downloads/index.html",
 }
 
 func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {

@@ -22,6 +22,10 @@ import (
 func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gateway, gamesMgr *games.Manager) {
 	p.Register(
 		portal.App{
+			ID: "downloads", Name: "文件分发", Desc: "上传文件与查看下载记录", Icon: "download",
+			Path: "/downloads", Order: 36, Enabled: true, AdminOnly: true, HomeRole: "hidden",
+		},
+		portal.App{
 			ID: "agent", Name: "MineAgent", Desc: "写代码、查资料、收发文件", Icon: "sparkle",
 			Path: "/agent", Order: 10, Enabled: true,
 			Nav: true, NavLabel: "Agent", HomeRole: "hero", Priority: 10, Span: 2,

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mineagent-version" content="__VER__">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>文件下载 · zkun</title>
+<link rel="icon" href="/static/__VER__/img/favicon.png">
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/ds.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/downloads.css">
+</head>
+<body class="ds">
+<main class="wrap narrow download-page">
+  <a class="download-brand" href="/">zkun</a>
+  <section class="card download-card">
+    <p class="eyebrow">文件领取</p>
+    <h1 id="file-name">文件下载</h1>
+    <p id="download-status" role="status">正在读取文件信息…</p>
+    <p id="file-size" class="field-hint"></p>
+    <details id="file-checksum" hidden><summary>SHA256 校验值</summary><code id="file-hash"></code></details>
+    <form id="download-form" action="/api/downloads/file" method="post" hidden>
+      <input id="download-key" type="hidden" name="key">
+      <button class="btn primary" id="download-button" type="submit">下载文件</button>
+    </form>
+    <p class="field-hint">下载请求会记录时间与连接 IP。请仅通过原发送者提供的链接领取。</p>
+    <noscript>请启用 JavaScript 后重新打开原下载链接。</noscript>
+  </section>
+</main>
+<script type="module" src="/static/__VER__/js/download.js"></script>
+</body>
+</html>

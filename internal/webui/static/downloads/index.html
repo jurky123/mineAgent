@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="mineagent-version" content="__VER__">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<title>文件分发 · zkun</title>
+<link rel="icon" href="/static/__VER__/img/favicon.png">
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/ds.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/downloads.css">
+</head>
+<body>
+<div id="shell-top"></div>
+<main class="wrap narrow">
+  <section class="hero"><h1>文件分发</h1><p class="sub">上传文件，通过独立链接分发，查看下载记录。</p></section>
+  <p id="permission" role="status">正在检查管理员权限…</p>
+  <div id="download-admin" hidden>
+    <section class="section card download-card">
+      <h2>上传文件</h2>
+      <form id="upload-form" class="download-stack">
+        <label for="upload-file">选择要分发的文件（最多 256 MiB）</label>
+        <input id="upload-file" type="file" required>
+        <button id="upload-button" class="btn primary" type="submit">上传并生成链接</button>
+      </form>
+      <p class="field-hint">持有链接即可下载，无需验证身份。请通过已有通道发送；链接可被转发。</p>
+      <div id="new-link" hidden>
+        <label for="share-link">下载链接（仅本次显示，请复制保存）</label>
+        <input id="share-link" class="input" type="text" readonly spellcheck="false">
+        <button id="copy-link" class="btn" type="button">复制链接</button>
+        <p class="field-hint">关闭或刷新后无法找回原链接；可生成新链接，旧链接会立即失效。</p>
+      </div>
+    </section>
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">文件与下载次数</h2><div class="spacer"></div><button id="refresh-files" class="btn" type="button">刷新</button></div>
+      <p class="field-hint">开始下载计为一次请求；完成表示服务器已发送全部字节，不能证明对方已保存。打开页面不计数，重复下载分别计数。</p>
+      <div id="files-list" class="download-stack"></div>
+    </section>
+    <section class="section card download-card" id="events-panel" hidden>
+      <h2 id="events-title">下载记录</h2>
+      <p class="field-hint">显示最近 200 条，累计次数包含全部记录。IP 为连接来源；经 IPv6 转发可能只显示内网地址，无法据此识别本人或准确统计人数。</p>
+      <div class="download-table-wrap"><table class="download-table"><thead><tr><th>时间</th><th>连接 IP</th><th>传输状态</th><th>字节数</th></tr></thead><tbody id="events-body"></tbody></table></div>
+      <p id="events-empty" hidden>暂无下载记录。</p>
+    </section>
+  </div>
+</main>
+<script type="module" src="/static/__VER__/js/downloads.js"></script>
+</body>
+</html>

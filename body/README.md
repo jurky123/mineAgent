@@ -97,3 +97,12 @@ cd body && npm test
 ## 后续客户端 mod
 
 第一版无需玩家安装 mod。后续客户端可承载选中 AI、任务面板、状态 HUD、视角或手动接管。届时客户端只向后端提交经认证的意图，后端继续负责控制权与策略；手动接管必须先暂停 agent、增加控制代次并清掉旧动作，再授予短期控制权，断线默认暂停。MineUI 已有 UI 能力时优先复用其公开 API；仅在实际客户端需求确定后增加适配，不在本版引入第二套控制协议或修改其他项目。
+
+
+## 2026-10-20 正式试运行
+
+18:09 CST 已按服主授权启动：Paper 插件 0.3.0 与后端代码 `20cc29b` 握手成功，`MineAgentBot` 真实进入正式服。服主明确要求默认不设活动区域限制，正式配置使用 `assist` + `zones.mode=unrestricted`；首次连接依旧暂停，需已验证管理员恢复。未授予 OP。
+
+身体由 `mineagent-body.service` 管理，本地 26.2 版本桥接由 `mineagent-body-proxy.service` 管理，桥接仅回环 25566；私有配置目录为 `/home/ubuntu/.local/share/mineagent-player-services/`，正文不记录凭据。长期运行与生产保护完整验收仍未完成，本次属于服主授权的生产试运行。
+
+部署前原二进制、插件与两端配置已保存在 MC `backups/mineagent-players-20261020-180623/`（受限权限）。首次部署通过 `scripts/deploy.sh`，其 `CONFIG` 指向部署前备份以准确读取原运行实例的 body-disabled 状态；检查无棋局后替换。后续部署应使用当前正式配置的默认检查及 drain，不继续使用旧备份跳过 drain。

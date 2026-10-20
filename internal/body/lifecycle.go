@@ -49,7 +49,8 @@ func (s *Service) health(p *Principal) map[string]any {
 		"controlConnected": s.peer != nil,
 		"ready":            s.ready, "gameConnected": s.peer != nil && s.state.Connected,
 		"paused": s.paused || s.state.Paused, "draining": s.draining,
-		"busy": s.busy, "stateStale": s.peer == nil || s.received.IsZero() || time.Since(s.received) > 10*time.Second,
+		"pauseReason": s.state.PauseReason,
+		"busy":        s.busy, "stateStale": s.peer == nil || s.received.IsZero() || time.Since(s.received) > 10*time.Second,
 		"taskLimits": map[string]int{"maxSteps": s.cfg.MaxSteps, "runTimeoutSec": s.cfg.RunTimeoutSec},
 	}
 	if p != nil {

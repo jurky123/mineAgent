@@ -20,6 +20,10 @@ func newWorkspaceCommand(ctx context.Context, root, command string, network bool
 	if err != nil {
 		return nil, fmt.Errorf("workspace 执行需要 Bubblewrap (bwrap)，未安装时拒绝执行: %w", err)
 	}
+	setpriv, err := exec.LookPath("setpriv")
+	if err != nil {
+		return nil, fmt.Errorf("workspace 执行需要 setpriv 清除继承权限，未安装时拒绝执行: %w", err)
+	}
 	root, err = filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -71,7 +75,12 @@ func newWorkspaceCommand(ctx context.Context, root, command string, network bool
 	}
 	args = append(args, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
 		"--bind", root, root, "--chdir", root, "--", "/bin/bash", "-c", command)
-	cmd := exec.CommandContext(ctx, bwrap, args...)
+	// 网站进程可能持有 CAP_NET_BIND_SERVICE。Go 的空 AmbientCaps 不会清除
+	// 父进程继承的能力，bwrap 会因此在进入命名空间前拒绝启动。
+	// setpriv 仅修改子进程：清除 inheritable/ambient，exec 时 permitted/effective
+	// 随之归零；no-new-privs 阻止后续通过文件能力或 setuid 再提权。
+	args = append([]string{"--no-new-privs", "--inh-caps=-all", "--ambient-caps=-all", "--", bwrap}, args...)
+	cmd := exec.CommandContext(ctx, setpriv, args...)
 	cmd.Dir = root
 	cmd.Env = []string{
 		"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=" + root, "LANG=C.UTF-8",

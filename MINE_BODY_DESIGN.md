@@ -548,6 +548,7 @@ const RoleBody = "minecraft-body"
   "food": 18,
   "gameMode": "survival",
   "heldItem": "iron_pickaxe",
+  "pauseReason": "",
   "task": {
     "id": "body-call-example",
     "tool": "body_goto",
@@ -567,7 +568,10 @@ const RoleBody = "minecraft-body"
 {"type": "chat", "at": 1760000001000, "data": {"player": "Steve", "message": "过来"}}
 {"type": "death", "at": 1760000002000, "data": {"cause": "fall", "position": [101, 40, -32]}}
 {"type": "kicked", "at": 1760000003000, "data": {"reason": "..."}}
+{"type": "forced_move", "at": 1760000004000, "data": {"from": [101, 64, -32], "to": [100.8, 64, -32], "distance": 0.2, "tool": "body_goto"}}
 ```
+
+暂停原因保存在 `body.state.pauseReason` 并由 `body_status` 返回，避免事件环形缓冲淘汰后丢失原因。`forcedMove` 表示服务端强制位置包；协议本身不能区分位置纠正与管理员传送。记录修正前后位置、距离和当前工具用于诊断，不根据距离小或心跳恢复而自动解除保护暂停。缺少修正前位置时记录 null，不推测原因。
 
 `body.policy`：
 
@@ -707,7 +711,7 @@ const RoleBody = "minecraft-body"
 
 | 工具 | 层 | 参数 | 返回 | 超时 | 审批 |
 |---|---|---|---|---|---|
-| `body_status` | read | 无 | 后端连接/握手、游戏在线、暂停、快照新鲜度、当前及任务代次、任务预算 | 后端本地查询 | 否 |
+| `body_status` | read | 无 | 后端连接/握手、游戏在线、暂停及 pauseReason、快照新鲜度、当前及任务代次、任务预算 | 后端本地查询 | 否 |
 | `body_observe` | read | `range?`（4–16，默认 8） | 状态 + 注视 + 附近玩家/实体/物品 + 背包摘要 + 最近事件 | 3s | 否 |
 | `body_inventory` | read | `filter?`（物品名/关键字） | 槽位、物品、数量、耐久、装备 | 2s | 否 |
 | `body_find_blocks` | read | `blocks`（数组/逗号串）、`radius?`（≤32）、`count?`（≤16） | 最近 N 个坐标/距离/方块名 | 5s | 否 |

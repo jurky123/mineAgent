@@ -30,6 +30,62 @@ const spec = {
   offHand: "",
   hazards: [],
 };
+test("server position changes latch pause, record displacement and require explicit resume", async () => {
+  for (const offset of [0, 0.2, 50]) {
+    const runtime = new MinecraftBody(
+      { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+      () => {},
+    );
+    runtime.ready = true;
+    runtime.connected = true;
+    runtime.paused = false;
+    runtime.connectionId = policy.connectionId;
+    runtime.epoch = 1;
+    runtime.onlineSince = Date.now() - 10000;
+    runtime.lastLease = performance.now();
+    runtime.policy = policy;
+    runtime.bot = {
+      entity: { position: { x: offset, y: 64, z: 0 } },
+      pathfinder: { setGoal() {} },
+      clearControlStates() {},
+      stopDigging() {},
+      deactivateItem() {},
+      quit() {},
+    };
+    const a = { tool: "body_goto", abort: new AbortController() };
+    runtime.active = a;
+    runtime.prepared.set("old", spec);
+    try {
+      runtime.forcedMove({ position: [0, 64, 0], at: Date.now() });
+      assert.equal(runtime.paused, true);
+      assert.equal(runtime.state().pauseReason, "forced_move");
+      assert.equal(a.abort.signal.aborted, true);
+      assert.equal(a.reason, "forced_move");
+      assert.equal(runtime.prepared.size, 0);
+      const event = runtime.recent.find((e) => e.type === "forced_move");
+      assert.deepEqual(event.data.from, [0, 64, 0]);
+      assert.deepEqual(event.data.to, [offset, 64, 0]);
+      assert.equal(event.data.distance, offset);
+      assert.equal(event.data.tool, "body_goto");
+      // Even a zero-distance server packet is not evidence of permission to
+      // resume. The protocol cannot distinguish a small teleport from a nudge.
+      runtime.lease({ connectionId: policy.connectionId, controlEpoch: 1 });
+      assert.equal(runtime.paused, true);
+      runtime.pause("lease_expired");
+      assert.equal(runtime.state().pauseReason, "forced_move");
+      runtime.active = null;
+      await runtime.control({
+        connectionId: policy.connectionId,
+        controlEpoch: 2,
+        action: "resume",
+      });
+      assert.equal(runtime.paused, false);
+      assert.equal(runtime.state().pauseReason, "");
+    } finally {
+      await runtime.close();
+    }
+  }
+});
 test("player command transport keeps WorldEdit double slash and immutable preparation", async () => {
   const runtime = new MinecraftBody(
     { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },

@@ -90,7 +90,8 @@ cd paper-plugin
 - 写代码/跑代码（仅管理员）：`在 workspace 写个 hello.py 并跑一下`。
   文件工具的路径限制在 `workspace/` 内；执行使用 Linux **Bubblewrap** 隔离：
   仅 workspace 可持久写入，系统运行时只读，宿主配置/其它用户文件不可见。
-  需要安装 `bwrap` 并允许非特权用户命名空间；缺失或启动失败时拒绝执行，不回退到宿主 shell。
+  需要安装 `bwrap`、util-linux 的 `setpriv` 并允许非特权用户命名空间；缺失或启动失败时拒绝执行，不回退到宿主 shell。
+  启动前仅清除子进程继承的 Linux capabilities 并设置 no-new-privs，网站监听端口的权限不变。
   有超时、输出上限和全程审计；输出在收集时限制内存，超时会终止整组进程与沙箱子进程。
   执行分三层：危险命令（rm/sudo/ssh/docker 等）直接拒绝；
   装依赖/下载（`$VENV_BIN/pip install` 装进 workspace/.venv、

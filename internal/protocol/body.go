@@ -44,6 +44,7 @@ type BodyState struct {
 	Seq             uint64     `json:"seq"`
 	Connected       bool       `json:"connected"`
 	Paused          bool       `json:"paused"`
+	PauseReason     string     `json:"pauseReason,omitempty"`
 	Name            string     `json:"name"`
 	WorldID         string     `json:"worldId"`
 	Dimension       string     `json:"dimension"`

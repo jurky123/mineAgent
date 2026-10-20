@@ -56,6 +56,7 @@ export class MinecraftBody {
     this.ready = false;
     this.connected = false;
     this.paused = true;
+    this.pauseReason = "initial";
     this.disconnected = false;
     this.lastLease = 0;
     this.active = null;
@@ -144,9 +145,18 @@ export class MinecraftBody {
     });
     this.bot = bot;
     bot.loadPlugin(pathfinder.pathfinder);
+    // Mineflayer emits forcedMove after applying the position packet. Capture
+    // the old position first; the packet alone cannot identify teleport cause.
+    let beforeForcedMove = null;
+    bot._client.prependListener("position", () => {
+      beforeForcedMove = bot.entity
+        ? { position: pos(bot.entity.position), at: Date.now() }
+        : null;
+    });
     bot.on("spawn", async () => {
       if (this.bot !== bot) return;
       this.paused = true;
+      this.pauseReason = "spawn";
       this.connected = false;
       this.onlineSince = Date.now();
       try {
@@ -170,11 +180,7 @@ export class MinecraftBody {
     });
     bot.on("respawn", () => this.pause("respawn"));
     bot.on("forcedMove", () => {
-      if (
-        this.connected &&
-        (this.active || Date.now() - this.onlineSince > 2000)
-      )
-        this.pause("forced_move");
+      if (this.bot === bot) this.forcedMove(beforeForcedMove);
     });
     bot.on("health", () => this.publishState());
     bot.on("chat", (player, message) => {
@@ -214,6 +220,24 @@ export class MinecraftBody {
     this.lastReconnect = Math.min(60000, this.lastReconnect * 2);
     this.reconnectTimer = setTimeout(() => this.connect(), ms);
     this.reconnectTimer.unref();
+  }
+  forcedMove(before) {
+    if (
+      !this.connected ||
+      (!this.active && Date.now() - this.onlineSince <= 2000)
+    )
+      return;
+    const to = this.bot?.entity ? pos(this.bot.entity.position) : null;
+    const from =
+      before && Date.now() - before.at < 2000 ? before.position : null;
+    const tool = this.active?.tool || "";
+    this.pause("forced_move");
+    this.event("forced_move", {
+      from,
+      to,
+      distance: vector(from) && vector(to) ? distance(from, to) : null,
+      tool,
+    });
   }
   movements() {
     const bot = this.bot;
@@ -271,6 +295,7 @@ export class MinecraftBody {
   }
   pause(reason) {
     const changed = !this.paused;
+    if (changed) this.pauseReason = reason;
     this.paused = true;
     this.prepared.clear();
     this.cancel(reason);
@@ -308,8 +333,12 @@ export class MinecraftBody {
       if (!this.bot) {
         this.paused = true;
         this.connect();
-      } else if (this.connected) this.paused = false;
+      } else if (this.connected) {
+        this.paused = false;
+        this.pauseReason = "";
+      }
     }
+    if (this.paused && p.action !== "resume") this.pauseReason = p.action;
     this.publishState();
     this.send("body.control_ack", {
       id: p.id,
@@ -328,6 +357,7 @@ export class MinecraftBody {
       seq: ++this.seq,
       connected: this.connected,
       paused: this.paused,
+      pauseReason: this.paused ? this.pauseReason : "",
       name: this.config.minecraft.username,
       ...this.world(),
       pos: b?.entity ? pos(b.entity.position) : [0, 0, 0],

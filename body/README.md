@@ -208,3 +208,11 @@ body_goto 仍是受限步行，不因创造模式自动飞行，不挖路/搭桥
 线上只做有限移动复查，不执行世界写入：首次同目标返回 path_not_found/noPath，实际移动 4.41 格、净前进 4.04 格，未误触卡死计数。服务器既有 spawn-on-join 设置使维护重连回到出生点，随后已恢复维护前的位置，再从原起点约 (179.50,75,-49.14) 到原目标 (190,75,-50) 复查一次：路径搜索 402ms、406 个节点后 noPath，剩余距离 10.15 格、实际位移 1.37 格、净前进 0.38 格。确认当前步行策略无法规划完整路线，不是控制通道或区域拒绝；未据此宣称已定位具体地形阻挡，也未增加自动飞行/穿墙或修改全服登录设置。
 
 Node 12 项安全/导航测试、Go 相关包竞态/静态检查与全仓回归（跳过既有固定延迟性能用例）通过。隔离 Paper E2E 覆盖真实封闭地形 noPath 与位置/搜索统计、既有 13 工具/80 场景和写入保护；产物 `/tmp/mineagent-body-e2e-NvjXi0`。
+
+## 2026-10-20 暂停与 workspace 故障诊断
+
+本次在线故障是两条独立链路：身体在收到 `forcedMove` 后锁存暂停；workspace 子进程继承网站服务的 `CAP_NET_BIND_SERVICE`，Bubblewrap 在启动阶段直接拒绝。临时 systemd 单元使用相同 ambient capability 可复现原错误，先通过 util-linux `setpriv` 清除子进程 inheritable/ambient capabilities 并设置 no-new-privs 后，原隔离命令正常执行。网站进程的权限与监听配置不变；缺少 `setpriv` 或 `bwrap` 仍拒绝执行，不降级成宿主 shell。
+
+`body.state` 和 `body_status` 新增 `pauseReason`；强制位置包另记录 `from/to/distance/tool`，仅用于诊断。原事件没有修正前的位置，无法追溯证明是碰撞纠正还是管理员传送。协议本身也不能可靠区分两者，因此小位移、零位移、心跳到达均不会自动解除暂停；认证管理员显式恢复后才接受新动作。暂停会清理准备好的动作并中止当前输入，恢复不重放旧任务。
+
+回归：在与正式服务相同的 `AmbientCapabilities=CAP_NET_BIND_SERVICE` 临时单元运行 workspace 测试，验证沙箱子进程 CapInh/CapPrm/CapEff/CapAmb 均为零、NoNewPrivs 为 1，父进程能力不变；宿主文件/符号链接逃逸、普通命令禁网、缺少隔离依赖、输出上限和超时子进程清理均通过。Go tools/body/bodyui 竞态测试、相关 vet 与 Node 13 项测试通过。

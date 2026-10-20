@@ -31,6 +31,22 @@ func invokeBody(t *testing.T, s *Service, p *Principal, name string) protocol.Bo
 	return protocol.BodyResult{}
 }
 
+func TestStatusRetainsPauseReasonFromBodyState(t *testing.T) {
+	s, peer, p, _ := setup(t)
+	st := s.state
+	st.Seq++
+	st.Paused, st.PauseReason = true, "forced_move"
+	s.Handle(peer, envelope(protocol.TypeBodyState, st))
+	r := invokeBody(t, s, p, "body_status")
+	var health map[string]any
+	if err := json.Unmarshal(r.Data, &health); err != nil {
+		t.Fatal(err)
+	}
+	if !r.OK || health["paused"] != true || health["pauseReason"] != "forced_move" || health["controlConnected"] != true {
+		t.Fatalf("pause cause lost in status: %+v %v", r, health)
+	}
+}
+
 func TestPausedTaskFollowsOnlyItsInitialResume(t *testing.T) {
 	s, peer, _, _ := setup(t)
 	s.mu.Lock()

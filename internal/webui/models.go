@@ -323,6 +323,33 @@ type probeCache struct {
 	BaseURL     string   `json:"baseURL"`
 }
 
+// Only explicit capability errors identify an incompatible model. Auth, quota,
+// context-length and arbitrary 400 responses must not blacklist the catalog.
+func incompatibleProbe(status int, body []byte) bool {
+	if status != http.StatusBadRequest && status != http.StatusUnprocessableEntity {
+		return false
+	}
+	var response struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &response) != nil {
+		return false
+	}
+	message := strings.ToLower(response.Error.Message)
+	for _, reason := range []string{
+		"does not support this protocol", "unsupported protocol",
+		"does not support tools", "tool calling is not supported",
+		"does not support function calling",
+	} {
+		if strings.Contains(message, reason) {
+			return true
+		}
+	}
+	return false
+}
+
 func (l *modelLister) cachePath() string { return filepath.Join(l.dataDir, "unavailable.json") }
 func (l *modelLister) loadCache() {
 	b, err := os.ReadFile(l.cachePath())
@@ -387,7 +414,13 @@ func (l *modelLister) probeAsync(models []string) {
 			go func(model string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				payload, _ := json.Marshal(map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": "1"}}, "max_tokens": 1})
+				payload, _ := json.Marshal(map[string]any{
+					"model": model, "messages": []map[string]string{{"role": "user", "content": "Reply 1; do not call tools."}}, "max_tokens": 1,
+					"tools": []any{map[string]any{"type": "function", "function": map[string]any{
+						"name": "probe_noop", "description": "Compatibility check only; never executed.",
+						"parameters": map[string]any{"type": "object", "properties": map[string]any{}},
+					}}},
+				})
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				defer cancel()
 				req, err := http.NewRequestWithContext(ctx, http.MethodPost, l.baseURL+"/chat/completions", strings.NewReader(string(payload)))
@@ -406,7 +439,7 @@ func (l *modelLister) probeAsync(models []string) {
 				_ = res.Body.Close()
 				mu.Lock()
 				defer mu.Unlock()
-				if res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusServiceUnavailable {
+				if res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusServiceUnavailable || incompatibleProbe(res.StatusCode, body) {
 					bad[model] = true
 				}
 				if res.StatusCode == http.StatusOK {
@@ -469,7 +502,7 @@ func (l *modelLister) List(ctx context.Context) []ModelOption {
 			opts[i].Verified = l.verified[opts[i].ID]
 			if l.unavailable[opts[i].ID] {
 				opts[i].Unavailable = true
-				opts[i].UnavailableReason = "网关暂时无法路由"
+				opts[i].UnavailableReason = "网关无法路由或不支持当前对话与工具协议"
 			}
 		}
 	}

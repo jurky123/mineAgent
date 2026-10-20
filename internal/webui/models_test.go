@@ -191,6 +191,56 @@ func TestOptionsDoesNotErasePreferenceDuringPartialDiscovery(t *testing.T) {
 	}
 }
 
+func TestProbeChecksAgentProtocolWithoutBlacklistingQuotaOrAuth(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Model string `json:"model"`
+			Tools []struct {
+				Type string `json:"type"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || len(request.Tools) != 1 || request.Tools[0].Type != "function" {
+			t.Error("probe must exercise the Agent's tools protocol")
+			w.WriteHeader(500)
+			return
+		}
+		switch request.Model {
+		case "protocol":
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"message":"Model does not support this protocol."}}`)
+		case "tools":
+			w.WriteHeader(422)
+			_, _ = io.WriteString(w, `{"error":{"message":"Model does not support tools"}}`)
+		case "quota":
+			w.WriteHeader(429)
+			_, _ = io.WriteString(w, `{"error":{"message":"Upstream unavailable"}}`)
+		case "auth":
+			w.WriteHeader(401)
+		case "invalid-request":
+			w.WriteHeader(400)
+			_, _ = io.WriteString(w, `{"error":{"message":"max_tokens too small"}}`)
+		case "healthy":
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"1"}}]}`)
+		default:
+			t.Errorf("unexpected probe model: %q", request.Model)
+		}
+	}))
+	defer srv.Close()
+	l := newModelLister(srv.URL, "fixture", t.TempDir(), nil)
+	l.probeAsync([]string{"protocol", "tools", "quota", "auth", "invalid-request", "healthy"})
+	waitForProbe(t, l)
+	// Reload persisted probe results, as on a fresh process.
+	l = newModelLister(srv.URL, "fixture", l.dataDir, nil)
+	if !l.unavailable["protocol"] || !l.unavailable["tools"] || !l.verified["healthy"] {
+		t.Fatalf("incompatible models remained selectable: bad=%v verified=%v", l.unavailable, l.verified)
+	}
+	for _, id := range []string{"quota", "auth", "invalid-request"} {
+		if l.unavailable[id] || l.verified[id] {
+			t.Errorf("transient/account error incorrectly classified: %s", id)
+		}
+	}
+}
+
 func TestOpenRouterNestedPricingKeepsCatalogAndMissingKeyState(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/models" {

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cloudwego/eino-ext/components/model/openai"
+
 	"mineagent/internal/config"
 	"mineagent/internal/storage"
 )
@@ -87,5 +89,28 @@ func TestModelTimeoutHintDoesNotEchoGatewayDetails(t *testing.T) {
 	}
 	if !strings.Contains(modelFailureHint(errors.New("HTTP 503 unavailable")), "不可用") {
 		t.Fatal("lost unavailable hint")
+	}
+}
+
+func TestModelAPIErrorHints(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{
+		{400, "协议"}, {401, "API Key"}, {402, "额度"}, {403, "访问权限"},
+		{404, "刷新模型列表"}, {422, "参数"}, {429, "限流"}, {500, "不可用"}, {502, "不可用"}, {503, "不可用"}, {504, "不可用"},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			// The SDK error is wrapped by the agent graph. Raw provider messages may
+			// contain URLs, credentials, or misleading status numbers.
+			err := fmt.Errorf("node failed: %w", &openai.APIError{HTTPStatusCode: tc.status, Message: "secret-provider-detail https://private.invalid/503"})
+			hint := modelFailureHint(err)
+			if !strings.Contains(hint, tc.want) || strings.Contains(hint, "private.invalid") || strings.Contains(hint, "secret-provider-detail") {
+				t.Fatalf("unsafe or incorrect hint: %s", hint)
+			}
+		})
+	}
+	if hint := modelFailureHint(fmt.Errorf("node: %w", context.Canceled)); !strings.Contains(hint, "停止") {
+		t.Fatalf("cancellation misreported: %s", hint)
 	}
 }

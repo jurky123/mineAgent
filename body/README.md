@@ -114,3 +114,10 @@ cd body && npm test
 身体由 `mineagent-body.service` 管理，本地 26.2 版本桥接由 `mineagent-body-proxy.service` 管理，桥接仅回环 25566；私有配置目录为 `/home/ubuntu/.local/share/mineagent-player-services/`，正文不记录凭据。长期运行与生产保护完整验收仍未完成，本次属于服主授权的生产试运行。
 
 部署前原二进制、插件与两端配置已保存在 MC `backups/mineagent-players-20261020-180623/`（受限权限）。首次部署通过 `scripts/deploy.sh`，其 `CONFIG` 指向部署前备份以准确读取原运行实例的 body-disabled 状态；检查无棋局后替换。后续部署应使用当前正式配置的默认检查及 drain，不继续使用旧备份跳过 drain。
+
+
+### 2026-10-20 20:07 CST 模型配置恢复
+
+按服主提供的新凭据更新 MineAgent 原有私有 `model.apiKey`，未为身体建立另一套模型配置。原端点的模型目录、默认模型最小对话、函数工具调用均返回 HTTP 200，工具调用仅检查返回结构，未执行生产游戏动作。旧私有配置和后端二进制已备份到身体服务私有目录下的 `backups/model-key-20261020-200635/`。
+
+使用 `scripts/deploy.sh` 检查无进行中棋局、确认身体 drain 后重新加载，运行代码版本 `93c003f`。后端、身体执行器、版本桥接和资料服务均 active，AI 玩家公开资料 online/idle 且非陈旧；首次重连仍暂停，不自动恢复任务。先前 UI 发布记录中的 401 expired 为此次配置恢复前的历史问题。凭据不输出、不入库、不提交 Git。

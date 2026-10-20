@@ -945,6 +945,18 @@ P3 可选：`body_craft`、`body_sleep`、`body_screenshot`（prismarine-viewer�
 - 停止、断线、授权撤销取消整个任务；审批恢复沿用原任务身份和可选截止时间。后端进程重启后不自动重放旧任务。管理员主动停止或真正的连接切换后，必须重新明确发起任务。
 - 不主动生成管理员未提出的任务，不开放多身体协同。P2 的 collectblock 技能、技能库与服务重启后的持久任务恢复仍另行设计；当前连续工具循环不等于这些能力已交付。
 
+### 8.9 审批、重启与陈旧动作（一次动作，一次批准）
+
+- 命令仍以机器人玩家身份直接执行，由 LuckPerms 决定权限；不增加命令审批或安全 allowlist。循环保护与输入校验另见 §9.5。
+- 高危判断覆盖 `body_dig/place/interact/use_item`，按 §9.5 分类；缺 reason 不创建审批。文案保持固定短模板 + 简短理由，不引入额外 LLM 改写。
+- Go 先用 body.inspect 获取当前世界、目标方块状态、主副手槽位/物品与位置（inspectId 关联，3s 超时；不向 LLM 暴露为工具）。Node 只做读取，存在其他写动作时返回 busy，禁止通过“预检”产生移动/装备副作用；Go 对返回事实做严格类型和长度校验。
+- Node 先只读解析并缓存不可变 ActionSpec，Go 获取有界事实与不透明 specId：bodyId、世界/维度、目标坐标/实体、方块状态、手持/副手槽位及物品、参数、policyRevision、controlEpoch、连接、过期时间；模型不能在批准后再替换目标或物品。
+- 复用现有 Approvals/Create/Interrupt 与 Paper 按钮 UI，但**不能直接复用 approvalTool 的批准后立刻 Gateway.Call 分支**。恢复时先重做 §8.2 授权、预算与策略，再请求 Node 做本地目标复核。
+- 高危调用带后端生成的单次 approvalGrant（approvalId、specId、有效期与 epoch）；Node 在当前认证连接内核对并消费，不接收模型自行构造的 grant。Node 若发现实际上下文比已批准动作更危险，返回 stale，重新请求审批。
+- 等待审批默认 120s，批准后的 grant 最多 5s 且不超过原 run 截止时间；拒绝/超时/断线/死亡/控制或策略代次变化即失效，不自动重新申请。未配置可信审批人时保持 observe 或仅普通动作，高危动作拒绝。
+- Approvals 已增加按条目的可选 timeout；body 使用 120s，旧请求仍 180s，继续共用 Agent 的决策通知与路由。
+- 重启不自动恢复：SQLite checkpoint 可能仍在，但审批关联、连接与 epoch 都已失效。清理过期 checkpoint 不是执行恢复机制。
+
 ---
 
 ## 9. 安全与权限

@@ -180,3 +180,8 @@ cd body && npm test
 修复 Go `inZone` 漏掉 unrestricted 分支，导致正式配置不限制活动区域但所有动作仍被空白名单拒绝的问题。Go/Node 的区域检查仅用于 body_dig/body_place 的目标方块；移除路径、身体站位和速度预测中的区域围栏，也不把放置支撑面当成被改动目标。移动仍不自动挖路、搭柱或开门。
 
 Paper 的 512 格保护共用实时出生点边界，在 Bukkit 实际破坏/放置事件及 WorldEdit Extent 拦截写入。后端读取 Paper 玩家信息中的 blockProtection，在派发前返回明确的 spawn_protected 或 protection_unavailable，避免让模型误报为缺少移动授权。配置/保护状态未知时仅拒绝编辑；连接、管理员认证和急停继续独立生效。
+
+
+21:58 CST 交付状态：代码 `43a4f15` 已构建为 Paper 0.3.2 并安装到 plugins/MineAgent.jar，尚待服主确认重启窗口，运行中的插件仍为 0.3.1；配套后端/Node 尚未重载。本次原后端、插件和 Node 文件备份在私有目录 `backups/edit-zones-20261020-215816/`。
+
+验证：Go 相关包竞态与全仓回归（跳过既有固定延迟性能用例）、Node 11 项安全用例、插件单元测试通过；隔离 Paper E2E 通过 13 工具/79 场景，实际验证编辑白名单外与出生点保护区内行走、区内单方块预检拒绝、WorldEdit 全边界保护。另用相同 AI 身份的真实非 OP 游戏客户端绕过 Go/Node：区内破坏/放置在 Paper 拒绝，区外真实破坏/放置成功，验证了服务器事件防线。测试产物在 `/tmp/mineagent-body-e2e-ONrDGx`，未在正式世界执行写入验收。

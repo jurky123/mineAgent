@@ -43,6 +43,39 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 @agent 给我 1 个钻石
 ```
 
+## 游戏内界面（Paper 插件 0.2.0）
+
+输入 **`/agent`**、`/agent ui` 或 `/mineagent ui` 打开助手面板，`/ai` 与 `/ma ui` 也可用。原有 `/agent <问题>` 和聊天 `@agent` 保持可用。
+
+- **无需客户端 mod**：直接使用 Paper 原版对话框，提供文本输入、菜单、近期记录与审批；`/agent dialog` 可强制使用。
+- **可选 MineUI 增强**：安装 MineUI 服务端且玩家的 MineUI 客户端 ≥0.16.1 且已握手 `server_ui` 能力时，自动使用 MineUI 页面。只通过公开 `com.mineui.api` 接入，无需新增 MineAgent 客户端 mod；能力不支持或适配失败会回到原版对话框。
+- **功能**：提问、服务器/玩家/时间天气查询、共享记忆概况/摘要、模型额度、身份查询、近期回复、待审批详情与批准/拒绝、管理员重连；权限不变，按钮点击时再次校验。
+- **消息与状态**：成功提交时显示 ActionBar 回执，回复仍遵循后端 `minecraft.replyMode`；MineUI 页面自动更新，原版对话框点击刷新。MC 会话仍是全服共享，不因打开面板变成私聊。
+- **记录**：只在内存保存本人本次在线实际收到的最近 30 条助手回复/面板提问，单条最多 1600 字符，离线即清理；定向回复不会进入其他玩家的记录。不是后端持久会话列表。
+- **审批**：仅对 `mineagent.approve` 开放原有 Minecraft 操作审批；核对请求详情后才批准。失效、已处理、断线前的审批不能通过旧按钮再次提交。UI 提交不代表动作已完成，以后端回复为准。
+- **AI 玩家与网页功能**：设置 `ui.portal-url` 后显示网页助手与 `/body` 入口，由原版链接确认框打开浏览器。AI 身体控制/审批继续要求已验证网页管理员，不用离线 MC 名字或 OP 绕过认证。论坛、网页文件/模型设置仍由门户承载。
+
+新增权限 `mineagent.use` 默认允许，控制界面及 `/agent` 提问；`mineagent.admin` / `mineagent.approve` 继续分别控制重连和审批。普通玩家的面板不显示管理按钮，也不暴露后端地址/错误详情。未开放新身体控制权限。
+
+插件私有 `config.yml` 可新增（未配置沿用默认值，无须为开发验证改线上配置）：
+
+```yaml
+ui:
+  mode: auto       # auto 或 dialog；dialog 完全使用原版对话框
+  portal-url: ""  # 可选 HTTPS 门户根地址；不含账号、令牌、查询参数或 fragment
+```
+
+构建使用 Java 25 / Paper 26.2。首次编译需先在相邻 mineUI 源码中运行 `./gradlew :mineui-paper:publishToMavenLocal` 提供 0.16.1 公共 API；该依赖只用于编译，**不打入 MineAgent jar**。随后：
+
+```sh
+cd paper-plugin
+./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx384m -Dorg.gradle.parallel=false test jar
+```
+
+产物为 `paper-plugin/build/libs/MineAgent-0.2.0.jar`。仅构建不会安装插件或重启 Paper；正式更新须按项目部署流程安排并确认停服窗口。
+
+隔离集成测试：安装 `body/` 锁定依赖后执行 `node scripts/paper-ui-e2e.mjs <已标记的测试 Paper 目录> <ViaProxy-3.4.14.jar>`。它只允许回环 25665、测试世界 `m0-world`，且目录必须包含 `.mineagent-body-test` 隔离标记；会覆盖测试插件配置并分两阶段启动自有 Paper（不装/安装 MineUI），请勿指向正式目录。测试覆盖原版按钮/表单回调、私密回复隔离、审批防重放/冒用/撤权/过期/重连，以及 MineUI 握手、输入、状态更新和旧会话拒绝；这是服务端及协议验证，客户端视觉布局仍需游戏内人工体验。
+
 ## QQ 用法
 
 - 私聊机器人直接说话就行，不用 @；群里 @机器人再说话
@@ -88,7 +121,9 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 | 命令 | 作用 |
 |---|---|
-| `/agent <问题>`（别名 `/ai`） | 提问，等价于聊天 `@agent` |
+| `/agent` / `/agent ui`（别名 `/ai`） | 打开游戏内助手面板；`/agent dialog` 强制原版界面 |
+| `/agent <问题>` | 提问，等价于聊天 `@agent` |
+| `/mineagent ui`（别名 `/ma ui`） | 打开助手面板 |
 | `/mineagent status` | 查看助手连接状态 |
 | `/mineagent reconnect` | 手动重连后端 |
 | `/mineagent approve\|deny <审批ID>` | 批准/拒绝操作（Tab 可补全待审批 ID，别名 `/ma`） |

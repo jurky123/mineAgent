@@ -4,16 +4,20 @@ main: com.mineagent.paper.MineAgentPlugin
 api-version: '26.2'
 description: MineAgent 后端连接插件（WebSocket）
 author: jurky123
+softdepend: [MineUI]
 commands:
   mineagent:
     description: MineAgent 状态、重连与操作审批
-    usage: /mineagent <status|reconnect|approve|deny> [审批ID]
+    usage: /mineagent <ui|status|reconnect|approve|deny> [审批ID]
     aliases: [ma]
   agent:
     description: 向 AI 助手提问（等价于聊天 @agent）
-    usage: /agent <问题>
+    usage: /agent [ui|dialog|问题]
     aliases: [ai]
 permissions:
+  mineagent.use:
+    description: 允许打开助手界面与提问
+    default: true
   mineagent.admin:
     description: 允许 /mineagent status|reconnect
     default: op

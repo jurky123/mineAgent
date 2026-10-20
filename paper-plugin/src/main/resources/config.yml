@@ -5,3 +5,9 @@ backend:
     initial-delay-ms: 1000
     max-delay-ms: 30000
   heartbeat-ms: 10000
+ui:
+  # auto：支持 MineUI server_ui 的玩家使用增强界面，其余使用原版对话框。
+  # dialog：所有玩家使用原版对话框；无需任何客户端 mod。
+  mode: auto
+  # 可选：门户的 HTTPS 根地址，不含令牌或查询参数。空字符串隐藏网页入口。
+  portal-url: ""

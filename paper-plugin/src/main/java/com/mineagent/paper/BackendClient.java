@@ -12,6 +12,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 public final class BackendClient {
@@ -42,6 +43,7 @@ public final class BackendClient {
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean();
     private final AtomicInteger attempt = new AtomicInteger();
     private final AtomicInteger inFlight = new AtomicInteger();
+    private final AtomicLong generation = new AtomicLong();
     private CompletableFuture<WebSocket> sendTail = CompletableFuture.completedFuture(null);
 
     private volatile WebSocket ws;
@@ -78,6 +80,11 @@ public final class BackendClient {
 
     public boolean isConnected() {
         return connected;
+    }
+
+    /** Pending UI actions must never survive a backend connection change. */
+    public long generation() {
+        return generation.get();
     }
 
     public String lastError() {
@@ -166,6 +173,7 @@ public final class BackendClient {
         }
         ws = null;
         connected = false;
+        generation.incrementAndGet();
         lastError = reason;
         if (!running.get()) {
             return;
@@ -245,6 +253,7 @@ public final class BackendClient {
                 return;
             }
             ws = socket;
+            generation.incrementAndGet();
             connected = true;
             lastError = "";
             lastIncoming = System.currentTimeMillis();

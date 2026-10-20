@@ -9,19 +9,21 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 
-import com.google.gson.JsonObject;
 import com.mineagent.paper.ApprovalHandler;
 import com.mineagent.paper.BackendClient;
-import com.mineagent.paper.Protocol;
+import com.mineagent.paper.MineAgentPlugin;
+import org.bukkit.entity.Player;
 
 import net.kyori.adventure.text.Component;
 
 public final class MineAgentCommand implements CommandExecutor, TabCompleter {
 
     private final BackendClient backend;
+    private final MineAgentPlugin plugin;
     private final ApprovalHandler approvalHandler;
 
-    public MineAgentCommand(BackendClient backend, ApprovalHandler approvalHandler) {
+    public MineAgentCommand(MineAgentPlugin plugin, BackendClient backend, ApprovalHandler approvalHandler) {
+        this.plugin = plugin;
         this.backend = backend;
         this.approvalHandler = approvalHandler;
     }
@@ -30,6 +32,10 @@ public final class MineAgentCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String sub = args.length > 0 ? args[0].toLowerCase(Locale.ROOT) : "status";
         switch (sub) {
+            case "ui" -> {
+                if (sender instanceof Player player) plugin.ui().open(player, false);
+                else sender.sendMessage(Component.text("请在游戏内使用 /mineagent ui"));
+            }
             case "status" -> {
                 if (!require(sender, "mineagent.admin")) {
                     return true;
@@ -50,7 +56,7 @@ public final class MineAgentCommand implements CommandExecutor, TabCompleter {
             case "deny" -> resolve(sender, args, false);
             default -> {
                 if (require(sender, "mineagent.admin")) {
-                    sender.sendMessage(Component.text("用法: /mineagent <status|reconnect|approve|deny> [审批ID]"));
+                    sender.sendMessage(Component.text("用法: /mineagent <ui|status|reconnect|approve|deny> [审批ID]"));
                 }
             }
         }
@@ -74,22 +80,14 @@ public final class MineAgentCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Component.text("用法: /mineagent " + (approved ? "approve" : "deny") + " <审批ID>"));
             return;
         }
-        JsonObject payload = new JsonObject();
-        payload.addProperty("approvalId", args[1]);
-        payload.addProperty("approved", approved);
-        payload.addProperty("operator", sender.getName());
-        if (!backend.send(Protocol.APPROVAL_RESULT, payload)) {
-            sender.sendMessage(Component.text("MineAgent: 后端未连接，审批失败"));
-            return;
-        }
-        approvalHandler.resolve(args[1]);
-        sender.sendMessage(Component.text("MineAgent: 已" + (approved ? "批准" : "拒绝") + " " + args[1]));
+        approvalHandler.decide(sender, args[1], approved);
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 1) {
             List<String> subs = new ArrayList<>();
+            if (sender.hasPermission("mineagent.use")) subs.add("ui");
             if (sender.hasPermission("mineagent.admin")) {
                 subs.add("status");
                 subs.add("reconnect");

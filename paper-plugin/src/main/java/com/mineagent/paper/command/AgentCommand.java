@@ -11,18 +11,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 
-import com.google.gson.JsonObject;
-import com.mineagent.paper.BackendClient;
 import com.mineagent.paper.MineAgentPlugin;
-import com.mineagent.paper.Protocol;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 
 public final class AgentCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUGGESTIONS = List.of(
-            "在线有谁", "服务器状态", "现在天气", "游戏时间", "查玩家");
+            "ui", "dialog", "在线有谁", "服务器状态", "现在天气", "游戏时间", "查玩家");
 
     private final MineAgentPlugin plugin;
 
@@ -36,31 +32,9 @@ public final class AgentCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Component.text("只有游戏内玩家可以使用 /agent"));
             return true;
         }
-        BackendClient backend = plugin.backend();
-        if (backend == null || !backend.isConnected()) {
-            player.sendMessage(Component.text("[MineAgent] 后端未连接，请稍后再试"));
-            return true;
-        }
-        if (args.length == 0) {
-            player.sendMessage(Component.text("用法: /agent <问题>，也可以直接聊天发 @agent <问题>"));
-            return true;
-        }
-        String question = String.join(" ", args).trim();
-        if (question.isEmpty()) {
-            player.sendMessage(Component.text("用法: /agent <问题>"));
-            return true;
-        }
-        JsonObject data = new JsonObject();
-        data.addProperty("player", player.getName());
-        data.addProperty("uuid", player.getUniqueId().toString());
-        data.addProperty("world", player.getWorld().getName());
-        data.addProperty("message", "@agent " + question);
-        if (!backend.send(Protocol.CHAT_MESSAGE, data)) {
-            player.sendMessage(Component.text("[MineAgent] 发送失败，后端未连接"));
-            return true;
-        }
-        plugin.getServer().broadcast(Component.text(player.getName() + ": ", NamedTextColor.YELLOW)
-                .append(Component.text(question, NamedTextColor.WHITE)));
+        if (args.length == 0 || (args.length == 1 && ("ui".equalsIgnoreCase(args[0]) || "dialog".equalsIgnoreCase(args[0])))) {
+            plugin.ui().open(player, args.length == 1 && "dialog".equalsIgnoreCase(args[0]));
+        } else plugin.ui().submit(player, String.join(" ", args));
         return true;
     }
 

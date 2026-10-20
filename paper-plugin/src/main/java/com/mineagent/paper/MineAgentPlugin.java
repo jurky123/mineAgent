@@ -7,6 +7,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import com.google.gson.JsonObject;
 import com.mineagent.paper.command.AgentCommand;
 import com.mineagent.paper.command.MineAgentCommand;
+import com.mineagent.paper.ui.AgentUi;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -16,6 +17,7 @@ public final class MineAgentPlugin extends JavaPlugin {
     private BackendClient backend;
     private ToolExecutor toolExecutor;
     private ApprovalHandler approvalHandler;
+    private AgentUi ui;
 
     @Override
     public void onEnable() {
@@ -32,13 +34,14 @@ public final class MineAgentPlugin extends JavaPlugin {
         backend = new BackendClient(getLogger(), url, token, initial, max, heartbeat, new BukkitSchedulerAdapter(this));
         backend.setHelloInfo("minecraft", getPluginMeta().getVersion(), getServer().getMinecraftVersion());
         backend.setHandler(this::handleBackendMessage);
+        ui = new AgentUi(this);
         backend.start();
 
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
 
         PluginCommand command = getCommand("mineagent");
         if (command != null) {
-            MineAgentCommand executor = new MineAgentCommand(backend, approvalHandler);
+            MineAgentCommand executor = new MineAgentCommand(this, backend, approvalHandler);
             command.setExecutor(executor);
             command.setTabCompleter(executor);
         }
@@ -53,6 +56,7 @@ public final class MineAgentPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (ui != null) ui.shutdown();
         if (backend != null) {
             backend.shutdown();
         }
@@ -61,6 +65,9 @@ public final class MineAgentPlugin extends JavaPlugin {
     public BackendClient backend() {
         return backend;
     }
+
+    public AgentUi ui() { return ui; }
+    public ApprovalHandler approvals() { return approvalHandler; }
 
     private void handleBackendMessage(String type, JsonObject data) {
         if (Protocol.AGENT_MESSAGE.equals(type)) {
@@ -83,11 +90,13 @@ public final class MineAgentPlugin extends JavaPlugin {
                     .append(Component.text(text, NamedTextColor.WHITE));
             if (target.isEmpty()) {
                 getServer().broadcast(message);
+                for (Player viewer : getServer().getOnlinePlayers()) ui.reply(viewer, text);
                 return;
             }
             Player player = getServer().getPlayerExact(target);
             if (player != null) {
                 player.sendMessage(message);
+                ui.reply(player, text);
             } else {
                 getLogger().warning("agent.message target offline, skipped delivery: " + target);
             }

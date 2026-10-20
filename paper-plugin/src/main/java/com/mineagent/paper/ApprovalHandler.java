@@ -1,10 +1,8 @@
 package com.mineagent.paper;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import com.google.gson.JsonObject;
@@ -16,13 +14,12 @@ import net.kyori.adventure.text.format.NamedTextColor;
 
 public final class ApprovalHandler {
 
-    private static final long PENDING_TTL_MS = 5 * 60 * 1000L;
-
     private final MineAgentPlugin plugin;
-    private final Map<String, Long> pending = new ConcurrentHashMap<>();
+    private final ApprovalInbox inbox;
 
     public ApprovalHandler(MineAgentPlugin plugin) {
         this.plugin = plugin;
+        this.inbox = new ApprovalInbox(System::currentTimeMillis, () -> plugin.backend().generation());
     }
 
     public void request(JsonObject data) {
@@ -30,11 +27,12 @@ public final class ApprovalHandler {
         String tool = str(data, "tool");
         String requester = str(data, "requester");
         String prompt = str(data, "prompt");
-        if (!approvalId.isEmpty()) {
-            pending.put(approvalId, System.currentTimeMillis());
-        }
+        long timeout = data.has("timeoutMs") ? data.get("timeoutMs").getAsLong() : 180_000L;
+        inbox.add(approvalId, tool, requester, prompt, timeout);
+        if (inbox.get(approvalId) == null) return;
         plugin.getLogger().info("approval request " + approvalId + ": " + requester + " -> " + prompt);
         plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (inbox.get(approvalId) == null) return;
             Component approve = Component.text("[批准]", NamedTextColor.GREEN)
                     .clickEvent(ClickEvent.runCommand("/mineagent approve " + approvalId))
                     .hoverEvent(HoverEvent.showText(Component.text("批准这次操作，立即执行")));
@@ -63,13 +61,37 @@ public final class ApprovalHandler {
     }
 
     public void resolve(String approvalId) {
-        pending.remove(approvalId);
+        inbox.remove(approvalId);
     }
 
     public List<String> pendingIds() {
-        long now = System.currentTimeMillis();
-        pending.entrySet().removeIf(entry -> now - entry.getValue() > PENDING_TTL_MS);
-        return new ArrayList<>(pending.keySet());
+        return pending().stream().map(ApprovalInbox.Pending::id).toList();
+    }
+
+    public List<ApprovalInbox.Pending> pending() { return inbox.list(); }
+    public ApprovalInbox.Pending get(String id) { return inbox.get(id); }
+
+    /** Both UI and command use this permission/expiry gate; body approvals never enter this inbox. */
+    public boolean decide(CommandSender sender, String id, boolean approved) {
+        if (!sender.hasPermission("mineagent.approve")) {
+            sender.sendMessage(Component.text("没有审批权限"));
+            return false;
+        }
+        if (inbox.get(id) == null) {
+            sender.sendMessage(Component.text("审批已过期、已处理或连接已变化，请刷新列表"));
+            return false;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("approvalId", id);
+        payload.addProperty("approved", approved);
+        payload.addProperty("operator", sender.getName());
+        if (!plugin.backend().send(Protocol.APPROVAL_RESULT, payload)) {
+            sender.sendMessage(Component.text("MineAgent: 后端未连接，审批未提交"));
+            return false;
+        }
+        inbox.remove(id);
+        sender.sendMessage(Component.text("MineAgent: 已提交" + (approved ? "批准" : "拒绝") + "，实际结果以助手回复为准"));
+        return true;
     }
 
     private String str(JsonObject data, String key) {

@@ -76,7 +76,7 @@ cd paper-plugin
 ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx384m -Dorg.gradle.parallel=false test jar
 ```
 
-产物为 `paper-plugin/build/libs/MineAgent-0.3.2.jar`。身体面板须配套本版后端；仅构建不会安装插件或重启 Paper，正式更新须按项目部署流程安排并确认停服窗口。
+产物为 `paper-plugin/build/libs/MineAgent-0.3.2.jar`。身体面板须配套本版后端；仅构建不会安装插件或重启 Paper，正式更新须按项目部署流程核查在线人数及特殊任务；无特殊任务时先发布全服维护通告，再部署重启，无须逐次确认。
 
 隔离集成测试：安装 `body/` 锁定依赖后执行 `node scripts/paper-ui-e2e.mjs <已标记的测试 Paper 目录> <ViaProxy-3.4.14.jar>`。它只允许回环 25665、测试世界 `m0-world`，且目录必须包含 `.mineagent-body-test` 隔离标记；会覆盖测试插件配置并分两阶段启动自有 Paper（不装/安装 MineUI），请勿指向正式目录。测试覆盖原版按钮/表单回调、私密回复隔离、审批防重放/冒用/撤权/过期/重连，以及 MineUI 握手、输入、状态更新和旧会话拒绝；这是服务端及协议验证，客户端视觉布局仍需游戏内人工体验。
 

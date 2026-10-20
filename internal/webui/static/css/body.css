@@ -1,0 +1,120 @@
+.body-console {
+  max-width: 1040px;
+  padding-bottom: 48px;
+}
+.body-control,
+.body-card {
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #ddd);
+  border-radius: 16px;
+  padding: 22px;
+}
+.body-control {
+  position: sticky;
+  top: 68px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  box-shadow: 0 4px 20px #00000008;
+}
+.body-control p {
+  margin: 6px 0 0;
+}
+.body-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.body-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin: 20px 0;
+}
+.body-card h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+.body-card dl {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  margin: 0;
+}
+.body-card dt {
+  opacity: 0.65;
+}
+.body-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.body-approval {
+  border-top: 1px solid var(--line, #ddd);
+  padding: 16px 0;
+}
+.body-approval p {
+  overflow-wrap: anywhere;
+}
+.body-approval .body-buttons {
+  margin-top: 12px;
+}
+.body-error {
+  padding: 16px;
+  border: 1px solid #d86a60;
+  border-radius: 12px;
+  color: var(--danger, #a33);
+  background: var(--surface, #fff);
+}
+.body-events {
+  padding: 0;
+  list-style: none;
+  margin: 0;
+}
+.body-events li {
+  padding: 10px 0;
+  border-top: 1px solid var(--line, #ddd);
+  overflow-wrap: anywhere;
+}
+.body-events time {
+  opacity: 0.6;
+  margin-right: 12px;
+}
+html[data-theme="dark"] .body-control,
+html[data-theme="dark"] .body-card {
+  background: var(--surface, #202126);
+  border-color: #ffffff20;
+}
+html[data-theme="dark"] .body-error {
+  background: #292024;
+  color: #ffaaa0;
+}
+@media (max-width: 720px) {
+  .body-grid {
+    grid-template-columns: 1fr;
+  }
+  .body-control {
+    top: 58px;
+    align-items: stretch;
+    flex-direction: column;
+    padding: 16px;
+  }
+  .body-buttons .btn {
+    flex: 1;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+  .body-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .body-card {
+    padding: 18px;
+  }
+  .body-console {
+    padding-bottom: 90px;
+  }
+}

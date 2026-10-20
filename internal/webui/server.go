@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"mineagent/internal/account"
+	"mineagent/internal/body"
 	"mineagent/internal/storage"
 	"mineagent/internal/version"
 )
@@ -273,6 +275,9 @@ func (c *Channel) withAuth(next func(w http.ResponseWriter, r *http.Request, u *
 			return
 		}
 		SetAuthCookie(w, r, tok)
+		if _, sid, ok := c.acct.CurrentWithSession(r.Context(), tok); ok {
+			r = r.WithContext(account.WithSessionID(r.Context(), sid))
+		}
 		next(w, r, u)
 	}
 }
@@ -844,6 +849,10 @@ func (c *Channel) handleUpload(w http.ResponseWriter, r *http.Request, u *storag
 
 // handleSend 收一条消息：text + 已上传文件的引用，转给 HandleUserMessage。
 func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if c.body != nil && u.IsAdmin && !body.TrustedWriteRequest(r) {
+		writeJSON(w, 403, map[string]string{"error": "身体控制请求必须来自可信网页并使用 JSON"})
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
 		return

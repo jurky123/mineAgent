@@ -6,9 +6,9 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 还可以直接开一个**网页入口**：浏览器里聊天、发文件/图片、收文件/图片，按名字隔离会话，页面可以嵌进别的网页。
 
-> 设计中的**具身接入**（让助手拥有游戏内身体：移动、挖掘、放置、交互、物品、聊天、指令）：
-> [MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（2026-10-19 v1.1 评审修订，未实施；§0.1 为评审结论与实施门槛）。
-> AI 玩家资料/论坛模块需求（**非本项目实现**）：[AI_PLAYER_PORTAL_REQUIREMENTS.md](AI_PLAYER_PORTAL_REQUIREMENTS.md)。
+> **具身接入 V1**：通过独立 Node/Mineflayer 玩家执行 12 个 `body_*` 工具，网页管理员控制，门户 `/body` 提供状态、审批和急停。默认关闭，已完成隔离测试，尚未启用生产。
+> 使用与验证：[body/README.md](body/README.md)；架构与实施记录：[MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（§18）。
+> AI 玩家只读资料接口已实现；论坛/blog 由其他项目实现：[AI_PLAYER_PORTAL_REQUIREMENTS.md](AI_PLAYER_PORTAL_REQUIREMENTS.md)。
 
 ## 能做什么
 

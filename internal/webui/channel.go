@@ -18,6 +18,7 @@ import (
 
 	"mineagent/internal/account"
 	"mineagent/internal/agent"
+	bodycore "mineagent/internal/body"
 	"mineagent/internal/config"
 	"mineagent/internal/prompts"
 	"mineagent/internal/session"
@@ -49,13 +50,15 @@ type Channel struct {
 	mcStatus      func(ctx context.Context) (string, error)
 	usage         *usage.Client
 
-	hub       *session.Hub
-	store     *storage.Store
-	acct      *account.Service
-	passkeys  http.Handler
-	passwords http.Handler
-	ag        *agent.Agent
-	webTools  []tool.BaseTool
+	hub          *session.Hub
+	store        *storage.Store
+	acct         *account.Service
+	passkeys     http.Handler
+	passwords    http.Handler
+	ag           *agent.Agent
+	webTools     []tool.BaseTool
+	body         *bodycore.Service
+	bodyMaxSteps int
 
 	// 模型切换：可选项（config.model.options 优先，否则拉网关）与加载器。
 	modelOptions   []string
@@ -142,6 +145,15 @@ func NewChannel(log *slog.Logger, cfg config.Config, acct *account.Service, hub 
 		log.Warn("Passkey authentication unavailable; name login disabled")
 	}
 	c.loadPrefs()
+	return c
+}
+
+func (c *Channel) WithBody(b *bodycore.Service, maxSteps int) *Channel {
+	if b != nil && b.Enabled() {
+		c.body = b
+		c.bodyMaxSteps = maxSteps
+		c.webTools = append(c.webTools, b.Tools()...)
+	}
 	return c
 }
 
@@ -570,9 +582,19 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 	if c.ag == nil {
 		return convID, fmt.Errorf("助手尚未就绪")
 	}
+	var principal *bodycore.Principal
+	maxSteps := 0
+	bodyInstruction := ""
+	if c.body != nil && u.IsAdmin && account.SessionIDFromContext(ctx) > 0 {
+		principal = c.body.Principal(u.ID, account.SessionIDFromContext(ctx), name)
+		maxSteps = c.bodyMaxSteps
+		bodyInstruction = bodycore.Instruction
+	}
 	if !c.ag.Submit(agent.Request{
-		Context: runCtx,
-		Done:    finish,
+		Context:       runCtx,
+		BodyPrincipal: principal,
+		MaxIterations: maxSteps,
+		Done:          finish,
 		ToolEvent: func(event agent.ToolEvent) {
 			event.ID = fmt.Sprintf("%d:%s", stored.ID, event.ID)
 			payload, err := json.Marshal(event)
@@ -590,7 +612,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		TriggerMessageID:  stored.ID,
 		ReplyTarget:       target,
 		Tools:             c.toolsForUser(ctx, u),
-		SystemInstruction: prompts.Resolve("web", name, webInstruction) + c.capabilityInstruction(ctx, u),
+		SystemInstruction: prompts.Resolve("web", name, webInstruction) + c.capabilityInstruction(ctx, u) + bodyInstruction,
 		Model:             prefs.Model,
 		ReasoningEffort:   prefs.Effort,
 		Progress: func(text string) {

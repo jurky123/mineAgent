@@ -17,6 +17,12 @@ type capability struct {
 }
 
 func toolAccess(name string, admin bool) (string, string) {
+	if strings.HasPrefix(name, "body_") {
+		if !admin {
+			return "admin", "AI 身体"
+		}
+		return "available", "AI 身体（高危动作需门户审批）"
+	}
 	if strings.HasPrefix(name, "workspace_") || name == "web_file" {
 		if !admin {
 			return "admin", "文件与执行"

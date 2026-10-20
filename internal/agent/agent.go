@@ -18,6 +18,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
+	"mineagent/internal/body"
 	"mineagent/internal/config"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
@@ -55,6 +56,8 @@ const systemInstruction = `你在 Minecraft 服务器「jzk 的服务器」里�
   如果玩家问起这些命令，你照着 help 文案介绍，不要自己编命令列表。`
 
 type Request struct {
+	BodyPrincipal *body.Principal
+	MaxIterations int
 	// Context is an optional per-request cancellation signal, independent of the HTTP request.
 	Context       context.Context
 	Done          func()
@@ -213,6 +216,8 @@ func toolProgress(name, argsJSON string) (kind, call, text string) {
 	brief := ""
 	label := ""
 	switch {
+	case strings.HasPrefix(name, "body_"):
+		kind, label = "body", "正在操作 AI 身体…"
 	case name == "web_search":
 		kind, label = "search", "正在搜索资料…"
 		if q := arg("query", 24); q != "" {
@@ -573,6 +578,12 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	if sessionKey == "" {
 		sessionKey = a.sessionKey
 	}
+	if req.BodyPrincipal != nil {
+		var stop context.CancelFunc
+		rctx, stop = context.WithDeadline(rctx, req.BodyPrincipal.Deadline)
+		defer stop()
+		rctx = body.WithPrincipal(rctx, req.BodyPrincipal)
+	}
 	rctx = tools.WithRequester(rctx, req.Player)
 	rctx = tools.WithRequesterID(rctx, req.RequesterID)
 	if req.MCRequester != "" {
@@ -651,7 +662,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 // 同一会话复用是安全的；checkpoint 按 run 粒度存 sqlite，resume 时必须用
 // 建它的那个 runner（见 resume，经 pendingRun.runnerKey 取回）。
 func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string, error) {
-	if len(req.Tools) == 0 && req.SystemInstruction == "" {
+	if len(req.Tools) == 0 && req.SystemInstruction == "" && req.MaxIterations == 0 {
 		return a.mcRunner, "", nil
 	}
 	instruction := req.SystemInstruction
@@ -679,7 +690,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 		cm = m
 	}
 	key := req.SessionKey + "\x00" + instruction + "\x00" + strings.Join(names, ",") +
-		"\x00" + req.Model + "|" + req.ReasoningEffort
+		"\x00" + req.Model + "|" + req.ReasoningEffort + fmt.Sprintf("|iterations=%d", req.MaxIterations)
 	a.mu.Lock()
 	r, ok := a.runners[key]
 	a.mu.Unlock()
@@ -695,6 +706,9 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	agentName, agentDesc, maxIter := "mineagent-qq", "QQ 聊天助手", a.cfg.QQMaxIterations
 	if req.SessionKey == a.sessionKey && len(req.Tools) == 0 {
 		agentName, agentDesc, maxIter = "mineagent", "Minecraft 服务器聊天助手", 8
+	}
+	if req.MaxIterations > 0 && req.MaxIterations <= 32 {
+		maxIter = req.MaxIterations
 	}
 	chatAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        agentName,
@@ -878,6 +892,7 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 
 func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, runnerKey, cpID string, info *adk.InterruptInfo) {
 	notified := false
+	bodyApproval := false
 	for _, ictx := range info.InterruptContexts {
 		if !ictx.IsRootCause {
 			continue
@@ -908,6 +923,9 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, ru
 			instruction: req.SystemInstruction,
 		}
 		a.mu.Unlock()
+		if ai.Source == "body" {
+			bodyApproval = true
+		}
 		a.approvals.Notify(*ai)
 		a.log.Info("approval requested", "session", sessionKey, "approvalId", ai.ApprovalID, "tool", ai.Tool, "requester", req.Player)
 		notified = true
@@ -917,7 +935,11 @@ func (a *Agent) handleInterrupt(ctx context.Context, req Request, sessionKey, ru
 		_ = req.Session.Reply(ctx, "这个操作需要人工确认，但审批信息丢失了。", a.target(req))
 		return
 	}
-	_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", a.target(req))
+	if bodyApproval {
+		_ = req.Session.Reply(ctx, "这个身体动作需要管理员批准，请在 /body 控制台审核。", a.target(req))
+	} else {
+		_ = req.Session.Reply(ctx, "这个操作需要管理员批准，我已经把请求发到服务器里了。", a.target(req))
+	}
 	if req.Progress != nil {
 		req.Progress("等待管理员审批…")
 	}
@@ -959,6 +981,12 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	if run.request.Context != nil {
 		stop := context.AfterFunc(run.request.Context, cancel)
 		defer stop()
+	}
+	if run.request.BodyPrincipal != nil {
+		var stop context.CancelFunc
+		rctx, stop = context.WithDeadline(rctx, run.request.BodyPrincipal.Deadline)
+		defer stop()
+		rctx = body.WithPrincipal(rctx, run.request.BodyPrincipal)
 	}
 	rctx = tools.WithRequester(rctx, run.player)
 	rctx = tools.WithRequesterID(rctx, run.requesterID)

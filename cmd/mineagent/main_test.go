@@ -54,3 +54,16 @@ func TestMatchTrigger(t *testing.T) {
 		}
 	}
 }
+
+func TestBodyCannotSendPaperOrApprovalMessages(t *testing.T) {
+	for _, typ := range []string{protocol.TypeChatMessage, protocol.TypeToolResult, protocol.TypeApprovalResult, "unknown"} {
+		if authorizeMessage(protocol.RoleBody, typ, true) {
+			t.Errorf("body allowed %s", typ)
+		}
+	}
+	for _, typ := range []string{protocol.TypeBodyState, protocol.TypeBodyResult, protocol.TypeBodyInspectResult, protocol.TypeBodyControlAck, protocol.TypeBodyPolicyAck} {
+		if !authorizeMessage(protocol.RoleBody, typ, true) || authorizeMessage(protocol.RoleBody, typ, false) || authorizeMessage(protocol.RoleMinecraft, typ, true) {
+			t.Errorf("role/connection isolation failed %s", typ)
+		}
+	}
+}

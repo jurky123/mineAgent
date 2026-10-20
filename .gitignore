@@ -13,3 +13,9 @@ paper-plugin/build/
 
 node_modules/
 /ui-preview/
+
+/body/config.json
+/body/*.env
+/body/*.log
+
+__pycache__/

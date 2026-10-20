@@ -20,12 +20,15 @@ func init() {
 const defaultMaxPending = 64
 
 type ApprovalDecision struct {
-	Approved bool   `json:"approved"`
-	Operator string `json:"operator,omitempty"`
-	Reason   string `json:"reason,omitempty"`
+	ApprovalID string `json:"approvalId,omitempty"`
+	Approved   bool   `json:"approved"`
+	Operator   string `json:"operator,omitempty"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 type ApprovalInfo struct {
+	Source     string          `json:"source,omitempty"`
+	TimeoutMS  int64           `json:"timeoutMs,omitempty"`
 	ApprovalID string          `json:"approvalId"`
 	Tool       string          `json:"tool"`
 	Args       json.RawMessage `json:"args,omitempty"`
@@ -127,13 +130,20 @@ func (a *Approvals) Notify(info ApprovalInfo) {
 	a.mu.Lock()
 	p, ok := a.pending[info.ApprovalID]
 	if ok {
-		p.timer = time.AfterFunc(a.timeout, func() {
+		timeout := a.timeout
+		if p.info.Source == "body" && p.info.TimeoutMS > 0 && p.info.TimeoutMS <= 120000 {
+			timeout = time.Duration(p.info.TimeoutMS) * time.Millisecond
+		}
+		p.timer = time.AfterFunc(timeout, func() {
 			a.finish(info.ApprovalID, ApprovalDecision{Approved: false, Reason: "审批超时"})
 		})
 	}
 	a.mu.Unlock()
 	if !ok {
 		a.log.Warn("notify for unknown approval", "approvalId", info.ApprovalID)
+		return
+	}
+	if info.Source == "body" {
 		return
 	}
 	err := a.sender.SendProtocol(protocol.TypeApprovalRequest, protocol.ApprovalRequest{
@@ -151,6 +161,13 @@ func (a *Approvals) Notify(info ApprovalInfo) {
 }
 
 func (a *Approvals) HandleResult(res protocol.ApprovalResult) {
+	a.mu.Lock()
+	p := a.pending[res.ApprovalID]
+	body := p != nil && p.info.Source == "body"
+	a.mu.Unlock()
+	if body {
+		return
+	}
 	a.finish(res.ApprovalID, ApprovalDecision{
 		Approved: res.Approved,
 		Operator: res.Operator,
@@ -179,6 +196,7 @@ func (a *Approvals) DrainDecided() []Outcome {
 }
 
 func (a *Approvals) finish(id string, decision ApprovalDecision) {
+	decision.ApprovalID = id
 	a.mu.Lock()
 	p, ok := a.pending[id]
 	if ok {
@@ -205,5 +223,42 @@ func (a *Approvals) finish(id string, decision ApprovalDecision) {
 	select {
 	case a.notify <- struct{}{}:
 	default:
+	}
+}
+
+// Body approvals are resolved only by the authenticated portal, never by Paper.
+func (a *Approvals) BodyPending() []ApprovalInfo {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := []ApprovalInfo{}
+	for _, p := range a.pending {
+		if p.info.Source == "body" {
+			out = append(out, p.info)
+		}
+	}
+	return out
+}
+func (a *Approvals) DecideBody(id string, approved bool, operator string) bool {
+	a.mu.Lock()
+	p := a.pending[id]
+	ok := p != nil && p.info.Source == "body"
+	a.mu.Unlock()
+	if !ok {
+		return false
+	}
+	a.finish(id, ApprovalDecision{Approved: approved, Operator: operator})
+	return true
+}
+func (a *Approvals) CancelBody(reason string) {
+	a.mu.Lock()
+	ids := []string{}
+	for id, p := range a.pending {
+		if p.info.Source == "body" {
+			ids = append(ids, id)
+		}
+	}
+	a.mu.Unlock()
+	for _, id := range ids {
+		a.finish(id, ApprovalDecision{Reason: reason})
 	}
 }

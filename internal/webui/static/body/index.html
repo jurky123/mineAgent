@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="mineagent-version" content="__VER__">
+<script>
+  // 主题要在首屏渲染前定好，避免深色用户每次跳页闪白（shell.js 的 applyTheme 之后会再同步一次）
+  (function () {
+    try {
+      var mode = localStorage.getItem('mineagent.theme') || 'system';
+      var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.mode = mode;
+    } catch (e) {}
+  })();
+</script>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#f7f7f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="/static/__VER__/img/icon-192.png">
+<link rel="icon" type="image/png" href="/static/__VER__/img/favicon.png">
+<title>AI 身体 · Mine</title>
+<link rel="stylesheet" href="/static/__VER__/css/tokens.css">
+<link rel="stylesheet" href="/static/__VER__/css/ds.css">
+<link rel="stylesheet" href="/static/__VER__/css/portal.css">
+<link rel="stylesheet" href="/static/__VER__/css/body.css">
+</head>
+<body>
+<div id="shell-top"></div>
+
+<main class="wrap body-console">
+  <section class="hero"><h1>AI 身体</h1><p class="sub">查看 AI 玩家的状态、审核动作，随时暂停。</p></section>
+  <section class="body-control" aria-label="身体控制">
+    <div><strong id="body-status" role="status">正在连接…</strong><p id="body-hint" class="field-hint">正在读取最新状态</p></div>
+    <div class="body-buttons"><button class="btn danger" id="body-stop">停止并暂停</button><button class="btn primary" id="body-resume">恢复</button><button class="btn" id="body-disconnect">离开游戏</button><a class="btn" href="/agent">向 AI 下达任务</a></div>
+  </section>
+  <p id="body-error" class="body-error" role="alert" hidden></p>
+  <section class="body-grid" aria-label="玩家状态">
+    <article class="body-card"><h2 id="body-name">AI 玩家</h2><dl><dt>当前活动</dt><dd id="body-task">—</dd><dt>生命 / 饥饿</dt><dd id="body-health">—</dd><dt>手持</dt><dd id="body-item">—</dd><dt>位置</dt><dd id="body-position">—</dd><dt>状态更新</dt><dd id="body-updated">—</dd></dl></article>
+    <article class="body-card"><h2>待审核动作 <span class="badge" id="body-pending-count">0</span></h2><p class="field-hint">批准仅适用于这一项具体动作。目标或控制状态变化后，需要重新发起。</p><div id="body-approvals" aria-live="polite"></div></article>
+  </section>
+  <section class="body-card"><h2>最近事件</h2><ul id="body-events" class="body-events"></ul></section>
+</main>
+<script type="module" src="/static/__VER__/js/body.js"></script>
+</body></html>

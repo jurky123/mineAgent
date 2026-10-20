@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mineagent/internal/account"
+	"mineagent/internal/body"
 	"mineagent/internal/config"
 	"mineagent/internal/games"
 	"mineagent/internal/rinkujcef"
@@ -31,6 +32,7 @@ type Server struct {
 	acct     *account.Service
 	web      *webui.Channel
 	apps     []App
+	body     *body.Service
 	games    http.Handler // 小游戏 API（main 注入，见 WithGames）
 	textKeys *textcrypt.Vault
 
@@ -57,6 +59,8 @@ func (s *Server) PortalEnabled() bool {
 }
 
 // WithGames 挂上小游戏 API（internal/games 的 Handler）。
+func (s *Server) WithBody(b *body.Service) *Server { s.body = b; return s }
+
 func (s *Server) WithGames(h http.Handler) *Server {
 	s.games = h
 	return s
@@ -100,6 +104,20 @@ func (s *Server) Stop() {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	api := s.web.API()
+	if s.body != nil && s.body.Enabled() {
+		mux.Handle("/api/body/", s.body.Handler(s.acct))
+		mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				http.Error(w, "method not allowed", 405)
+				return
+			}
+			if s.body.Admin(r, s.acct) == nil {
+				http.Error(w, "需要已认证管理员", 403)
+				return
+			}
+			s.render(w, "body/index.html")
+		})
+	}
 
 	// 账号 API（新路径；/api/login 等旧路径由 webui.API 继续提供）
 	mux.HandleFunc("/api/auth/login", s.web.HandleLogin)

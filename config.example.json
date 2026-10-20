@@ -119,5 +119,24 @@
       "model": "",
       "timeoutSec": 20
     }
+  },
+  "body": {
+    "enabled": false,
+    "mode": "off",
+    "id": "main",
+    "name": "MineAgentBot",
+    "expectedMcVersion": "26.2",
+    "token": "",
+    "maxSteps": 12,
+    "runTimeoutSec": 240,
+    "worldMappings": [],
+    "zones": {
+      "mode": "allowlist",
+      "areas": []
+    },
+    "profile": {
+      "enabled": false,
+      "hideDimension": true
+    }
   }
 }

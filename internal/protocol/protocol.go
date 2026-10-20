@@ -37,12 +37,19 @@ type Envelope struct {
 }
 
 type Hello struct {
-	Protocol      int    `json:"protocol"`
-	Role          string `json:"role"`
-	Plugin        string `json:"plugin,omitempty"`
-	PluginVersion string `json:"pluginVersion,omitempty"`
-	ServerVersion string `json:"serverVersion,omitempty"`
-	Token         string `json:"token,omitempty"`
+	Protocol            int      `json:"protocol"`
+	Role                string   `json:"role"`
+	Plugin              string   `json:"plugin,omitempty"`
+	PluginVersion       string   `json:"pluginVersion,omitempty"`
+	ServerVersion       string   `json:"serverVersion,omitempty"`
+	Token               string   `json:"token,omitempty"`
+	BodyID              string   `json:"bodyId,omitempty"`
+	BodyName            string   `json:"bodyName,omitempty"`
+	BodyProtocolVersion int      `json:"bodyProtocolVersion,omitempty"`
+	ClientMcVersion     string   `json:"clientMcVersion,omitempty"`
+	TargetMcVersion     string   `json:"targetMcVersion,omitempty"`
+	ViaProxy            bool     `json:"viaProxy,omitempty"`
+	Capabilities        []string `json:"capabilities,omitempty"`
 }
 
 type HelloAck struct {

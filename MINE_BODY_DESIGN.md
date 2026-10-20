@@ -1,6 +1,6 @@
-# MINE_BODY_DESIGN.md — MineAgent 具身接入设计（v1.1）
+# MINE_BODY_DESIGN.md — MineAgent 具身接入设计（v1.2）
 
-> 状态：**2026-10-19 代码对照评审后修订，未实施；M0 兼容性验证与上线门槛仍未完成**
+> 状态：**2026-10-20 V1 代码与隔离验收完成；默认关闭，未部署生产。M0 30 分钟通过，24h 与生产负载/权限验收仍待完成，见 §18**
 > 目标读者：实现这个仓库的 coding agent / 后续维护者
 > 范围：让 mineAgent 后端的 agent 控制一个**真实 Minecraft 玩家身体**，提供移动、挖掘、放置、方块/实体交互、物品使用、聊天、指令等工具；以及相应的权限、审批、审计、运维和门户联动
 > 不在本设计内：具体代码、模型提示词调参、Minecraft 协议/物理的自研实现
@@ -64,7 +64,7 @@
 | 门户 | `internal/portal` + `static/`；SSE、账号、管理员；App 注册即可加页面/卡片 | `/body` 控制台可作为新的 Admin App |
 | 审计 | `tool_audit` 表（session/tool/risk/requester/args/decision/operator/result） | 身体动作可复用，`call_id` 正好可填身体调用 ID |
 
-现有代码里**没有任何**移动、NPC、假人、寻路、方块放置/破坏逻辑；只有查询和 3 个以请求者身份执行的审批工具。身体执行层是全新的。
+以上为实施前代码基线。V1 已新增 `internal/body` 与独立 `body/` 执行层，具体交付及未完成验收见 §18。
 
 > **RPC 是什么**：RPC = Remote Procedure Call（远程过程调用）。在这里指后端把一次工具调用打包成 `{callId, tool, args}` 发给**另一个进程**，然后按 `callId` 等待它回 `{callId, ok, data, error}`。它不是 HTTP 专属术语；本仓库现有的 `tool.call` / `tool.result`（Go ↔ Paper 插件）和本设计新增的 `body.call` / `body.result`（Go ↔ 身体服务）都是 RPC，区别只是走哪条通道、谁执行。RPC 天然是“请求—响应”，所以长动作需要超时 + partial + 取消，而不是一直等。
 
@@ -459,8 +459,8 @@ const RoleBody = "minecraft-body"
 ```
 
 - `allowedRoles` 增加 `minecraft-body`（默认仍只允许 `minecraft`，配置显式开启）。
-- **独立 token**：`body.token`（或 `MINEAGENT_BODY_TOKEN`）；规范化 role 后按角色选密钥并做常量时间比较。body token 为空、与主 token 相同、role 未显式开启或 bodyId/name 不匹配时拒绝；绝不回退主 token。
-- `hello_ack` 返回随机 `connectionId`、`controlEpoch` 与 bodyProtocolVersion；随后下发 `body.policy`。Node 原子应用并返回 `body.policy_ack{connectionId,policyRevision}` 后才可接受动作；重连不自动恢复 assist 的动作许可。
+- **独立 token**：`body.token`（或 `MINEAGENT_BODY_TOKEN`）；启用时主 Paper token 与身体 token 都要求至少 32 字符且相互独立；规范化 role 后按角色选密钥并做常量时间比较。body token 为空、与主 token 相同、role 未显式开启或 bodyId/name 不匹配时拒绝；绝不回退主 token。
+- `hello_ack` 沿用旧骨架；随后 `body.policy` 下发随机 `connectionId`、`controlEpoch` 与策略版本。Node 原子应用并返回 `body.policy_ack{connectionId,policyRevision}` 后才可接受动作；重连不自动恢复 assist 的动作许可。
 - 版本/能力不匹配：后端不授予副作用能力，门户显示原因；状态监控可保留，只读是否可用由兼容检查决定。
 
 ### 6.2 消息类型
@@ -473,7 +473,6 @@ const RoleBody = "minecraft-body"
 | backend→body | `body.inspect` | 内部只读预检，3s 内返回目标/手持/世界快照；不移动、不切换装备 |
 | body→backend | `body.inspect_result` | 关联 inspectId，返回 ActionSpec 所需的有界事实或 busy/stale |
 | backend→body | `body.call` | 执行动作（含 callId/connectionId/controlEpoch/policyRevision/timeoutMs） |
-| backend→body | `body.cancel` | 兼容的按 callId 取消；优先于普通动作 |
 | backend→body | `body.control` | stop/pause/resume/disconnect 与新 controlEpoch |
 | body→backend | `body.control_ack` | 确认清理完成/已暂停，带 epoch 与最终状态 |
 | body→backend | `body.policy_ack` | 已应用策略版本 |
@@ -496,8 +495,7 @@ const RoleBody = "minecraft-body"
   "connectionId": "body-connection-example",
   "controlEpoch": 1,
   "policyRevision": 1,
-  "session": "minecraft-main",
-  "requester": "mc:Admin"
+  "specId": "opaque-prepared-id"
 }
 ```
 
@@ -530,19 +528,36 @@ const RoleBody = "minecraft-body"
 
 ```json
 {
-  "connected": true, "paused": false, "name": "MineAgentBot",
-  "clientMcVersion": "26.1", "clientProtocol": 775, "viaProxy": true,
-  "targetMcVersion": "26.2", "targetProtocol": 776,
-  "connectionId": "body-connection-example", "controlEpoch": 1, "policyRevision": 1, "seq": 7,
-  "dimension": "minecraft:overworld",
+  "connectionId": "body-connection-example",
+  "controlEpoch": 1,
+  "policyRevision": 1,
+  "seq": 7,
+  "connected": true,
+  "paused": false,
+  "name": "MineAgentBot",
   "worldId": "body-test-world",
-  "pos": [101.5, 64.0, -32.5], "yaw": 1.5708, "pitch": 0.0,
-  "health": 20, "food": 18, "saturation": 5.0,
-  "gameMode": "survival", "onGround": true, "inWater": false, "inLava": false,
-  "heldItem": {"name": "minecraft:iron_pickaxe", "count": 1, "durability": 250},
-  "selectedSlot": 0, "inventoryCount": 12,
-  "task": {"id": "body-...", "tool": "body_goto", "startedAt": 1760000000000, "progress": "走到 (101,64,-32)"},
-  "updatedAt": 1760000001000
+  "dimension": "minecraft:overworld",
+  "pos": [
+    101.5,
+    64,
+    -32.5
+  ],
+  "yaw": 1.57,
+  "pitch": 0,
+  "health": 20,
+  "food": 18,
+  "gameMode": "survival",
+  "heldItem": "iron_pickaxe",
+  "task": {
+    "id": "body-call-example",
+    "tool": "body_goto",
+    "startedAt": 1760000000000
+  },
+  "updatedAt": 1760000001000,
+  "onlineSince": 1760000000000,
+  "clientMcVersion": "26.1",
+  "targetMcVersion": "26.2",
+  "viaProxy": true
 }
 ```
 
@@ -558,21 +573,55 @@ const RoleBody = "minecraft-body"
 
 ```json
 {
-  "paused": false,
-  "mode": "assist",
   "connectionId": "body-connection-example",
   "controlEpoch": 1,
   "policyRevision": 1,
-  "zones": {"mode": "allowlist", "areas": [{"name": "agent-yard", "worldId": "body-test-world", "min": [80, 60, -50], "max": [140, 90, 10]}]},
-  "denyBlocks": ["minecraft:bedrock", "minecraft:command_block"],
+  "bodyId": "main",
+  "name": "MineAgentBot",
+  "mode": "assist",
+  "paused": true,
+  "expectedMcVersion": "26.2",
+  "worldMappings": [
+    {
+      "worldId": "body-test-world",
+      "dimension": "minecraft:overworld"
+    }
+  ],
+  "zones": {
+    "mode": "allowlist",
+    "areas": [
+      {
+        "name": "yard",
+        "worldId": "body-test-world",
+        "min": [
+          80,
+          60,
+          -50
+        ],
+        "max": [
+          140,
+          90,
+          10
+        ]
+      }
+    ]
+  },
+  "denyBlocks": [],
   "denyItems": [],
-  "highRiskItems": ["minecraft:tnt", "minecraft:lava_bucket", "minecraft:water_bucket"],
-  "loopGuardCommands": ["agent", "ai", "mineagent"],
-  "approval": {"source": "portal", "timeoutSec": 120, "grantTTLms": 5000, "reasonMaxChars": 60},
-  "allowPvP": false,
-  "allowContainers": false,
-  "maxReach": 5,
-  "limits": {"actionsPerMin": 60, "blocksPerMin": 30, "chatPerMin": 6, "commandsPerMin": 3}
+  "highRiskItems": [],
+  "loopGuardCommands": [
+    "agent",
+    "ai",
+    "ma",
+    "mineagent"
+  ],
+  "limits": {
+    "actionsPerMin": 60,
+    "blocksPerMin": 30,
+    "chatPerMin": 6,
+    "commandsPerMin": 3,
+    "approvalsPerMin": 5
+  }
 }
 ```
 
@@ -827,7 +876,7 @@ P3 可选：`body_craft`、`body_sleep`、`body_screenshot`（prismarine-viewer�
 
 - Request 携带由后端构造的 `BodyPrincipal{channel,userID,authSessionID,runID,controlEpoch,deadline}`；令牌原文不进入提示词、工具参数、checkpoint、审计或 SSE。工具通过服务端认证上下文回调检查会话仍有效，默认拒绝空 principal。
 - **首次工具调用与审批 resume 都重新检查**：会话撤销/过期、管理员撤权、模式、暂停、控制代次、策略、身体连接与运行截止时间。pendingRun 保存的是关联资料，不能把旧 bool 当永久授权。
-- MC：`body.mcControl.enabled=false`。离线名字、UUID、OP、LuckPerms control 权限都不能证明操作者身份；v1 不设置 `mcOperators` 名单作为认证手段。未来启用前须设计已认证门户账号与本次 MC 连接的短期授权绑定，避免可复用口令落入公共聊天；另行评审后才开放。
+- MC：MC 控制固定关闭（无启用配置）。离线名字、UUID、OP、LuckPerms control 权限都不能证明操作者身份；v1 不设置 `mcOperators` 名单作为认证手段。未来启用前须设计已认证门户账号与本次 MC 连接的短期授权绑定，避免可复用口令落入公共聊天；另行评审后才开放。
 - 将来 MC 获得可信绑定时，身体控制使用独立会话及仅该操作员请求的上下文；不能用全服共享历史中的文字作为动作授权。当前网页指令也只授权本次明确请求，观察到的聊天仅为资料。
 
 ### 8.3 Runner 与限制
@@ -898,11 +947,11 @@ v1 只支持有界同步动作：
 - 命令仍以机器人玩家身份直接执行，由 LuckPerms 决定权限；不增加命令审批或安全 allowlist。循环保护与输入校验另见 §9.5。
 - 高危判断覆盖 `body_dig/place/interact/use_item`，按 §9.5 分类；缺 reason 不创建审批。文案保持固定短模板 + 简短理由，不引入额外 LLM 改写。
 - Go 先用 body.inspect 获取当前世界、目标方块状态、主副手槽位/物品与位置（inspectId 关联，3s 超时；不向 LLM 暴露为工具）。Node 只做读取，存在其他写动作时返回 busy，禁止通过“预检”产生移动/装备副作用；Go 对返回事实做严格类型和长度校验。
-- 后端先解析成不可变 ActionSpec：bodyId、世界/维度、目标坐标/实体、方块状态、手持/副手槽位及物品、参数、policyRevision、controlEpoch、连接、过期时间；模型不能在批准后再替换目标或物品。
+- Node 先只读解析并缓存不可变 ActionSpec，Go 获取有界事实与不透明 specId：bodyId、世界/维度、目标坐标/实体、方块状态、手持/副手槽位及物品、参数、policyRevision、controlEpoch、连接、过期时间；模型不能在批准后再替换目标或物品。
 - 复用现有 Approvals/Create/Interrupt 与 Paper 按钮 UI，但**不能直接复用 approvalTool 的批准后立刻 Gateway.Call 分支**。恢复时先重做 §8.2 授权、预算与策略，再请求 Node 做本地目标复核。
-- 高危调用带后端生成的单次 approvalGrant（approvalId、ActionSpec 摘要、有效期与 epoch）；Node 在当前认证连接内核对并消费，不接收模型自行构造的 grant。Node 若发现实际上下文比已批准动作更危险，返回 stale，重新请求审批。
+- 高危调用带后端生成的单次 approvalGrant（approvalId、specId、有效期与 epoch）；Node 在当前认证连接内核对并消费，不接收模型自行构造的 grant。Node 若发现实际上下文比已批准动作更危险，返回 stale，重新请求审批。
 - 等待审批默认 120s，批准后的 grant 最多 5s 且不超过原 run 截止时间；拒绝/超时/断线/死亡/控制或策略代次变化即失效，不自动重新申请。未配置可信审批人时保持 observe 或仅普通动作，高危动作拒绝。
-- 当前 Approvals timeout 是实例级配置，不能为 body 的 120s 修改所有旧审批；实施时给现有管理器增加每条审批的可选 timeout（旧请求仍 180s），继续共用 Agent 的决策通知与路由。
+- Approvals 已增加按条目的可选 timeout；body 使用 120s，旧请求仍 180s，继续共用 Agent 的决策通知与路由。
 - 重启不自动恢复：SQLite checkpoint 可能仍在，但审批关联、连接与 epoch 都已失效。清理过期 checkpoint 不是执行恢复机制。
 
 ---
@@ -1011,8 +1060,8 @@ v1 只支持有界同步动作：
 
 - 所有改变世界的动作、命令、拒绝、审批、限速都写；只读成功默认不写（避免刷库），拒绝/错误写。
 - 高危动作的 `reason`、审批人、目标坐标/物品写进 `args`/`result`，便于事后追溯“为什么批准”。
-- 审计保留目标 90 天；当前无本功能清理器，实施时须增加按 body risk 前缀清理及索引/备份策略，不清理其他工具记录；不记录完整背包/NBT；不记录 token。写动作先记 dispatch，再补终态；起始审计写入失败则不下发副作用；日志脱敏不等于可以直接把任意命令参数写入数据库。含凭据的命令/参数应拒绝或掩码，只保存必要摘要。
-- 门户 `/body` 可显示最近 50 条（P2）；v1 用 SQL/日志查询。
+- 审计保留 90 天；已增加每小时按 body risk 前缀分批清理，不清理其他工具记录；不记录完整背包/NBT；不记录 token。写动作先记 dispatch，再补终态；起始审计写入失败则不下发副作用；日志脱敏不等于可以直接把任意命令参数写入数据库。含凭据的命令/参数应拒绝或掩码，只保存必要摘要。
+- V1 提供管理员 `GET /api/body/audit` 查询最近 50 条；页面展示状态/事件/审批，暂无审计列表 UI。
 
 ### 9.9 离线模式与身份
 
@@ -1053,11 +1102,14 @@ v1 只支持有界同步动作：
     "name": "MineAgentBot",
     "expectedMcVersion": "26.2",
     "token": "",
-    "mcControl": {"enabled": false},
-    "webAdmins": true,
     "maxSteps": 12,
     "runTimeoutSec": 240,
-    "worldMappings": [{"dimension": "minecraft:overworld", "worldId": "body-test-world"}],
+    "worldMappings": [
+      {
+        "dimension": "minecraft:overworld",
+        "worldId": "body-test-world"
+      }
+    ],
     "limits": {
       "actionsPerMin": 60,
       "blocksPerMin": 30,
@@ -1068,26 +1120,44 @@ v1 只支持有界同步动作：
     "zones": {
       "mode": "allowlist",
       "areas": [
-        {"name": "agent-yard", "worldId": "body-test-world", "min": [80, 60, -50], "max": [140, 90, 10]}
+        {
+          "name": "yard",
+          "worldId": "body-test-world",
+          "min": [
+            -32,
+            -64,
+            -32
+          ],
+          "max": [
+            32,
+            100,
+            32
+          ]
+        }
       ]
     },
-    "denyBlocks": ["minecraft:bedrock", "minecraft:barrier", "minecraft:command_block"],
+    "denyBlocks": [],
     "denyItems": [],
-    "highRiskItems": [
-      "minecraft:tnt",
-      "minecraft:lava_bucket",
-      "minecraft:water_bucket",
-      "minecraft:flint_and_steel",
-      "minecraft:respawn_anchor",
-      "minecraft:end_crystal"
+    "highRiskItems": [],
+    "approval": {
+      "source": "portal",
+      "timeoutSec": 120,
+      "grantTTLms": 5000,
+      "reasonMaxChars": 60
+    },
+    "loopGuardCommands": [
+      "agent",
+      "ai",
+      "ma",
+      "mineagent"
     ],
-    "approval": {"source": "portal", "timeoutSec": 120, "grantTTLms": 5000, "reasonMaxChars": 60},
-    "loopGuardCommands": ["agent", "ai", "mineagent"],
-    "allowPvP": false,
-    "allowContainers": false,
-    "profile": {"enabled": false, "readTokenEnv": "MINEAGENT_BODY_PROFILE_TOKEN", "publicPosition": "none"},
-    "portal": {"enabled": true, "aiProfile": true},
-    "mineui": {"hud": false}
+    "profile": {
+      "enabled": false,
+      "tokenHash": "",
+      "displayName": "",
+      "skin": "",
+      "hideDimension": true
+    }
   }
 }
 ```
@@ -1109,30 +1179,15 @@ v1 只支持有界同步动作：
     "host": "127.0.0.1",
     "port": 25566,
     "version": "26.1",
+    "targetVersion": "26.2",
     "username": "MineAgentBot",
     "auth": "offline",
-    "proxy": "127.0.0.1:25566"
-  },
-  "pathfinder": {
-    "canDig": false,
-    "canOpenDoors": false,
-    "allowParkour": false,
-    "maxDropDown": 3
-  },
-  "safety": {
-    "autoEat": false,
-    "autoRespawn": true,
-    "maxReach": 5,
-    "allowPvP": false,
-    "allowContainers": false,
-    "denyBlocks": ["minecraft:bedrock", "minecraft:barrier"],
-    "hardDenyItems": []
-  },
-  "logLevel": "info"
+    "viaProxy": true
+  }
 }
 ```
 
-- `minecraft.port` 在直连时是 25565；用 ViaProxy 时是 25566。`proxy` 字段仅用于文档/状态展示，不是 Mineflayer 参数。
+- `minecraft.port` 在直连时是目标回环端口；用 ViaProxy 时是其回环监听端口。`targetVersion` 和 `viaProxy` 明确区分目标与客户端版本。路径/PvP/容器/自动吃东西等安全规则固定在执行器内，不接受配置放开。
 - `auth=offline`；服务端 `online-mode=false`。若未来开正版，改 `auth=microsoft` + device code，另评。
 - `version` 必须与安装的 `minecraft-data` 支持一致；启动时校验，失败上报 `unsupported_version`。
 
@@ -1163,14 +1218,14 @@ v1 只支持有界同步动作：
 |---|---|---|---|
 | `mineagent.service` | 现有 systemd | 自动 | 后端；改动需 `scripts/deploy.sh` |
 | `mineagent-body.service` | 新增 systemd | `Restart=always` | Node 服务；`MemoryMax=512M` |
-| `viaproxy.service` | 新增 systemd（临时） | `Restart=always` | Java；`-Xmx256M`；仅 26.2 过渡期 |
+| `viaproxy.service` | 新增 systemd（临时） | `Restart=always` | Java；`-Xmx320M`；仅 26.2 过渡期，模板未自动安装 |
 | Paper | 现有 `start.sh`/tmux | 手动 | 不归 mineAgent 管 |
 
 启动顺序：测试 Paper → ViaProxy → 后端 → mineagent-body（身体会重试，顺序不强制；但先有服务器/代理更容易看到日志）。
 
 ### 11.2 版本矩阵
 
-以下为候选组合与原文运行时快照，M0 必须用实际安装版本重填；不是本轮生产盘点或已验证组合。
+以下组合已在独立回环测试服通过 M0，详见 [body/M0_RESULTS.md](body/M0_RESULTS.md)，不代表生产部署。
 
 | 组件 | v1 值 | 说明 |
 |---|---|---|
@@ -1179,7 +1234,7 @@ v1 只支持有界同步动作：
 | Node | 22.22.1 | Mineflayer ≥22 |
 | mineflayer | 4.39.0 | 支持到 26.1 |
 | minecraft-data | 3.117.0 | 26.1 数据 |
-| mineflayer-pathfinder | M0 选择精确版本/commit | 选定版需通过 M0 并锁定 |
+| mineflayer-pathfinder | `d773d15ff1bb271090122b3c7106a519a68bbbd9` | 固定上游提交，包内版本仍 2.4.5 |
 | mineflayer-collectblock | 1.6.0（P2） | MIT |
 | ViaProxy | 3.4.14 | 26.1 client → 26.2 server |
 | Go | 1.27.1 | 后端 |
@@ -1223,8 +1278,8 @@ node src/index.js --config /home/ubuntu/mineagent-data/body/config.json
 
 ### 11.6 资源限制
 
-- Paper `-Xmx2G`；宿主 7.5G，约 3.8G 可用但 **swap 已用 ~1.7G**；**2 vCPU** 与 BlueMap/Chunky 共享。身体 Node 目标 RSS ≤300MB；ViaProxy Java ≤256–384MB；系统留 ≥1G。
-- systemd `MemoryMax=512M`（body）、`MemoryMax=512M`（ViaProxy）；超限重启并告警。
+- Paper `-Xmx2G`；宿主 7.5G，约 3.8G 可用但 **swap 已用 ~1.7G**；**2 vCPU** 与 BlueMap/Chunky 共享。身体 Node 目标 RSS ≤300MB；ViaProxy 实测 RSS 约 455MiB（原 256–384MB 估计不足）；系统留 ≥1G。
+- systemd `MemoryMax=512M`（body）、`MemoryMax=768M`（ViaProxy，建议值，正式启用前复测）；超限重启并告警。
 - 不做渲染/视频/GL；不用 HeadlessMC；不跑多个身体。
 - 单身体加载区块正常（`view-distance=10`）；不要开超大寻路半径（`findBlocks` ≤32；`goto` 分多次）。
 - 错峰：BlueMap 渲染/Chunky 预生成时不要跑长距离寻路；在线身体仍会产生物理 tick、网络和区块加载开销，以实测为准。
@@ -1378,7 +1433,7 @@ node src/index.js --config /home/ubuntu/mineagent-data/body/config.json
 - `body_say` 可见；`body_command` 回显捕获；**有权限命令成功、无权限命令失败**；失败有明确 code。
 - 高危动作必须有非空 `reason` 并完成审批；普通指令不产生审批请求。
 - 安全测试零未授权破坏/命令；审计 100% 覆盖动作/拒绝/审批（含 reason）。
-- 身体 RSS ≤300MB；ViaProxy ≤384MB 为初始目标。固定同一测试负载比较 MSPT/CPU/RSS/换页；TPS 封顶不能单独证明“无影响”，记录样本与允许阈值后再决定上线。
+- 身体 RSS ≤300MB；ViaProxy 原 ≤384MB 目标未达成，实测约 455MiB，资源预算调整为至少 768M 上限。固定同一测试负载比较 MSPT/CPU/RSS/换页；TPS 封顶不能单独证明“无影响”，记录样本与允许阈值后再决定上线。
 - 急停后 2s 内停止动作；重连后不自动继续旧任务。
 
 ---
@@ -1489,7 +1544,7 @@ node src/index.js --config /home/ubuntu/mineagent-data/body/config.json
 | 许可证 | 合规 | MIT 依赖；ViaProxy GPL 独立进程；GPL 假人仅评估；不复制代码 |
 | 性能 | TPS/内存 | 单身体；限速；find/goto 半径限制；监控；不留 GL/渲染 |
 
-### 决策记录（按时间追加，当前规则以 v1.1 修订为准）
+### 决策记录（按时间追加，实际 V1 边界以 §18 与 body/README.md 为准）
 
 - 2026-10-19：选 Mineflayer 身体 + Go 策略层；P1 用 ViaProxy；`body_*` 命名；operator-only；门户 `/body` 核心；不改 Paper 插件。
 - 2026-10-19（第二轮）：审批简化——指令不做 mineAgent 审批，直接走机器人 LuckPerms 组；只有高危方块/物品审批，agent 写 `reason`，审批请求为一句短消息；新增 AI 玩家资料模块与论坛/blog 需求文档（后者不由 mineAgent 实现）。
@@ -1552,7 +1607,17 @@ node src/index.js --config /home/ubuntu/mineagent-data/body/config.json
 
 ## 18. 实施记录
 
-2026-10-19：完成 v1.1 文档评审修订；尚未开发、执行 M0 或部署。后续填写实现 commit、上线时间、与设计偏差、锁定依赖/校验和、spike 结果、停止/身份/世界边界验证与恢复演练。
+2026-10-19：完成 v1.1 文档评审修订（提交 `ecec29c`）。
+
+2026-10-20：交付 V1 代码、锁文件、默认关闭的配置、门户控制与可复现 E2E 脚本。**未改生产配置/二进制，未部署身体/代理服务，未重启正式 Paper 或 MineAgent。**
+
+- 已实现 M1–M4 的代码范围：12 个工具、独立 role/token、策略 ACK、500ms/1.5s 控制租约、代次取消、网页管理员会话复核、12 步/240s 预算、单身体串行、区域/双手/目标状态检查、门户审批、单次 grant、审计与部署 drain。只读资料接口已交付，论坛与写作能力未实施。
+- M0 完成：真实 Paper 26.2 + ViaProxy 3.4.14 + Mineflayer 4.39.0/26.1，156 次路线往返、7 次主动重连、连续 30 分钟通过。Node 约 159MiB，代理约 455MiB；代理原 384MB 目标不达标，修正部署预算。精确版本/哈希见 [body/M0_RESULTS.md](body/M0_RESULTS.md)。
+- 世界身份复用现有已认证 Paper `minecraft_server_status` / `minecraft_player_info` 查询，动作前核对真实版本、玩家实际世界名、位置与非 OP 状态；无须改 Paper 插件公开接口。同维度多世界仍不得配置歧义映射，未知身份拒绝执行。
+- 协议实现以 `internal/protocol/body.go`、`body/src` 为准。`body.inspect` 在 Node 缓存不可变完整动作（含支撑面/朝向/危险邻块），Go 只授予 specId，不由模型重传动作；没有独立 `body.cancel`，取消统一进入控制代次。状态快照不含饱和度/拾取事件等扩展字段；V1 当前事件包括上线、离线、暂停、聊天、死亡与踢出，不承诺完整战斗/拾取时间线。
+- 交互范围收紧为方块门/按钮/拉杆/床/锚，容器与实体交互拒绝；物品仅安全食物及有限桶/点火尝试，末影水晶等不会因位于高危列表而自动成为可用能力。液体、点火、床锚破坏场景尚未实服验证，不应开放到玩家建筑区域。
+- 测试与局限：Go 全量回归/相关包竞态、8 项 Node 安全用例、10 项部署测试通过。2026-10-20 隔离 E2E 通过：模拟模型发起 16 次调用，覆盖全部 12 个工具、真实 TNT 审批恢复、批准后目标变化拒绝、行走中 2 秒内急停、资料权限和手机页面/SSE；寻路搜索总预算设为 3 秒、每片最多 10ms，整数/优化节点按物理站位统一到达半径，超过预算返回实际部分位置；模拟模型只验证工具循环集成，不证明模型规划质量。24h soak、生产同负载性能基线、全部高危/混沌矩阵及正式 LuckPerms/服务端保护验收未完成；不能将代码交付视为全部上线 gate 已通过。
+- 客户端 mod 按后续需求增加：可做任务面板、HUD、视角或手动接管，优先复用 MineUI 公开 API；控制权切换必须先暂停 agent、递增 epoch、废弃旧任务，再发短期授权。第一版无需 mod，未修改其他插件。操作说明见 [body/README.md](body/README.md)。
 
 ---
 
@@ -1567,10 +1632,10 @@ node src/index.js --config /home/ubuntu/mineagent-data/body/config.json
 | `paper-plugin` | 隔离单世界 P1 可不改；生产世界身份/强保护按 §9.4 提前；HUD/ActionBar 属于 P2 |
 | MineUI/MineAudio/MineDisplay | 只通过公开 API；P1 不依赖 |
 
-## 附录 B：M0 spike 清单（后续隔离实验，本次未执行）
+## 附录 B：M0 spike 清单（执行结果见 body/M0_RESULTS.md）
 
 1. 测试服：Paper 26.2（或复制生产 jar），离线模式，平坦世界，仅回环绑定的独立测试端口，示例 25665；独立目录/世界/账号，不连接生产 25565。
-2. ViaProxy 3.4.14：`127.0.0.1:25666` → `127.0.0.1:25665`；`-Xmx256M`，确认端口未占用后使用。
+2. ViaProxy 3.4.14：`127.0.0.1:25666` → `127.0.0.1:25665`；`-Xmx320M`，确认端口未占用后使用。
 3. 最小 Mineflayer 26.1 脚本：`createBot({host, port:25666, username:'MineAgentTest', auth:'offline', version:'26.1'})`。
 4. 验证：spawn、`waitForChunksToLoad`、走 10 格、挖一个方块、放一个方块、开门、吃食物、发聊天、`/time query daytime`、stop。
 5. 观察服务端日志/踢出/desync；测 30 分钟 TPS/内存；杀进程重连。

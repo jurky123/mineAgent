@@ -158,6 +158,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	c.plugin = hello.Plugin
 	c.pluginVersion = hello.PluginVersion
 	c.serverVersion = hello.ServerVersion
+	c.hello = hello
+	c.hello.Token = ""
+	if c.role == protocol.RoleBody {
+		sock.SetReadLimit(16 << 10)
+	}
 
 	if err := c.Send(protocol.TypeHelloAck, protocol.HelloAck{
 		Protocol:   protocol.Version,
@@ -224,12 +229,17 @@ type Conn struct {
 	plugin        string
 	pluginVersion string
 	serverVersion string
+	hello         protocol.Hello
 
 	writeMu   sync.Mutex
 	mu        sync.Mutex
 	lastSeen  time.Time
 	closeOnce sync.Once
 }
+
+func (c *Conn) SendProtocol(typ string, data any) error { return c.Send(typ, data) }
+func (c *Conn) Hello() protocol.Hello                   { return c.hello }
+func (c *Conn) Reject(reason string)                    { c.close(websocket.StatusPolicyViolation, reason) }
 
 func (c *Conn) Remote() string        { return c.remote }
 func (c *Conn) RemoteRole() string    { return c.role }
@@ -241,7 +251,11 @@ func (c *Conn) Send(typ string, data any) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), c.server.writeTimeout)
+	timeout := c.server.writeTimeout
+	if c.role == protocol.RoleBody {
+		timeout = 250 * time.Millisecond
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -299,7 +313,32 @@ func (c *Conn) expectHello(ctx context.Context) (protocol.Hello, error) {
 		c.close(websocket.StatusPolicyViolation, "unsupported protocol version")
 		return hello, err
 	}
-	if token := c.server.cfg.Token; token != "" {
+	if hello.Role == "" {
+		hello.Role = protocol.RoleMinecraft
+	}
+	token := c.server.cfg.Token
+	if c.server.cfg.Body.Enabled && len(token) < 32 {
+		c.close(websocket.StatusPolicyViolation, "Paper authentication required for body")
+		return hello, errors.New("invalid body authentication configuration")
+	}
+	if hello.Role == protocol.RoleBody {
+		b := c.server.cfg.Body
+		allowed := false
+		for _, r := range c.server.cfg.AllowedRoles {
+			if r == protocol.RoleBody {
+				allowed = true
+			}
+		}
+		if !b.Enabled || !allowed || len(b.Token) < 32 || b.Token == token || hello.BodyID != b.ID || hello.BodyName != b.Name || hello.BodyProtocolVersion != protocol.BodyVersion || hello.TargetMcVersion != b.ExpectedMcVersion {
+			c.close(websocket.StatusPolicyViolation, "body handshake rejected")
+			return hello, errors.New("body handshake rejected")
+		}
+		token = b.Token
+	} else if c.server.cfg.Body.Token != "" && subtle.ConstantTimeCompare([]byte(hello.Token), []byte(c.server.cfg.Body.Token)) == 1 {
+		c.close(websocket.StatusPolicyViolation, "wrong role")
+		return hello, errors.New("body token cannot authenticate other roles")
+	}
+	if token != "" {
 		if subtle.ConstantTimeCompare([]byte(hello.Token), []byte(token)) != 1 {
 			err := errors.New("invalid token")
 			c.close(websocket.StatusPolicyViolation, "invalid token")

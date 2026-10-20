@@ -1,0 +1,21 @@
+{
+  "name": "mineagent-body",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "mineflayer": "4.39.0",
+    "mineflayer-pathfinder": "https://codeload.github.com/PrismarineJS/mineflayer-pathfinder/tar.gz/d773d15ff1bb271090122b3c7106a519a68bbbd9",
+    "vec3": "0.1.10"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}

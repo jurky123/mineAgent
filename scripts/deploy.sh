@@ -17,25 +17,30 @@ echo "==> 构建（暂存，不覆盖运行中的二进制）"
 make build BUILD_OUTPUT="$DEPLOY_BUILD_DIR/mineagent"
 
 if [[ "${1:-}" == "--force" ]]; then
-  echo "==> --force：跳过对局检查"
+  echo "==> --force：跳过对局检查和身体 drain（将打断身体动作）"
 else
   if ! WEB_SETTINGS=$(python3 - "$CONFIG" <<'PY'
 import json, sys
 with open(sys.argv[1]) as f:
-    web = json.load(f).get('web', {})
+    cfg = json.load(f)
+    web = cfg.get('web', {})
 listen = web.get('listen', '')
 data_dir = web.get('dataDir', 'data/webui')
 if not isinstance(listen, str) or not listen or not isinstance(data_dir, str) or not data_dir:
     raise ValueError('web.listen / web.dataDir 无效')
 print(listen)
 print(data_dir)
+body = cfg.get("body", {})
+print("enabled" if body.get("enabled") is True and body.get("mode", "off") != "off" else "disabled")
 PY
   ); then
     echo "==> 无法读取网页监听配置，拒绝部署；确认要跳过检查用 --force" >&2
     exit 1
   fi
-  LISTEN="${WEB_SETTINGS%%$'\n'*}"
-  DATA_DIR="${WEB_SETTINGS#*$'\n'}"
+  mapfile -t DEPLOY_SETTINGS <<< "$WEB_SETTINGS"
+  LISTEN="${DEPLOY_SETTINGS[0]}"
+  DATA_DIR="${DEPLOY_SETTINGS[1]}"
+  BODY_ENABLED="${DEPLOY_SETTINGS[2]}"
   TOKEN_FILE="${TOKEN_FILE:-$DATA_DIR/deploy-token.txt}"
   if ! python3 - "$TOKEN_FILE" "$DEPLOY_BUILD_DIR/auth-header" <<'PY'
 import sys
@@ -70,6 +75,17 @@ print(data["playing"])
   if [[ "$PLAYING" != "0" ]]; then
     echo "==> 有 $PLAYING 局进行中，拒绝重启（会清空房间）。确认要重启用：scripts/deploy.sh --force" >&2
     exit 1
+  fi
+  if [[ "$BODY_ENABLED" == "enabled" ]]; then
+    echo "==> 禁止新身体动作并等待空闲"
+    if ! BODY_DRAIN=$(curl -fsS -m 35 -H "@$DEPLOY_BUILD_DIR/auth-header" -H 'Content-Type: application/json' -X POST --data '{}' "http://$HOST/api/body/drain"); then
+      echo "==> 身体 drain 失败，拒绝替换/重启；已进入 drain 时需管理员在 /body 恢复" >&2
+      exit 1
+    fi
+    if ! printf '%s' "$BODY_DRAIN" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if isinstance(d,dict) and d.get("idle") is True and d.get("draining") is True else 1)'; then
+      echo "==> 身体 drain 未确认空闲，拒绝替换/重启" >&2
+      exit 1
+    fi
   fi
   echo "==> 没有进行中的对局，可以重启"
 fi

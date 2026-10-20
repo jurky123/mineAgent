@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -26,6 +27,7 @@ type Config struct {
 	Tools        Tools     `json:"tools"`
 	Workspace    Workspace `json:"workspace"`
 	Agent        Agent     `json:"agent"`
+	Body         Body      `json:"body"`
 }
 
 type Minecraft struct {
@@ -359,6 +361,7 @@ func Default() Config {
 			Review:         ExecReview{TimeoutSec: 20},
 		},
 		Agent: DefaultAgent(),
+		Body:  DefaultBody(),
 	}
 }
 
@@ -488,6 +491,14 @@ func Load(path string) (Config, error) {
 	if cfg.Agent.MaxConcurrentRuns <= 0 {
 		cfg.Agent.MaxConcurrentRuns = d.MaxConcurrentRuns
 	}
+	if err := cfg.Body.Validate(cfg.Token, cfg.Listen); err != nil {
+		return cfg, err
+	}
+	if cfg.Body.Profile.Enabled {
+		if h, err := hex.DecodeString(cfg.Body.Profile.TokenHash); err != nil || len(h) != 32 {
+			return cfg, fmt.Errorf("body.profile.tokenHash 必须为 SHA-256 摘要")
+		}
+	}
 	return cfg, nil
 }
 
@@ -505,6 +516,12 @@ func (c Config) SlogLevel() slog.Level {
 }
 
 func (c Config) Redacted() Config {
+	if c.Body.Token != "" {
+		c.Body.Token = "<set>"
+	}
+	if c.Body.Profile.TokenHash != "" {
+		c.Body.Profile.TokenHash = "<set>"
+	}
 	if c.Token != "" {
 		c.Token = "<set>"
 	}
@@ -537,6 +554,11 @@ func applyEnv(cfg *Config) {
 	}
 	set(&cfg.Listen, "MINEAGENT_LISTEN")
 	set(&cfg.Token, "MINEAGENT_TOKEN")
+	set(&cfg.Body.Token, "MINEAGENT_BODY_TOKEN")
+	if v := os.Getenv("MINEAGENT_BODY_PROFILE_TOKEN"); v != "" {
+		h := sha256.Sum256([]byte(v))
+		cfg.Body.Profile.TokenHash = hex.EncodeToString(h[:])
+	}
 	set(&cfg.Model.APIKey, "MINEAGENT_MODEL_API_KEY")
 	set(&cfg.Model.BaseURL, "MINEAGENT_MODEL_BASE_URL")
 	set(&cfg.Model.Name, "MINEAGENT_MODEL_NAME")

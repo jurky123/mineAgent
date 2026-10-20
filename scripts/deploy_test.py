@@ -43,6 +43,11 @@ if sys.argv[-1].endswith('/api/games/active'):
     assert Path(header_arg[1:]).read_text() == 'Authorization: Bearer test-token\\n'
     if os.environ.get('MOCK_CURL_EXIT'): sys.exit(int(os.environ['MOCK_CURL_EXIT']))
     print(os.environ.get('MOCK_RESPONSE', '{"playing":0}'))
+elif sys.argv[-1].endswith('/api/body/drain'):
+    log('body-drain')
+    assert '-X' in sys.argv and 'POST' in sys.argv
+    if os.environ.get('MOCK_BODY_EXIT'): sys.exit(int(os.environ['MOCK_BODY_EXIT']))
+    print(os.environ.get('MOCK_BODY_RESPONSE', '{"idle":true,"draining":true}'))
 else:
     print('200')
 """,
@@ -103,6 +108,23 @@ else:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.binary.read_text(), "new-version")
         self.assertNotIn("query", self.trace.read_text())
+
+    def enable_body(self):
+        cfg = json.loads(self.config.read_text())
+        cfg['body'] = {'enabled': True, 'mode': 'assist'}
+        self.config.write_text(json.dumps(cfg))
+
+    def test_body_drain_runs_before_install_and_restart(self):
+        self.enable_body()
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.trace.read_text().splitlines(), ['build', 'query', 'body-drain', 'restart', 'status'])
+
+    def test_body_busy_unknown_and_http_failures_block_install(self):
+        self.enable_body()
+        for response in ['{}', '{"idle":false,"draining":true}', '{"idle":true}', '{"idle":1,"draining":true}', 'not-json']:
+            self.assert_blocked(self.run_deploy(MOCK_BODY_RESPONSE=response))
+        self.assert_blocked(self.run_deploy(MOCK_BODY_EXIT='22'))
 
     def test_unknown_argument_blocks(self):
         self.assert_blocked(self.run_deploy("--froce"))

@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,6 +21,7 @@ import (
 	"mineagent/internal/account"
 	"mineagent/internal/agent"
 	"mineagent/internal/aibot"
+	"mineagent/internal/body"
 	"mineagent/internal/channels/minecraft"
 	"mineagent/internal/commentary"
 	"mineagent/internal/config"
@@ -182,6 +184,45 @@ func main() {
 	approvalTimeout := time.Duration(cfg.Tools.ApprovalTimeoutSeconds) * time.Second
 	approvals := tools.NewApprovals(mc, approvalTimeout, log)
 	approvals.SetMaxPerRequester(cfg.QQ.MaxPendingPerUser)
+	bodySvc := body.New(cfg.Body, store, approvals, log)
+	bodySvc.WithWorldVerifier(func(ctx context.Context, sp protocol.BodySpec) error {
+		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		raw, err := gw.Call(cctx, "minecraft_server_status", json.RawMessage(`{}`))
+		if err != nil {
+			return fmt.Errorf("world_unknown")
+		}
+		var server struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal([]byte(raw), &server) != nil || server.Version != cfg.Body.ExpectedMcVersion {
+			return fmt.Errorf("unsupported")
+		}
+		args, _ := json.Marshal(map[string]string{"player": cfg.Body.Name})
+		raw, err = gw.Call(cctx, "minecraft_player_info", args)
+		if err != nil {
+			return fmt.Errorf("world_unknown")
+		}
+		var player struct {
+			Name    string `json:"name"`
+			World   string `json:"world"`
+			X, Y, Z float64
+			OP      bool `json:"op"`
+		}
+		if json.Unmarshal([]byte(raw), &player) != nil || player.Name != cfg.Body.Name || player.World != sp.WorldID || player.OP {
+			return fmt.Errorf("world_unknown")
+		}
+		actual := [3]float64{player.X, player.Y, player.Z}
+		for i, v := range actual {
+			if math.Abs(v-sp.Pos[i]) > 1.5 {
+				return fmt.Errorf("stale")
+			}
+		}
+		return nil
+	})
+	if bodySvc.Enabled() {
+		go bodySvc.Run(ctx)
+	}
 	remindTools := tools.NewRemind(store, log).Tools()
 	agentTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...), remindTools...)
 
@@ -335,11 +376,13 @@ func main() {
 		// Old name-only tokens are not evidence of identity. Activation preserves user IDs/data.
 		// Legacy name-only sessions cannot prove account ownership and are not imported.
 
+		bodySvc.WithAuthorization(acct.RecheckAdminSession)
 		webCh = webui.NewChannel(log, cfg, acct, hub, store, ag,
 			wrapWebTools(webBaseTools, wsTools, store, sessionsFn, senderFn)).
 			WithMCStatus(mcStatusFn)
 
-		portalSrv = portal.New(log, cfg, store, acct, webCh)
+		webCh.WithBody(bodySvc, cfg.Body.MaxSteps)
+		portalSrv = portal.New(log, cfg, store, acct, webCh).WithBody(bodySvc)
 		gamesMgr := games.NewManager(log, store)
 		// AI 解说（每步点评）：用同一个模型网关，失败不影响对局
 		gamesMgr.SetCommentator(commentary.New(cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Name, log).Comment)
@@ -349,6 +392,12 @@ func main() {
 		// 浏览器屏内容反代（/display/* → Paper 出口代理）：屏地址走 HTTPS。
 		portalSrv.WithScreenProxy(cfg.Web.ScreenProxy)
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
+		if bodySvc.Enabled() {
+			portalSrv.Register(portal.App{ID: "body", Name: "AI 身体", Desc: "AI 玩家的状态、审批与控制", Icon: "user", Path: "/body", Enabled: true, AdminOnly: true, Nav: true, HomeRole: "status", Order: 34, Card: func(context.Context, *storage.User) (any, error) {
+				profile := bodySvc.Profile()
+				return map[string]any{"type": "stat", "title": "AI 身体", "value": profile["status"]}, nil
+			}})
+		}
 		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
 		// 必须在 WithGames 之后取 Handler()——门户 mux 是构建时快照，早取就没有 games 路由。
 		httpHandler := portalSrv.Handler()
@@ -414,6 +463,12 @@ func main() {
 	go reminder.New(store, log, deliverers).Run(ctx)
 
 	handler := func(ctx context.Context, c *ws.Conn, env *protocol.Envelope) {
+		if c.RemoteRole() == protocol.RoleBody {
+			if authorizeMessage(c.RemoteRole(), env.Type, bodySvc.Attached(c)) {
+				bodySvc.Handle(c, env)
+			}
+			return
+		}
 		if !authorizeMessage(c.RemoteRole(), env.Type, mc.Attached() == c) {
 			log.Warn("message rejected",
 				"role", c.RemoteRole(),
@@ -428,6 +483,9 @@ func main() {
 			var chat protocol.ChatMessage
 			if err := env.Decode(&chat); err != nil {
 				log.Warn("bad chat.message", "err", err)
+				return
+			}
+			if cfg.Body.Enabled && strings.EqualFold(chat.Player, cfg.Body.Name) {
 				return
 			}
 			msg, err := sess.Ingest(ctx, storage.Message{
@@ -498,11 +556,21 @@ func main() {
 
 	srv := ws.New(cfg, log, handler)
 	srv.OnConnect(func(c *ws.Conn) {
+		if c.RemoteRole() == protocol.RoleBody {
+			if err := bodySvc.Attach(c, c.Hello()); err != nil {
+				c.Reject("body registration rejected")
+			}
+			return
+		}
 		if c.RemoteRole() == protocol.RoleMinecraft {
 			mc.Attach(c)
 		}
 	})
 	srv.OnDisconnect(func(c *ws.Conn) {
+		if c.RemoteRole() == protocol.RoleBody {
+			bodySvc.Detach(c)
+			return
+		}
 		if c.RemoteRole() == protocol.RoleMinecraft {
 			mc.Detach(c)
 		}
@@ -583,6 +651,14 @@ func webPort(listen string) string {
 }
 
 func authorizeMessage(role, msgType string, attached bool) bool {
+	if role == protocol.RoleBody {
+		switch msgType {
+		case protocol.TypeBodyState, protocol.TypeBodyEvent, protocol.TypeBodyResult, protocol.TypeBodyInspectResult, protocol.TypeBodyPolicyAck, protocol.TypeBodyControlAck:
+			return attached
+		default:
+			return false
+		}
+	}
 	if role != protocol.RoleMinecraft {
 		return false
 	}

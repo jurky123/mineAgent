@@ -57,6 +57,15 @@ try {
   await page.getByRole("heading", { name: "Minecraft", exact: true }).waitFor();
   await page.getByRole("link", { name: "查看玩家列表 →" }).click();
   await page.getByRole("heading", { name: "AI 玩家", exact: true }).waitFor();
+  await page.evaluate(() => localStorage.setItem("mineagent.theme", "dark"));
+  await page.reload();
+  assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
+  await page.getByRole("button", { name: "切换深浅主题" }).click();
+  assert.equal(await page.evaluate(() => localStorage.getItem("mineagent.theme")), "light");
+  await page.getByRole("link", { name: "跳到正文", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "main");
+  await page.screenshot({ path: path.join(artifacts, "directory-desktop.png"), fullPage: true });
   assert.equal(
     await page.getByRole("link", { name: "文章", exact: true }).count(),
     0,
@@ -117,6 +126,14 @@ try {
     { name: "mineagent_token", value: adminToken, url: origin },
   ]);
   await page.reload();
+  await page.locator("#body-stop").waitFor();
+  assert.equal(await page.locator(".player-body-section > div").getAttribute("aria-live"), null);
+  await page.route("**/api/body/status?agent=main", (route) => route.fulfill({ status: 503, json: { error: "service_unavailable" } }));
+  await page.reload();
+  await page.getByText("暂时无法读取身体服务，请检查连接后重新检查。", { exact: true }).waitFor();
+  assert.equal(await page.getByText("登录主站账号", { exact: true }).count(), 0);
+  await page.unroute("**/api/body/status?agent=main");
+  await page.getByRole("button", { name: "重新检查权限", exact: true }).click();
   await page.locator("#body-stop").waitFor();
   await page.getByText(/private-fixture-world/).waitFor();
   assert.equal(
@@ -188,6 +205,11 @@ try {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(origin + "/ai/main");
     await page.locator("#body-stop").waitFor();
+    if (width === 390) {
+      assert.equal(await page.locator(".body-control").evaluate((el) => getComputedStyle(el).position), "static");
+      await page.getByLabel("给当前玩家的任务", { exact: true }).focus();
+      assert(await page.locator("#body-task-input").evaluate((el) => el.matches(":focus-visible")));
+    }
     assert(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -202,10 +224,34 @@ try {
   }
   await page.getByRole("button", { name: "切换深浅主题" }).click();
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+  assert(await page.locator("#body-agent-chat").evaluate((el) => getComputedStyle(el).backgroundColor === getComputedStyle(document.querySelector(".body-card")).backgroundColor));
   await page.screenshot({
     path: path.join(artifacts, "profile-dark.png"),
     fullPage: true,
   });
+  // Identical polling must retain keyboard focus and avoid repeated live-region
+  // replacement. This synthetic approval is UI-only; no approval POST is sent.
+  await page.route("**/api/body/approvals?agent=main", (route) => route.fulfill({
+    json: { approvals: [{ approvalId: "ui-only", prompt: "仅用于键盘验收的模拟审批" }] },
+  }));
+  const approve = page.getByRole("button", { name: "批准本次动作", exact: true });
+  await approve.waitFor();
+  await approve.focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), "拒绝");
+  await page.evaluate(() => {
+    window.uiApprovalButton = document.activeElement;
+    window.uiReplyList = document.querySelector("#body-replies").firstChild;
+  });
+  const poll = await page.waitForResponse((r) => r.url().includes("/api/body/approvals?agent=main"));
+  await poll.finished();
+  await page.waitForTimeout(150);
+  assert(await page.evaluate(() => document.activeElement === window.uiApprovalButton));
+  assert(await page.evaluate(() => document.querySelector("#body-replies").firstChild === window.uiReplyList));
+  await page.unroute("**/api/body/approvals?agent=main");
+  await page.locator("#body-approval-title").focus();
+  await page.getByText("暂无待审核动作。", { exact: true }).waitFor();
   await page.goto(origin + "/ai/new");
   await page.getByRole("heading", { name: "论坛暂未开放" }).waitFor();
   assert.equal(
@@ -263,6 +309,7 @@ try {
         "forum closed",
         "390/768/1280",
         "dark/reduced motion",
+        "shared portal theme / keyboard / stable polling focus",
         "offline/stale/recovery",
         "logout",
         "legacy control survives content-service outage",

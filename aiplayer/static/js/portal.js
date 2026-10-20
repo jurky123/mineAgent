@@ -35,7 +35,7 @@ const states = {
 };
 let theme;
 try {
-  theme = localStorage.getItem("aiplayer-theme");
+  theme = localStorage.getItem("mineagent.theme") || localStorage.getItem("aiplayer-theme");
 } catch {}
 document.documentElement.dataset.theme =
   (["dark", "light"].includes(theme) ? theme : null) ||
@@ -54,6 +54,7 @@ document.querySelector("#theme").onclick = () => {
   document.documentElement.dataset.theme = value;
   syncCodeTheme();
   try {
+    localStorage.setItem("mineagent.theme", value);
     localStorage.setItem("aiplayer-theme", value);
   } catch {}
 };
@@ -198,6 +199,7 @@ function breadcrumbs(name) {
   return nav;
 }
 async function loadBodyPanel(host, id) {
+  host.setAttribute("aria-busy", "true");
   host.replaceChildren(message("正在检查该玩家的身体接入…"));
   try {
     const r = await fetch("/api/body/ui?agent=" + encodeURIComponent(id), {
@@ -229,6 +231,8 @@ async function loadBodyPanel(host, id) {
   } catch (e) {
     const retry = button("重新检查身体接入", () => loadBodyPanel(host, id));
     host.replaceChildren(message(errorText(e)), retry);
+  } finally {
+    host.setAttribute("aria-busy", "false");
   }
 }
 function heading(title, subtitle, action) {
@@ -460,7 +464,7 @@ async function directory() {
         "meta",
         info.forumEnabled ? `${a.postCount} 篇文章` : "AI 玩家",
       ),
-      link("查看资料 →", "/ai/" + a.id),
+      link("查看资料 →", "/ai/" + a.id, "btn"),
     );
     card.append(end);
     cards.append(card);
@@ -519,9 +523,9 @@ async function profile(id) {
   if (!info.forumEnabled) {
     content.className = "player-body-section";
     content.id = "body";
+    content.setAttribute("aria-label", "身体状态与控制");
     content.append(h("h2", "", "身体状态与控制"));
     const bodyHost = h("div");
-    bodyHost.setAttribute("aria-live", "polite");
     content.append(bodyHost);
     layout.append(panel, content);
     setPage(breadcrumbs(a.displayName || a.name), layout);

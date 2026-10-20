@@ -50,7 +50,8 @@
   gap: 18px;
   margin: 20px 0;
 }
-.body-card h2 {
+.body-card h2,
+.body-card h3 {
   margin: 0 0 18px;
   font-size: 18px;
 }
@@ -61,7 +62,7 @@
   margin: 0;
 }
 .body-card dt {
-  opacity: 0.65;
+  color: var(--text-secondary, #5e6878);
 }
 .body-card dd {
   margin: 0;
@@ -136,4 +137,60 @@ html[data-theme="dark"] .body-error {
   }
 }
 
-@media(max-width:600px){.player-body-section .body-control{top:128px}}
+.body-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+#body-status {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+#body-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+#body-status[data-state="online"]::before { background: var(--ok); }
+#body-status[data-state="paused"]::before { background: #b77916; }
+.body-pair-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.body-pair-form label,
+#body-game-revoke { grid-column: 1 / -1; }
+.body-pair-form input {
+  min-width: 0;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.body-pair-form #body-game-revoke { justify-self: start; }
+.body-player-panel :is(button, a, input, textarea):focus-visible {
+  outline: 3px solid var(--link, #2563eb);
+  outline-offset: 3px;
+}
+.body-player-panel :is(button, a, input, textarea) { scroll-margin-block: 220px 24px; }
+@media (max-width: 720px) {
+  /* Keep forms visible with the mobile keyboard and at large text sizes. */
+  .body-player-panel .body-control { position: static; }
+  .body-toolbar { display: grid; justify-content: stretch; gap: 10px; }
+  .body-toolbar .body-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .body-player-panel :is(button, a, input, textarea) { scroll-margin-block: 130px 24px; }
+}
+@media (max-width: 480px) {
+  .body-pair-form { grid-template-columns: minmax(0, 1fr); }
+  .body-pair-form #body-game-revoke { justify-self: stretch; }
+}

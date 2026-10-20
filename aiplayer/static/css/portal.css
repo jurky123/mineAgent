@@ -208,7 +208,8 @@ p {
   border-radius: inherit;
 }
 .identity h2,
-.identity h3 {
+.identity h3,
+.identity h1 {
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -273,7 +274,11 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
+.agent-card .card-end .btn { color: var(--brand); }
+html[data-theme="dark"] .agent-card .card-end .btn { color: var(--link); }
 .filters {
   display: flex;
   gap: 12px;

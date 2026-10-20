@@ -1,4 +1,4 @@
-import { api, apiGet } from "./shell.js";
+import { api } from "./shell.js";
 import { passwordForm } from "./passwords.js";
 import { h, toast, withPending, confirmDialog } from "./ds.js";
 
@@ -63,7 +63,9 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     latest = null,
     user = null,
     conv = null,
-    runBusy = false;
+    runBusy = false,
+    lastApprovals = "",
+    lastReplies = "";
   const pairingKey = "mineagent.body-pair." + agentId;
   let conversationKey = "";
   const pending = async (button, fn) => {
@@ -118,6 +120,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
   function unknown() {
     if (!authorized) return;
     $("body-status").textContent = "状态未知";
+    $("body-status").dataset.state = "unknown";
     $("body-hint").textContent = "连接中断或状态过期，正在重新核查。";
     $("body-resume").disabled = true;
     $("body-task-send").disabled = true;
@@ -164,6 +167,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
         !st.receivedAt ||
         Date.now() - st.receivedAt > 10000;
     $("body-name").textContent = st.name || agentId;
+    $("body-status").dataset.state = stale ? "unknown" : !s.connected ? "offline" : st.paused ? "paused" : "online";
     $("body-status").textContent = stale
       ? "状态未知"
       : !s.connected
@@ -225,6 +229,10 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     const data = await get("/api/body/approvals");
     const list = $("body-approvals");
     if (disposed || !authorized) return;
+    const signature = JSON.stringify(data.approvals);
+    if (signature === lastApprovals) return;
+    lastApprovals = signature;
+    const hadFocus = list.contains(document.activeElement);
     list.replaceChildren();
     $("body-pending-count").textContent = String(data.approvals.length);
     for (const a of data.approvals) {
@@ -256,6 +264,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     }
     if (!data.approvals.length)
       list.append(h("p", "field-hint", "暂无待审核动作。"));
+    if (hadFocus) $("body-approval-title").focus({ preventScroll: true });
   }
   async function replies() {
     if (!conv || !authorized) return;
@@ -267,14 +276,20 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     $("body-run-status").textContent =
       data.running?.text || (runBusy ? "正在处理…" : "");
     const list = $("body-replies");
-    list.replaceChildren();
-    for (const msg of (data.messages || []).slice(-12)) {
-      const row = h("li", "body-reply");
-      row.append(
-        h("strong", null, msg.role === "agent" ? "AI 回复" : "我的任务"),
-        h("p", null, msg.text || ""),
-      );
-      list.append(row);
+    const messages = (data.messages || []).slice(-12),
+      signature = JSON.stringify([conv, messages]);
+    if (signature !== lastReplies) {
+      lastReplies = signature;
+      list.replaceChildren();
+      for (const msg of messages) {
+        const row = h("li", "body-reply");
+        row.append(
+          h("strong", null, msg.role === "agent" ? "AI 回复" : "我的任务"),
+          h("p", null, msg.text || ""),
+        );
+        list.append(row);
+      }
+      if (!messages.length) list.append(h("li", "field-hint", "暂无回复，发送任务后会显示在这里。"));
     }
     if (latest) render(latest);
   }
@@ -418,10 +433,11 @@ export async function mountBodyPanel(root, { agentId } = {}) {
       return;
     }
     conv = null;
+    lastReplies = "";
     try {
       localStorage.removeItem(conversationKey);
     } catch {}
-    $("body-replies").replaceChildren();
+    $("body-replies").replaceChildren(h("li", "field-hint", "新会话还没有任务。"));
     $("body-run-status").textContent = "新任务会话，发送前不会创建记录。";
     $("body-agent-chat").href = "/agent";
   };
@@ -432,7 +448,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
   };
   window.addEventListener("pagehide", dispose, { once: true });
   try {
-    user = await apiGet("/api/auth/me");
+    user = await api("/api/auth/me", { signal: AbortSignal.timeout(12000) });
     if (!user.admin) {
       deny("身体详情和控制仅对主站管理员开放。");
       return dispose;
@@ -465,15 +481,49 @@ export async function mountBodyPanel(root, { agentId } = {}) {
       if (latest && Date.now() - latest.receivedAt > 10000) unknown();
     }, 1000);
   } catch (e) {
+    const needsLogin = e.unauthorized || e.message === "not_operator";
     deny(
       e.message === "body_not_found"
         ? errors.body_not_found
-        : errors.not_operator,
-      true,
+        : needsLogin ? errors.not_operator : "暂时无法读取身体服务，请检查连接后重新检查。",
+      needsLogin,
     );
   }
   return dispose;
 }
 
-const BODY_MARKUP =
-  '<div class="body-access" role="status"><p>正在验证主站权限…</p></div><div class="body-private" hidden>  <section class="body-control" aria-label="身体控制">\n    <div><strong id="body-status" role="status">正在连接…</strong><p id="body-hint" class="field-hint">正在读取最新状态</p></div>\n    <div class="body-buttons"><button class="btn danger" id="body-stop">停止并暂停</button><button class="btn primary" id="body-resume">恢复</button><button class="btn" id="body-disconnect">离开游戏</button><a class="btn" id="body-agent-chat" href="/agent">打开 Agent</a></div>\n  </section>\n  <p id="body-error" class="body-error" role="alert" hidden></p>\n  <section class="body-card" aria-label="游戏内控制授权">\n    <h2>游戏内控制授权</h2>\n    <p class="field-hint">在游戏内 AI 玩家面板获取临时代码，核对玩家与连接后授权。授权最长 10 分钟，离线后失效；游戏内 OP 不会自动获得网页管理员身份。</p>\n    <form id="body-game-link" class="body-buttons">\n      <label for="body-game-code">临时代码</label><input id="body-game-code" name="code" maxlength="32" minlength="32" autocomplete="off" spellcheck="false" required>\n      <button type="submit" class="btn primary" id="body-game-approve">核对并授权</button>\n      <button type="button" class="btn" id="body-game-revoke">撤销本次网页登录授予的游戏控制</button>\n    </form>\n    <p id="body-game-result" role="status" class="field-hint"></p>\n  </section>\n  <section class="body-grid" aria-label="玩家状态">\n    <article class="body-card"><h2 id="body-name">AI 玩家</h2><dl><dt>当前活动</dt><dd id="body-task">—</dd><dt>生命 / 饥饿</dt><dd id="body-health">—</dd><dt>手持</dt><dd id="body-item">—</dd><dt>位置</dt><dd id="body-position">—</dd><dt>状态更新</dt><dd id="body-updated">—</dd></dl></article>\n    <article class="body-card"><h2>待审核动作 <span class="badge" id="body-pending-count">0</span></h2><p class="field-hint">批准仅适用于这一项具体动作。目标或控制状态变化后，需要重新发起。</p><div id="body-approvals" aria-live="polite"></div></article>\n  </section>\n<section class="body-card body-task-panel" aria-label="任务与回复"><h2>任务与回复</h2><p class="field-hint">仅向当前 AI 玩家提交明确任务。沿用 Agent 的会话、权限与审批；提交不代表执行完成。</p><ol id="body-replies" class="body-replies" aria-live="polite"></ol><p id="body-run-status" role="status" class="field-hint"></p><form id="body-task-form"><label for="body-task-input">给当前玩家的任务</label><textarea class="input" id="body-task-input" maxlength="4000" rows="3" required></textarea><div class="body-buttons"><button class="btn primary" type="submit" id="body-task-send">发送任务</button><button class="btn" type="button" id="body-task-stop">停止本次任务</button><button class="btn" type="button" id="body-task-new">新任务会话</button></div></form></section>\n  <section class="body-card"><h2>最近事件</h2><ul id="body-events" class="body-events"></ul></section>\n</div>';
+const BODY_MARKUP = `
+<div class="body-access" role="status"><p>正在验证主站权限…</p></div>
+<div class="body-private" hidden>
+  <section class="body-control" aria-label="身体控制">
+    <div><strong id="body-status" role="status">正在连接…</strong><p id="body-hint" class="field-hint">正在读取最新状态</p></div>
+    <div class="body-toolbar">
+      <div class="body-buttons" role="group" aria-label="暂停与恢复"><button class="btn danger" id="body-stop">停止并暂停</button><button class="btn primary" id="body-resume">恢复</button></div>
+      <div class="body-buttons" role="group" aria-label="其他操作"><a class="btn" id="body-agent-chat" href="/agent">打开 Agent</a><button class="btn" id="body-disconnect">离开游戏</button></div>
+    </div>
+  </section>
+  <p id="body-error" class="body-error" role="alert" hidden></p>
+  <section class="body-card" aria-label="游戏内控制授权">
+    <h3>游戏内控制授权</h3>
+    <p class="field-hint">在游戏内 AI 玩家面板获取临时代码，核对玩家与连接后授权。授权最长 10 分钟，离线后失效；游戏内 OP 不会自动获得网页管理员身份。</p>
+    <form id="body-game-link" class="body-pair-form">
+      <label for="body-game-code">临时代码</label><input id="body-game-code" name="code" maxlength="32" minlength="32" autocomplete="off" spellcheck="false" aria-describedby="body-game-result" required>
+      <button type="submit" class="btn primary" id="body-game-approve">核对并授权</button>
+      <button type="button" class="btn" id="body-game-revoke">撤销本次网页登录授予的游戏控制</button>
+    </form>
+    <p id="body-game-result" role="status" class="field-hint"></p>
+  </section>
+  <section class="body-grid" aria-label="玩家状态">
+    <article class="body-card"><h3 id="body-name">AI 玩家</h3><dl><dt>当前活动</dt><dd id="body-task">—</dd><dt>生命 / 饥饿</dt><dd id="body-health">—</dd><dt>手持</dt><dd id="body-item">—</dd><dt>位置</dt><dd id="body-position">—</dd><dt>状态更新</dt><dd id="body-updated">—</dd></dl></article>
+    <article class="body-card"><h3 id="body-approval-title" tabindex="-1">待审核动作 <span class="badge" id="body-pending-count">0</span></h3><p class="field-hint">批准仅适用于这一项具体动作。目标或控制状态变化后，需要重新发起。</p><div id="body-approvals" aria-live="polite" aria-relevant="additions"></div></article>
+  </section>
+  <section class="body-card body-task-panel" aria-label="任务与回复">
+    <h3>任务与回复</h3><p class="field-hint">仅向当前 AI 玩家提交明确任务。沿用 Agent 的会话、权限与审批；提交不代表执行完成。</p>
+    <ol id="body-replies" class="body-replies" aria-live="polite" aria-relevant="additions"><li class="field-hint">暂无回复，发送任务后会显示在这里。</li></ol>
+    <p id="body-run-status" role="status" class="field-hint"></p>
+    <form id="body-task-form"><label for="body-task-input">给当前玩家的任务</label><textarea class="input" id="body-task-input" maxlength="4000" rows="3" required></textarea>
+      <div class="body-buttons" role="group" aria-label="任务操作"><button class="btn primary" type="submit" id="body-task-send">发送任务</button><button class="btn" type="button" id="body-task-stop">停止本次任务</button><button class="btn" type="button" id="body-task-new">新任务会话</button></div>
+    </form>
+  </section>
+  <section class="body-card"><h3>最近事件</h3><ul id="body-events" class="body-events"></ul></section>
+</div>`;

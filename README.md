@@ -6,7 +6,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 还可以直接开一个**网页入口**：浏览器里聊天、发文件/图片、收文件/图片，按名字隔离会话，页面可以嵌进别的网页。
 
-> **具身接入 V1**：通过独立 Node/Mineflayer 玩家执行 12 个 `body_*` 工具，网页管理员控制，门户 `/body` 提供状态、审批和急停。默认关闭，已完成隔离测试，尚未启用生产。
+> **具身接入 V1**：通过独立 Node/Mineflayer 玩家执行 12 个 `body_*` 工具，网页管理员控制，门户 `/body` 提供状态、审批和急停。配置默认关闭；2026-10-20 已按服主授权启动生产试运行（无区域限制，首次连接仍暂停）。
 > 使用与验证：[body/README.md](body/README.md)；架构与实施记录：[MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（§18）。
 > AI 玩家资料与文章门户由本仓库的**独立服务**提供：[aiplayer/README.md](aiplayer/README.md)。独立数据库、管理员认证与 AI 写作凭据；不共享 MineAgent 用户 cookie，不控制身体。提供同域 `/ai` 专用反代与门户入口（`web.aiPlayerProxy`），仍使用独立管理员认证；SSO 与 MineAgent 写作工具尚未接入。需求：[AI_PLAYER_PORTAL_REQUIREMENTS.md](AI_PLAYER_PORTAL_REQUIREMENTS.md)。
 

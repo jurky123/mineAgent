@@ -95,14 +95,22 @@ const model = http.createServer(async (req, res) => {
     .findLast((m) => m.role === "tool");
   let message,
     finish = "stop";
+  let nextScenario;
   if (tool) {
     const scenario = scenarios.get(tool.tool_call_id);
     if (scenario) {
+      scenario.modelRequests = (scenario.modelRequests || 0) + 1;
+      let result;
       try {
-        scenario.result = JSON.parse(tool.content);
+        result = JSON.parse(tool.content);
       } catch {
-        scenario.result = tool.content;
+        result = tool.content;
       }
+      scenario.results ??= [];
+      scenario.results.push(result);
+      if (result.ok && scenario.results.length < (scenario.repeat || 1)) {
+        nextScenario = scenario;
+      } else scenario.result = result;
     }
     message = { role: "assistant", content: "fixture finished" };
   } else {
@@ -113,23 +121,31 @@ const model = http.createServer(async (req, res) => {
       message = { role: "assistant", content: "fixture idle" };
     } else {
       scenario.issued = true;
-      calls++;
-      message = {
-        role: "assistant",
-        content: "",
-        tool_calls: [
-          {
-            id: scenario.id,
-            type: "function",
-            function: {
-              name: scenario.tool,
-              arguments: JSON.stringify(scenario.args),
-            },
-          },
-        ],
-      };
-      finish = "tool_calls";
+      scenario.modelRequests = 1;
+      await scenario.beforeIssue?.();
+      nextScenario = scenario;
     }
+  }
+  if (nextScenario) {
+    const scenario = nextScenario;
+    const callId = scenario.id + "-" + (scenario.results?.length || 0);
+    scenarios.set(callId, scenario);
+    calls++;
+    message = {
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: callId,
+          type: "function",
+          function: {
+            name: scenario.tool,
+            arguments: JSON.stringify(scenario.args),
+          },
+        },
+      ],
+    };
+    finish = "tool_calls";
   }
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(
@@ -184,10 +200,10 @@ const command = async (text) => {
   paper.stdin.write(text + "\n");
   await wait(200);
 };
-async function send(tool, args, awaitResult = true) {
+async function send(tool, args, awaitResult = true, options = {}) {
   console.log("fixture tool: " + tool);
   const id = "body-" + randomUUID();
-  const scenario = { id, query: "fixture-case-" + id, tool, args };
+  const scenario = { id, query: "fixture-case-" + id, tool, args, ...options };
   scenarios.set(id, scenario);
   const sent = await api("/api/send", "POST", { text: scenario.query });
   assert.equal(sent.httpStatus, 200, JSON.stringify(sent));
@@ -334,7 +350,11 @@ try {
       name: "body-fixture",
       apiKey: "fixture",
     },
-    agent: { progressSummary: false },
+    agent: {
+      progressSummary: false,
+      summaryMessages: 1000,
+      summaryTokens: 1000000,
+    },
     web: {
       listen: `127.0.0.1:${webPort}`,
       dataDir: path.join(temp, "web"),
@@ -530,7 +550,20 @@ MinecraftBody.prototype.movements=function(){
   await command("setblock 3 -60 0 minecraft:oak_door[half=lower,facing=north]");
   await command("setblock 3 -59 0 minecraft:oak_door[half=upper,facing=north]");
   await wait(2200);
-  assert.equal((await control("resume")).httpStatus, 200);
+  const health = await send("body_status", {});
+  confirmed(health);
+  assert.equal(health.result.data.controlConnected, true);
+  const longRead = await send("body_observe", {}, true, {
+    repeat: 40,
+    beforeIssue: async () =>
+      assert.equal((await control("resume")).httpStatus, 200),
+  });
+  confirmed(longRead);
+  assert.equal(
+    longRead.results.length,
+    40,
+    "same task continues beyond former 12/32 round limits after initial resume",
+  );
   confirmed(await send("body_observe", {}));
   confirmed(await send("body_inventory", {}));
   confirmed(await send("body_find_blocks", { blocks: "oak_log", radius: 16 }));
@@ -651,8 +684,20 @@ MinecraftBody.prototype.movements=function(){
   const stopped = await control("stop");
   assert.equal(stopped.httpStatus, 200, JSON.stringify(stopped));
   assert.ok(Date.now() - before < 2000, "stop should acknowledge within 2s");
-  await until(() => moving.result, "cancelled movement result");
-  assert.equal(moving.result.ok, false);
+  await until(async () => {
+    const history = await api("/api/history?conv=" + moving.conv);
+    return (
+      !history.running && history.messages?.some((m) => /已停止/.test(m.text))
+    );
+  }, "stop cancels the entire model task");
+  const stoppedModelRequests = moving.modelRequests;
+  await wait(300);
+  assert.equal(
+    moving.modelRequests,
+    stoppedModelRequests,
+    "stopped task does not keep invoking the model",
+  );
+  if (moving.result) assert.equal(moving.result.ok, false);
   assert.equal((await state()).paused, true);
   const profile = await api(
     "/api/body/profile",
@@ -827,16 +872,27 @@ MinecraftBody.prototype.movements=function(){
   assert.deepEqual(pageErrors, []);
   await browser.close();
   browser = null;
-  confirmed(await send("body_stop", {}));
+  const selfStop = await send("body_stop", {}, false);
+  await until(async () => {
+    const history = await api("/api/history?conv=" + selfStop.conv);
+    return (
+      !history.running &&
+      (selfStop.result || history.messages?.some((m) => /已停止/.test(m.text)))
+    );
+  }, "body_stop ends its own task");
+  assert.equal((await state()).paused, true);
+  if (selfStop.result) confirmed(selfStop);
   console.log(
     JSON.stringify({
       passed: true,
-      tools: 12,
+      tools: 13,
       modelCalls: calls,
       checks: [
         "real Paper world identity",
         "per-user authenticated tool context",
         "all core actions",
+        "40 actual body observations in one model/tool task",
+        "resume while a paused task is planning does not stale its reads",
         "portal approval and resume",
         "stale target rejection",
         "stop during movement",

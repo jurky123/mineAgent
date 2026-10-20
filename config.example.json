@@ -127,8 +127,8 @@
     "name": "MineAgentBot",
     "expectedMcVersion": "26.2",
     "token": "",
-    "maxSteps": 12,
-    "runTimeoutSec": 240,
+    "maxSteps": 0,
+    "runTimeoutSec": 0,
     "worldMappings": [],
     "zones": {
       "mode": "allowlist",

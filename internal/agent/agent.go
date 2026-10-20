@@ -470,6 +470,41 @@ func (a *Agent) runTimeout() time.Duration {
 	return time.Duration(a.cfg.RunTimeoutSec) * time.Second
 }
 
+// Body tasks have their own optional deadline. They must not silently inherit
+// the IM conversation timeout on top of an explicitly unlimited body budget.
+func (a *Agent) requestContext(ctx context.Context, req Request) (context.Context, context.CancelFunc) {
+	var rctx context.Context
+	var cancel context.CancelFunc
+	if req.BodyPrincipal == nil {
+		rctx, cancel = context.WithTimeout(ctx, a.runTimeout())
+	} else if !req.BodyPrincipal.Deadline.IsZero() {
+		rctx, cancel = context.WithDeadline(ctx, req.BodyPrincipal.Deadline)
+	} else {
+		rctx, cancel = context.WithCancel(ctx)
+	}
+	var stop func() bool
+	if req.Context != nil {
+		stop = context.AfterFunc(req.Context, cancel)
+		if req.Context.Err() != nil {
+			cancel()
+		}
+	}
+	var stopBody context.CancelFunc
+	if req.BodyPrincipal != nil {
+		rctx, stopBody = req.BodyPrincipal.RunContext(rctx)
+		rctx = body.WithPrincipal(rctx, req.BodyPrincipal)
+	}
+	return rctx, func() {
+		if stop != nil {
+			stop()
+		}
+		if stopBody != nil {
+			stopBody()
+		}
+		cancel()
+	}
+}
+
 func (a *Agent) Submit(req Request) bool {
 	if !a.enabled {
 		return false
@@ -565,24 +600,14 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 			}
 		}()
 	}
-	rctx, cancel := context.WithTimeout(ctx, a.runTimeout())
+	rctx, cancel := a.requestContext(ctx, req)
 	defer cancel()
-	if req.Context != nil {
-		stop := context.AfterFunc(req.Context, cancel)
-		defer stop()
-		if req.Context.Err() != nil {
-			return
-		}
+	if req.Context != nil && req.Context.Err() != nil {
+		return
 	}
 	sessionKey := req.SessionKey
 	if sessionKey == "" {
 		sessionKey = a.sessionKey
-	}
-	if req.BodyPrincipal != nil {
-		var stop context.CancelFunc
-		rctx, stop = context.WithDeadline(rctx, req.BodyPrincipal.Deadline)
-		defer stop()
-		rctx = body.WithPrincipal(rctx, req.BodyPrincipal)
 	}
 	rctx = tools.WithRequester(rctx, req.Player)
 	rctx = tools.WithRequesterID(rctx, req.RequesterID)
@@ -662,7 +687,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 // 同一会话复用是安全的；checkpoint 按 run 粒度存 sqlite，resume 时必须用
 // 建它的那个 runner（见 resume，经 pendingRun.runnerKey 取回）。
 func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string, error) {
-	if len(req.Tools) == 0 && req.SystemInstruction == "" && req.MaxIterations == 0 {
+	if len(req.Tools) == 0 && req.SystemInstruction == "" && req.MaxIterations == 0 && req.BodyPrincipal == nil {
 		return a.mcRunner, "", nil
 	}
 	instruction := req.SystemInstruction
@@ -690,7 +715,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 		cm = m
 	}
 	key := req.SessionKey + "\x00" + instruction + "\x00" + strings.Join(names, ",") +
-		"\x00" + req.Model + "|" + req.ReasoningEffort + fmt.Sprintf("|iterations=%d", req.MaxIterations)
+		"\x00" + req.Model + "|" + req.ReasoningEffort + fmt.Sprintf("|iterations=%d|body=%t", req.MaxIterations, req.BodyPrincipal != nil)
 	a.mu.Lock()
 	r, ok := a.runners[key]
 	a.mu.Unlock()
@@ -707,8 +732,12 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	if req.SessionKey == a.sessionKey && len(req.Tools) == 0 {
 		agentName, agentDesc, maxIter = "mineagent", "Minecraft 服务器聊天助手", 8
 	}
-	if req.MaxIterations > 0 && req.MaxIterations <= 32 {
+	if req.MaxIterations > 0 {
 		maxIter = req.MaxIterations
+	} else if req.BodyPrincipal != nil {
+		// Eino interprets zero as a finite default (20), not unlimited. Use its
+		// graph's native MaxInt ceiling; task completion/cancellation controls us.
+		maxIter = math.MaxInt
 	}
 	chatAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name:        agentName,
@@ -764,6 +793,26 @@ func (a *Agent) summarizeProgress(ctx context.Context, req Request, progress *ru
 	req.Progress(text + "…")
 }
 
+func cancellationText(ctx context.Context, req Request) string {
+	if req.Context != nil && req.Context.Err() != nil {
+		return "已停止本次回答。已完成的外部操作不会撤销。"
+	}
+	if req.BodyPrincipal != nil {
+		cause := context.Cause(ctx)
+		if cause != nil {
+			switch cause.Error() {
+			case "stale":
+				return "身体控制状态已改变，已停止旧任务。请核查已有结果后重新提交任务；这不代表身体通道断开。"
+			case "not_operator":
+				return "管理员授权已失效，已停止身体任务。已完成的操作不会撤销。"
+			case "run_failed":
+				return "身体动作连续失败，已停止任务。请核查真实状态后再决定下一步。"
+			}
+		}
+	}
+	return "本次请求超时或服务已停止，已结束任务。请查看已有结果后再决定是否重试。"
+}
+
 func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey, cpID string, iter *adk.AsyncIterator[*adk.AgentEvent], progress *runProgress) bool {
 	var reply string
 	started := make(map[string]ToolEvent)
@@ -792,15 +841,11 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 		}
 		if ev.Err != nil {
 			if ctx.Err() != nil {
-				if req.Context != nil && req.Context.Err() != nil {
-					text := "已停止本次回答。已完成的外部操作不会撤销。"
-					if reply != "" {
-						text = reply + "\n\n" + text
-					}
-					_ = req.Session.Reply(context.WithoutCancel(ctx), text, a.target(req))
-				} else {
-					_ = req.Session.Reply(context.WithoutCancel(ctx), "本次请求超时，已结束。请查看已有结果后再决定是否重试。", a.target(req))
+				text := cancellationText(ctx, req)
+				if reply != "" {
+					text = reply + "\n\n" + text
 				}
+				_ = req.Session.Reply(context.WithoutCancel(ctx), text, a.target(req))
 				return true
 			}
 			modelName := req.Model
@@ -867,10 +912,7 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 		}
 	}
 	if ctx.Err() != nil {
-		text := "本次请求已结束。"
-		if req.Context != nil && req.Context.Err() != nil {
-			text = "已停止本次回答。已完成的外部操作不会撤销。"
-		}
+		text := cancellationText(ctx, req)
 		if reply != "" {
 			text = reply + "\n\n" + text
 		}
@@ -976,18 +1018,8 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	if run.request.Context != nil && run.request.Context.Err() != nil {
 		return
 	}
-	rctx, cancel := context.WithTimeout(ctx, a.runTimeout())
+	rctx, cancel := a.requestContext(ctx, run.request)
 	defer cancel()
-	if run.request.Context != nil {
-		stop := context.AfterFunc(run.request.Context, cancel)
-		defer stop()
-	}
-	if run.request.BodyPrincipal != nil {
-		var stop context.CancelFunc
-		rctx, stop = context.WithDeadline(rctx, run.request.BodyPrincipal.Deadline)
-		defer stop()
-		rctx = body.WithPrincipal(rctx, run.request.BodyPrincipal)
-	}
 	rctx = tools.WithRequester(rctx, run.player)
 	rctx = tools.WithRequesterID(rctx, run.requesterID)
 	if run.mcRequester != "" {

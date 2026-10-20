@@ -38,3 +38,20 @@ func TestBodyValidationRequiresBothIndependentAuthenticatedRoles(t *testing.T) {
 		t.Fatal("ambiguous world mapping accepted")
 	}
 }
+
+func TestBodySupportsUnlimitedAndExplicitRunBudgets(t *testing.T) {
+	b := DefaultBody()
+	if b.MaxSteps != 0 || b.RunTimeoutSec != 0 {
+		t.Fatal("body tasks still default to a finite budget")
+	}
+	b.Enabled, b.Token = true, strings.Repeat("b", 32)
+	for _, budget := range []struct {
+		steps, seconds int
+		valid          bool
+	}{{0, 0, true}, {500, 3600, true}, {-1, 0, false}, {0, -1, false}} {
+		b.MaxSteps, b.RunTimeoutSec = budget.steps, budget.seconds
+		if err := b.Validate(strings.Repeat("p", 32), "127.0.0.1:8765"); (err == nil) != budget.valid {
+			t.Fatal("unexpected budget validation", budget, err)
+		}
+	}
+}

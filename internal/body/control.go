@@ -28,6 +28,15 @@ func (s *Service) Control(ctx context.Context, action string, p *Principal) (pro
 		s.mu.Unlock()
 		return protocol.BodyAck{}, errors.New("body_not_ready")
 	}
+	if action == "resume" && !s.paused && !s.draining && !s.state.Paused {
+		ack := protocol.BodyAck{ConnectionID: s.connection, ControlEpoch: s.epoch, PolicyRevision: s.revision, Paused: false}
+		s.mu.Unlock()
+		return ack, nil
+	}
+	s.resumeFromEpoch = 0
+	if action == "resume" {
+		s.resumeFromEpoch = s.epoch
+	}
 	s.epoch++
 	s.paused = true
 	s.waiting = map[string]pendingAction{}

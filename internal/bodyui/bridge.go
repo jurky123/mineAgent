@@ -196,7 +196,7 @@ func (b *Bridge) principal(ctx context.Context, peer tools.Sender, v *binding) (
 	b.mu.Lock()
 	p := b.core.Principal(v.user, v.authSession, v.admin)
 	generation := v.generation
-	if v.until.Before(p.Deadline) {
+	if p.Deadline.IsZero() || v.until.Before(p.Deadline) {
 		p.Deadline = v.until
 	}
 	b.mu.Unlock()
@@ -351,7 +351,7 @@ func (b *Bridge) submit(ctx context.Context, peer tools.Sender, v *binding, p *b
 		done()
 		return errors.New("storage_unavailable")
 	}
-	ok := b.ag.Submit(agent.Request{Context: runCtx, Done: done, Session: sess, SessionKey: key, Player: "web:" + admin, RequesterID: uuid, Query: text, TriggerMessageID: msg.ID, ReplyTarget: nonce, BodyPrincipal: p, Tools: b.core.Tools(), MaxIterations: b.steps, SystemInstruction: body.Instruction + "\n仅使用身体工具执行当前游戏管理员明确提出的短任务，不能调用其他通道或修改服务器配置。"})
+	ok := b.ag.Submit(agent.Request{Context: runCtx, Done: done, Session: sess, SessionKey: key, Player: "web:" + admin, RequesterID: uuid, Query: text, TriggerMessageID: msg.ID, ReplyTarget: nonce, BodyPrincipal: p, Tools: b.core.Tools(), MaxIterations: b.steps, SystemInstruction: body.Instruction + "\n仅使用身体工具执行当前游戏管理员明确提出的任务，不能调用其他通道或修改服务器配置。"})
 	if !ok {
 		done()
 		return errors.New("agent_unavailable")

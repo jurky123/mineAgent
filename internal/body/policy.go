@@ -31,7 +31,7 @@ func contains(list []string, v string) bool {
 	return false
 }
 func isRead(t string) bool {
-	return t == "body_observe" || t == "body_inventory" || t == "body_find_blocks"
+	return t == "body_status" || t == "body_observe" || t == "body_inventory" || t == "body_find_blocks"
 }
 func category(t string) string {
 	if isRead(t) {
@@ -161,7 +161,7 @@ func parseArgs(tool, raw string) (protocol.BodyArgs, error) {
 		if contains([]string{"agent", "ai", "ma", "mineagent"}, first) {
 			return a, errors.New("loop_guard")
 		}
-	case "body_use_item", "body_observe", "body_inventory", "body_stop":
+	case "body_use_item", "body_status", "body_observe", "body_inventory", "body_stop":
 	default:
 		return a, errors.New("unsupported")
 	}

@@ -4,9 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"regexp"
+	"time"
 )
 
 // Body is optional. Enabling it never grants Minecraft names control rights.
@@ -17,8 +19,8 @@ type Body struct {
 	Name              string       `json:"name"`
 	Token             string       `json:"token"`
 	ExpectedMcVersion string       `json:"expectedMcVersion"`
-	MaxSteps          int          `json:"maxSteps"`
-	RunTimeoutSec     int          `json:"runTimeoutSec"`
+	MaxSteps          int          `json:"maxSteps"`      // 0: continue until the model finishes or the task is cancelled.
+	RunTimeoutSec     int          `json:"runTimeoutSec"` // 0: no task deadline; individual calls still have timeouts.
 	WorldMappings     []BodyWorld  `json:"worldMappings"`
 	Zones             BodyZones    `json:"zones"`
 	DenyBlocks        []string     `json:"denyBlocks"`
@@ -65,7 +67,7 @@ type BodyProfile struct {
 }
 
 func DefaultBody() Body {
-	return Body{Mode: "off", ID: "main", Name: "MineAgentBot", ExpectedMcVersion: "26.2", MaxSteps: 12, RunTimeoutSec: 240,
+	return Body{Mode: "off", ID: "main", Name: "MineAgentBot", ExpectedMcVersion: "26.2",
 		Zones: BodyZones{Mode: "allowlist"}, Limits: BodyLimits{60, 30, 6, 3, 5}, Approval: BodyApproval{"portal", 120, 5000, 60}}
 }
 func (b Body) Validate(mainToken, listen string) error {
@@ -108,7 +110,7 @@ func (b Body) Validate(mainToken, listen string) error {
 		}
 		seen[w.Dimension] = true
 	}
-	if b.MaxSteps < 1 || b.MaxSteps > 32 || b.RunTimeoutSec < 10 || b.RunTimeoutSec > 300 {
+	if b.MaxSteps < 0 || b.RunTimeoutSec < 0 || int64(b.RunTimeoutSec) > math.MaxInt64/int64(time.Second) {
 		return fmt.Errorf("body run 预算无效")
 	}
 	if b.Approval.Source != "portal" || b.Approval.TimeoutSec < 1 || b.Approval.TimeoutSec > 120 || b.Approval.GrantTTLMS < 1 || b.Approval.GrantTTLMS > 5000 || b.Approval.ReasonMaxChars < 1 || b.Approval.ReasonMaxChars > 60 {

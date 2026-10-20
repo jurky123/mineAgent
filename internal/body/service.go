@@ -26,9 +26,12 @@ type Principal struct {
 	Epoch                 uint64
 	Deadline              time.Time
 	// Valid optionally limits a delegated controller to its live transport session.
-	Valid    func(context.Context) bool
-	mu       sync.Mutex
-	failures int
+	Valid          func(context.Context) bool
+	mu             sync.Mutex
+	failures       int
+	service        *Service
+	connection     string
+	awaitingResume bool
 }
 type principalKey struct{}
 
@@ -57,6 +60,7 @@ type Service struct {
 	peer                          tools.Sender
 	connection                    string
 	epoch, revision               uint64
+	resumeFromEpoch               uint64
 	ready, paused, draining, busy bool
 	running                       *Principal
 	capabilities                  map[string]bool
@@ -88,29 +92,48 @@ func ID() string {
 func (s *Service) Principal(userID, sessionID int64, name string) *Principal {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return &Principal{UserID: userID, AuthSessionID: sessionID, Name: name, RunID: ID(), Epoch: s.epoch, Deadline: time.Now().Add(time.Duration(s.cfg.RunTimeoutSec) * time.Second)}
+	p := &Principal{UserID: userID, AuthSessionID: sessionID, Name: name, RunID: ID(), Epoch: s.epoch, service: s, connection: s.connection, awaitingResume: s.paused}
+	if s.cfg.RunTimeoutSec > 0 {
+		p.Deadline = time.Now().Add(time.Duration(s.cfg.RunTimeoutSec) * time.Second)
+	}
+	return p
 }
 func (s *Service) Enabled() bool { return s != nil && s.cfg.Enabled && s.cfg.Mode != "off" }
 func (s *Service) Check(ctx context.Context, p *Principal, control bool) error {
+	return s.check(ctx, p, control, false)
+}
+func (s *Service) check(ctx context.Context, p *Principal, control, read bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if p == nil || p.UserID == 0 || p.AuthSessionID == 0 || s.authorize == nil || !s.authorize(ctx, p.UserID, p.AuthSessionID) || (p.Valid != nil && !p.Valid(ctx)) {
 		return errors.New("not_operator")
 	}
 	if control {
 		return nil
 	}
-	if time.Now().After(p.Deadline) {
+	if !p.Deadline.IsZero() && time.Now().After(p.Deadline) {
 		return errors.New("timeout")
-	}
-	p.mu.Lock()
-	failed := p.failures >= 3
-	p.mu.Unlock()
-	if failed {
-		return errors.New("run_failed")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.Enabled() {
 		return errors.New("unsupported")
+	}
+	// Reads use the current transport, but never grant an old task write authority.
+	if read {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failures >= 3 {
+		return errors.New("run_failed")
+	}
+	// A task submitted while paused may follow that exact resume, before its
+	// first write. Stops, reconnects, repeated resumes and used tasks cannot rebind.
+	if s.epoch != p.Epoch && p.awaitingResume && p.connection == s.connection && p.Epoch == s.resumeFromEpoch && s.epoch == p.Epoch+1 {
+		p.Epoch = s.epoch
+		p.awaitingResume = false
 	}
 	if s.epoch != p.Epoch {
 		return errors.New("stale")
@@ -345,7 +368,9 @@ func (s *Service) audit(ctx context.Context, p *Principal, id, tool, decision, o
 func (s *Service) acquire(tool string, p *Principal) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if p.Epoch != s.epoch {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !isRead(tool) && p.Epoch != s.epoch {
 		return errors.New("stale")
 	}
 	if s.peer == nil || !s.ready || !s.state.Connected || s.received.IsZero() || time.Since(s.received) > 10*time.Second {
@@ -366,8 +391,9 @@ func (s *Service) acquire(tool string, p *Principal) error {
 	if s.busy {
 		return errors.New("busy")
 	}
-	if !s.limitLocked("all", 120) || (!isRead(tool) && !s.limitLocked("actions", s.cfg.Limits.ActionsPerMin)) {
-		return errors.New("rate_limited")
+	budgets := map[string]int{"all": 120}
+	if !isRead(tool) {
+		budgets["actions"] = s.cfg.Limits.ActionsPerMin
 	}
 	key, n := "", 0
 	switch category(tool) {
@@ -378,11 +404,17 @@ func (s *Service) acquire(tool string, p *Principal) error {
 	case "command":
 		key, n = "commands", s.cfg.Limits.CommandsPerMin
 	}
-	if key != "" && !s.limitLocked(key, n) {
-		return errors.New("rate_limited")
+	if key != "" {
+		budgets[key] = n
+	}
+	if err := s.reserveLocked(budgets); err != nil {
+		return err
 	}
 	s.busy = true
 	s.running = p
+	if !isRead(tool) {
+		p.awaitingResume = false
+	}
 	return nil
 }
 func (s *Service) limitLocked(key string, n int) bool {
@@ -407,7 +439,12 @@ func (s *Service) inspect(ctx context.Context, p *Principal, tool string, args p
 	ch := make(chan protocol.BodyInspectResult, 1)
 	s.inspections[id] = ch
 	peer := s.peer
-	req := protocol.BodyInspect{InspectID: id, ConnectionID: s.connection, ControlEpoch: s.epoch, PolicyRevision: s.revision, Tool: tool, Args: args, ExpiresAt: p.Deadline.UnixMilli()}
+	// Prepared actions expire independently of an unlimited task.
+	expires := time.Now().Add(time.Duration(s.cfg.Approval.TimeoutSec+5) * time.Second)
+	if !p.Deadline.IsZero() && p.Deadline.Before(expires) {
+		expires = p.Deadline
+	}
+	req := protocol.BodyInspect{InspectID: id, ConnectionID: s.connection, ControlEpoch: s.epoch, PolicyRevision: s.revision, Tool: tool, Args: args, ExpiresAt: expires.UnixMilli()}
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); delete(s.inspections, id); s.mu.Unlock() }()
 	if peer == nil {
@@ -428,7 +465,7 @@ func (s *Service) inspect(ctx context.Context, p *Principal, tool string, args p
 			return protocol.BodySpec{}, fmt.Errorf("%s: %s", r.Code, r.Error)
 		}
 		sp := *r.Spec
-		if sp.Tool != tool || sp.ConnectionID != req.ConnectionID || sp.ControlEpoch != req.ControlEpoch || sp.PolicyRevision != req.PolicyRevision || sp.ID == "" || !finitePos(sp.Pos) || sp.ExpiresAt > p.Deadline.UnixMilli() || sp.ExpiresAt <= time.Now().UnixMilli() {
+		if sp.Tool != tool || sp.ConnectionID != req.ConnectionID || sp.ControlEpoch != req.ControlEpoch || sp.PolicyRevision != req.PolicyRevision || sp.ID == "" || !finitePos(sp.Pos) || sp.ExpiresAt > req.ExpiresAt || sp.ExpiresAt <= time.Now().UnixMilli() {
 			return protocol.BodySpec{}, errors.New("invalid_spec")
 		}
 		if err := s.policy(sp); err != nil {
@@ -444,12 +481,12 @@ func (s *Service) inspect(ctx context.Context, p *Principal, tool string, args p
 	}
 }
 func (s *Service) execute(ctx context.Context, p *Principal, tool string, args protocol.BodyArgs, id string, sp *protocol.BodySpec, grant *protocol.BodyGrant) protocol.BodyResult {
-	if err := s.Check(ctx, p, false); err != nil {
-		return failure(id, err.Error(), "not_executed")
+	if err := s.check(ctx, p, false, isRead(tool)); err != nil {
+		return s.toolFailure(id, err.Error(), p)
 	}
 	ms := timeoutMS(tool, args)
-	if time.Until(p.Deadline) < time.Duration(ms+2000)*time.Millisecond {
-		return failure(id, "timeout", "not_executed")
+	if !p.Deadline.IsZero() && time.Until(p.Deadline) < time.Duration(ms+2000)*time.Millisecond {
+		return s.toolFailure(id, "timeout", p)
 	}
 	s.mu.Lock()
 	peer := s.peer
@@ -463,11 +500,11 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 	defer func() { s.mu.Lock(); delete(s.calls, id); s.mu.Unlock() }()
 	if !isRead(tool) {
 		if err := s.audit(ctx, p, id, tool, "dispatch", "", map[string]any{"spec": sp, "runId": p.RunID}); err != nil {
-			return failure(id, "audit_unavailable", "not_executed")
+			return s.toolFailure(id, "audit_unavailable", p)
 		}
 	}
 	if peer == nil {
-		return failure(id, "body_offline", "not_executed")
+		return s.toolFailure(id, "body_offline", p)
 	}
 	if err := peer.SendProtocol(protocol.TypeBodyCall, req); err != nil {
 		s.pauseUnknown()
@@ -493,9 +530,13 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 		res = failure(id, "outcome_unknown", "unknown")
 		s.pauseUnknown()
 	}
-	if !res.OK {
+	if !isRead(tool) {
 		p.mu.Lock()
-		p.failures++
+		if res.OK {
+			p.failures = 0
+		} else {
+			p.failures++
+		}
 		p.mu.Unlock()
 	}
 	_ = s.audit(ctx, p, id, tool, "result", "", res)

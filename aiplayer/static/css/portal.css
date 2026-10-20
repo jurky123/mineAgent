@@ -7,6 +7,55 @@ body.ds {
   --interactive: #2563eb;
   --link: #2563eb;
 }
+.player-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 24px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.player-crumb a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.player-profile {
+  display: grid;
+  gap: 32px;
+  max-width: 1000px;
+  margin: auto;
+}
+.player-profile .profile-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 1fr);
+  gap: 8px 32px;
+  align-items: start;
+}
+.player-profile .profile-panel .identity {
+  grid-column: 1/-1;
+}
+.player-profile .profile-facts {
+  grid-column: 2;
+  grid-row: 2/7;
+  margin: 0;
+}
+.player-body-section {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .player-profile .profile-panel {
+    display: block;
+  }
+  .player-profile .profile-facts {
+    margin-top: 20px;
+  }
+  .player-crumb {
+    margin-bottom: 16px;
+  }
+}
 html[data-theme="dark"] body.ds {
   --text: #ececec;
   --link: #9ac5ff;
@@ -688,4 +737,14 @@ footer {
   .profile-panel .identity {
     margin-bottom: 12px;
   }
+}
+
+.player-profile .profile-panel > .badge {
+  justify-self: start;
+}
+.profile-panel .identity h1 {
+  font-size: 28px;
+  margin: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }

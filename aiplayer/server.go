@@ -21,6 +21,15 @@ import (
 //go:embed static
 var assets embed.FS
 
+func forumAPI(r *http.Request) bool {
+	for _, prefix := range []string{"/api/ai-posts", "/api/ai-admin/", "/api/ai-auth/", "/api/ai-moderation/", "/api/ai-agents/mine/"} {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return true
+		}
+	}
+	return strings.HasPrefix(r.URL.Path, "/api/ai-agents/") && r.Method != http.MethodGet && r.Method != http.MethodHead
+}
+
 type Server struct {
 	cfg           Config
 	store         *Store
@@ -48,6 +57,11 @@ func (a *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
+	if !a.cfg.ForumEnabled && forumAPI(r) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		respond(w, nil, fault(404, "forum_closed", "论坛暂未开放"))
+		return
+	}
 	images := "'self'"
 	for _, host := range a.cfg.SkinHosts {
 		images += " https://" + host
@@ -159,7 +173,7 @@ func (a *Server) routes() {
 		writeJSON(w, status, map[string]bool{"ok": ok})
 	})
 	m.HandleFunc("GET /api/ai-info", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"name": a.cfg.Name, "portalURL": a.cfg.PortalURL, "writingAdapter": "not_connected", "profileConfigured": a.cfg.Profile != nil})
+		writeJSON(w, 200, map[string]any{"name": a.cfg.Name, "portalURL": a.cfg.PortalURL, "writingAdapter": "not_connected", "profileConfigured": a.cfg.Profile != nil, "forumEnabled": a.cfg.ForumEnabled})
 	})
 	m.HandleFunc("POST /api/ai-auth/login", a.login)
 	m.HandleFunc("GET /api/ai-auth/me", func(w http.ResponseWriter, r *http.Request) {
@@ -597,23 +611,25 @@ func (a *Server) publicAgents(r *http.Request) ([]map[string]any, *Fault) {
 		return nil, internalFault(err)
 	}
 	counts := map[string]int{}
-	rows, err := a.store.db.QueryContext(r.Context(), `SELECT p.agent_id,COUNT(*)`+liveJoin+` GROUP BY p.agent_id`)
-	if err != nil {
-		return nil, internalFault(err)
-	}
-	for rows.Next() {
-		var id string
-		var n int
-		if err = rows.Scan(&id, &n); err != nil {
-			rows.Close()
+	if a.cfg.ForumEnabled {
+		rows, err := a.store.db.QueryContext(r.Context(), `SELECT p.agent_id,COUNT(*)`+liveJoin+` GROUP BY p.agent_id`)
+		if err != nil {
 			return nil, internalFault(err)
 		}
-		counts[id] = n
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return nil, internalFault(err)
+		for rows.Next() {
+			var id string
+			var n int
+			if err = rows.Scan(&id, &n); err != nil {
+				rows.Close()
+				return nil, internalFault(err)
+			}
+			counts[id] = n
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, internalFault(err)
+		}
 	}
 	out := []map[string]any{}
 	q := r.URL.Query()
@@ -628,7 +644,11 @@ func (a *Server) publicAgents(r *http.Request) ([]map[string]any, *Fault) {
 		if search := strings.ToLower(q.Get("q")); search != "" && !strings.Contains(strings.ToLower(record.Name+" "+record.DisplayName+" "+record.Bio+" "+strings.Join(record.Tags, " ")), search) {
 			continue
 		}
-		out = append(out, map[string]any{"id": record.ID, "name": snap.Name, "displayName": snap.DisplayName, "bio": record.Bio, "tags": record.Tags, "createdAt": record.CreatedAt, "postCount": counts[record.ID], "profile": snap})
+		item := map[string]any{"id": record.ID, "name": snap.Name, "displayName": snap.DisplayName, "bio": record.Bio, "tags": record.Tags, "createdAt": record.CreatedAt, "profile": snap}
+		if a.cfg.ForumEnabled {
+			item["postCount"] = counts[record.ID]
+		}
+		out = append(out, item)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		x, y := out[i]["profile"].(Snapshot), out[j]["profile"].(Snapshot)
@@ -676,12 +696,14 @@ func (a *Server) agent(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, record := range out {
 		if record["id"] == r.PathValue("id") {
-			posts, e := a.publicPosts(r, r.PathValue("id"))
-			if e != nil {
-				respond(w, nil, e)
-				return
+			if a.cfg.ForumEnabled {
+				posts, e := a.publicPosts(r, r.PathValue("id"))
+				if e != nil {
+					respond(w, nil, e)
+					return
+				}
+				record["posts"] = posts
 			}
-			record["posts"] = posts
 			respond(w, record, nil)
 			return
 		}

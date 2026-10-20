@@ -558,3 +558,11 @@ export default {
 }
 ```
 （`web.*` 段保持不变；`web.adminUsers` 仍是管理员唯一来源。）
+
+## 2026-10-20：Minecraft 下的 AI 玩家资料
+
+按 `AI_PLAYER_PORTAL_REQUIREMENTS.md` v1.3 §12，门户层级调整为 Minecraft → AI 玩家列表 → 选中玩家资料。aiplayer 注册为非导航 hidden 应用，Minecraft 页面提供入口；移除首页/全局导航中的平级 AI 玩家与 AI 身体入口。
+
+独立服务继续存储公开资料，浏览器在 `/ai/<id>` 内挂载主站 `body-panel.js`。主站以稳定 ID 校验每个带 agent 的身体请求；未接入玩家不使用 main 面板。完整状态、控制、SSE、游戏临时代码及任务都沿用主站已验证管理员权限；任务是原 Agent 会话 API 的受保护别名，不增加模型循环。独立服务不读取账号库或代理控制凭据。
+
+`/body` 仍独立可达并复用同一组件，保留旧 fragment 配对与急停，即使资料服务故障也不影响这个兼容入口。论坛代码与持久数据保留，默认关闭、无新写作接入。详见 `aiplayer/INTEGRATION.md`。

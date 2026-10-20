@@ -110,11 +110,13 @@ func (s *Server) Handler() http.Handler {
 		mountAIPlayer(mux, s.cfg.AIPlayerProxy)
 	}
 	api := s.web.API()
+	mux.HandleFunc("/api/body/ui", s.bodyPlayerInfo)
 	if s.body != nil && s.body.Enabled() {
 		if s.bodyUI != nil {
-			mux.Handle("/api/body/minecraft/link", s.bodyUI)
+			mux.Handle("/api/body/minecraft/link", s.bodyPlayer(s.bodyUI))
 		}
-		mux.Handle("/api/body/", s.body.Handler(s.acct))
+		mux.Handle("/api/body/task/", s.bodyTask(api))
+		mux.Handle("/api/body/", s.bodyPlayer(s.body.Handler(s.acct)))
 		mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				http.Error(w, "method not allowed", 405)

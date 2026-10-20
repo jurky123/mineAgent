@@ -34,7 +34,7 @@ func setup(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{dir: t.TempDir()}
 	f.now.Store(time.Now().UnixMilli())
-	f.c = Config{Listen: "127.0.0.1:8890", Database: filepath.Join(f.dir, "portal.db"), Origin: "http://127.0.0.1:8890", Name: "AI 玩家", Agents: []AgentConfig{{"main", "MineAgentBot", "小智"}, {"other", "OtherBot", "其他 AI"}}}
+	f.c = Config{ForumEnabled: true, Listen: "127.0.0.1:8890", Database: filepath.Join(f.dir, "portal.db"), Origin: "http://127.0.0.1:8890", Name: "AI 玩家", Agents: []AgentConfig{{"main", "MineAgentBot", "小智"}, {"other", "OtherBot", "其他 AI"}}}
 	var err error
 	f.s, err = Open(f.c.Database)
 	if err != nil {
@@ -457,4 +457,42 @@ func TestOwnDraftDeleteAndExpiredRestore(t *testing.T) {
 	if e == nil || e.Status != 409 {
 		t.Fatal("expired soft-delete restored", e)
 	}
+}
+
+func TestForumPausePreservesContentAndProfiles(t *testing.T) {
+	f := setup(t)
+	f.login(t)
+	p := f.create(t, "preserved-forum-post", "保留的正文", "关闭论坛不删除内容", "pending")
+	mustStatus(t, f.moderate(t, p, "publish", "publish-preserved", true), 200)
+	c := f.c
+	c.ForumEnabled = false
+	var err error
+	f.app, err = NewServer(c, f.s, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/ai-posts", "/api/ai-posts/" + p.ID, "/api/ai-auth/me", "/api/ai-admin/posts", "/api/ai-moderation/queue"} {
+		w := f.request(t, "GET", path, f.token, "", nil, true)
+		mustStatus(t, w, 404)
+		if !strings.Contains(w.Body.String(), "forum_closed") {
+			t.Fatal("forum not paused", path)
+		}
+	}
+	mustStatus(t, f.request(t, "POST", "/api/ai-posts", f.token, "paused-write-key", PostInput{Title: "新文", Body: "不会写入"}, false), 404)
+	w := f.request(t, "GET", "/api/ai-agents/main", "", "", nil, false)
+	mustStatus(t, w, 200)
+	for _, field := range []string{`"posts"`, `"postCount"`, "保留的正文"} {
+		if strings.Contains(w.Body.String(), field) {
+			t.Fatal("paused forum surfaced in profile")
+		}
+	}
+	stored, err := f.s.Post(context.Background(), p.ID)
+	if err != nil || stored == nil || stored.Live == nil || stored.Live.Title != "保留的正文" {
+		t.Fatal("forum pause modified stored content", err)
+	}
+	f.app, err = NewServer(f.c, f.s, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustStatus(t, f.request(t, "GET", "/api/ai-posts/"+p.ID, "", "", nil, false), 200)
 }

@@ -254,9 +254,6 @@ function paint(data) {
     { title: '小游戏', text: '国际象棋与五子棋在线对局。', path: '/games', label: '进入游戏大厅', glyph: 'gamepad' },
     { title: 'Minecraft', text: '客户端准备、整合包下载与服务器信息。', path: '/minecraft', label: '下载与加入指南', glyph: 'pickaxe' },
   ]) entries.appendChild(entryCard(entry));
-  for (const app of apps.filter((a) => a.enabled !== false && (!a.adminOnly || shell.user?.admin) && ['aiplayer', 'body'].includes(a.id))) {
-    entries.appendChild(entryCard({ title: app.name, text: app.desc || app.card?.text || '', path: app.path, label: app.id === 'body' ? '打开控制面板' : '查看 AI 玩家', glyph: app.icon || 'user' }));
-  }
   host.appendChild(entries);
   const minecraft = downloadCard(releaseData, { compact: true, status }); minecraft.id = 'minecraft';
   if (releaseError) {

@@ -1,8 +1,9 @@
-import { boot } from './shell.js';
+import { boot, shell } from './shell.js';
 import { h } from './ds.js';
 import { loadMinecraftRelease, downloadCard } from './minecraft-release.js';
 
 await boot({ active: '/minecraft', requireLogin: false, preview: new URLSearchParams(location.search).get('ui') === '1' });
+document.getElementById('minecraft-ai-players').hidden = !shell.apps.some(app => app.id === 'aiplayer' && app.enabled);
 const target = document.getElementById('minecraft-download');
 async function load() {
   target.setAttribute('aria-busy', 'true');

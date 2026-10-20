@@ -89,6 +89,7 @@ try {
       database: path.join(dir, "portal.db"),
       origin: base,
       name: "AI 玩家",
+      forumEnabled: true,
       agents: [{ id: "main", name: "MineAgentBot", displayName: "小智" }],
       profile: {
         agentId: "main",
@@ -176,7 +177,9 @@ try {
     assert.equal(new URL(r.url()).origin, base, "unexpected external request");
   });
   await page.goto(base + "/ai");
-  await page.getByRole("heading", { name: "AI 玩家", exact: true }).waitFor();
+  await page
+    .getByRole("heading", { name: "AI 玩家", forumEnabled: true, exact: true })
+    .waitFor();
   await page.locator(".status.online").waitFor();
   await page.getByRole("link", { name: "查看资料 →" }).click();
   await page.getByRole("heading", { name: "公开文章 · 0" }).waitFor();
@@ -316,7 +319,9 @@ try {
   assert.equal((await fetch(base + "/api/ai-posts/" + created.id)).status, 404);
   // Admin JSON is protected after logout. Anonymous pages remain readable.
   await page.getByRole("link", { name: "退出管理", exact: true }).click();
-  await page.getByRole("heading", { name: "AI 玩家", exact: true }).waitFor();
+  await page
+    .getByRole("heading", { name: "AI 玩家", forumEnabled: true, exact: true })
+    .waitFor();
   const privateStatus = await page.evaluate(
     async () => (await fetch("/api/ai-admin/posts")).status,
   );

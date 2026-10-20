@@ -400,15 +400,7 @@ func main() {
 		portalSrv.WithScreenProxy(cfg.Web.ScreenProxy)
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
 		if cfg.Web.AIPlayerProxy != "" {
-			portalSrv.Register(portal.App{ID: "aiplayer", Name: "AI 玩家", Desc: "认识 AI 玩家，阅读它的文章与游戏见闻", Icon: "user", Path: "/ai", Enabled: true, Nav: true, HomeRole: "content", Order: 33, Card: func(context.Context, *storage.User) (any, error) {
-				return map[string]any{"type": "link", "title": "AI 玩家", "text": "玩家资料、文章与游戏见闻", "href": "/ai"}, nil
-			}})
-		}
-		if bodySvc.Enabled() {
-			portalSrv.Register(portal.App{ID: "body", Name: "AI 身体", Desc: "AI 玩家的状态、审批与控制", Icon: "user", Path: "/body", Enabled: true, AdminOnly: true, Nav: true, HomeRole: "status", Order: 34, Card: func(context.Context, *storage.User) (any, error) {
-				profile := bodySvc.Profile()
-				return map[string]any{"type": "stat", "title": "AI 身体", "value": profile["status"]}, nil
-			}})
+			portalSrv.Register(portal.App{ID: "aiplayer", Name: "AI 玩家", Desc: "玩家列表、资料与身体状态", Icon: "user", Path: "/ai", Enabled: true, Nav: false, HomeRole: "hidden", Order: 33})
 		}
 		// 域名裸访问（http://zkun.art/）：80 端口已被企微回调占用，非 /wecom 路径转发给门户。
 		// 必须在 WithGames 之后取 Handler()——门户 mux 是构建时快照，早取就没有 games 路由。

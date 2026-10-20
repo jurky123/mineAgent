@@ -54,7 +54,7 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request, u *storage.U
 		if a.AdminOnly && (u == nil || !u.IsAdmin) {
 			continue
 		}
-		if !a.Enabled {
+		if !a.Enabled || a.HomeRole == "hidden" {
 			continue // 开发中的功能不出现在首页（避免"占位卡"）
 		}
 		item := appCard{ID: a.ID, Name: a.Name, Path: a.Path, Role: a.HomeRole, Priority: a.Priority, Span: a.Span}

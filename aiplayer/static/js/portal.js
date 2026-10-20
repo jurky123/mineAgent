@@ -181,6 +181,56 @@ function setPage(...nodes) {
   main.replaceChildren(...nodes);
   main.setAttribute("aria-busy", "false");
 }
+function hasForumPage(parts) {
+  return (
+    ["new", "moderation", "login"].includes(parts[1]) || parts.length === 4
+  );
+}
+function breadcrumbs(name) {
+  const nav = h("nav", "player-crumb");
+  nav.setAttribute("aria-label", "面包屑");
+  nav.append(
+    link("Minecraft", "/minecraft"),
+    h("span", "", "/"),
+    link("AI 玩家", "/ai"),
+  );
+  if (name) nav.append(h("span", "", "/"), h("span", "", name));
+  return nav;
+}
+async function loadBodyPanel(host, id) {
+  host.replaceChildren(message("正在检查该玩家的身体接入…"));
+  try {
+    const r = await fetch("/api/body/ui?agent=" + encodeURIComponent(id), {
+      credentials: "same-origin",
+      redirect: "error",
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) throw new Error("当前入口尚未接入主站身体服务。");
+    const ui = await r.json();
+    if (!ui.available) {
+      host.replaceChildren(message("此玩家未接入身体。"));
+      return;
+    }
+    if (
+      ui.id !== id ||
+      ui.module !== "/static/js/body-panel.js" ||
+      ui.stylesheet !== "/static/css/body.css"
+    )
+      throw new Error("玩家与身体接入信息不匹配。");
+    if (!document.getElementById("player-body-style")) {
+      const css = h("link");
+      css.id = "player-body-style";
+      css.rel = "stylesheet";
+      css.href = ui.stylesheet;
+      document.head.append(css);
+    }
+    const { mountBodyPanel } = await import("/static/js/body-panel.js");
+    await mountBodyPanel(host, { agentId: id });
+  } catch (e) {
+    const retry = button("重新检查身体接入", () => loadBodyPanel(host, id));
+    host.replaceChildren(message(errorText(e)), retry);
+  }
+}
 function heading(title, subtitle, action) {
   const wrap = h("div", "page-heading"),
     text = h("div");
@@ -194,7 +244,12 @@ function badges(tags = []) {
   const wrap = h("div", "tag-list");
   for (const tag of tags)
     wrap.append(
-      link("#" + tag, "/ai?view=posts&tag=" + encodeURIComponent(tag), "tag"),
+      link(
+        "#" + tag,
+        (info.forumEnabled ? "/ai?view=posts&tag=" : "/ai?tag=") +
+          encodeURIComponent(tag),
+        "tag",
+      ),
     );
   return wrap;
 }
@@ -400,14 +455,19 @@ async function directory() {
     );
     const end = h("div", "card-end");
     end.append(
-      h("span", "meta", `${a.postCount} 篇文章`),
+      h(
+        "span",
+        "meta",
+        info.forumEnabled ? `${a.postCount} 篇文章` : "AI 玩家",
+      ),
       link("查看资料 →", "/ai/" + a.id),
     );
     card.append(end);
     cards.append(card);
   }
   setPage(
-    heading("AI 玩家", "查看资料、当前状态与公开文章。"),
+    breadcrumbs(),
+    heading("AI 玩家", "选择玩家，查看资料、实时状态与身体控制。"),
     filters("agents"),
     data.items.length ? cards : message("没有符合条件的 AI 玩家。", "empty"),
     pager(data),
@@ -428,11 +488,14 @@ async function profile(id) {
   const a = await api(
     "/api/ai-agents/" + encodeURIComponent(id) + "?" + params,
   );
-  const layout = h("div", "split"),
+  const layout = h("div", info.forumEnabled ? "split" : "player-profile"),
     panel = h("aside", "card profile-panel"),
     content = h("section");
+  const playerIdentity = identity(a);
+  const title = playerIdentity.querySelector("h3");
+  title.replaceWith(h("h1", "", title.textContent));
   panel.append(
-    identity(a),
+    playerIdentity,
     h("span", "badge", "AI 玩家"),
     status(a),
     freshness(a),
@@ -453,6 +516,18 @@ async function profile(id) {
     facts.append(h("dt", "", name), detail);
   }
   panel.append(facts);
+  if (!info.forumEnabled) {
+    content.className = "player-body-section";
+    content.id = "body";
+    content.append(h("h2", "", "身体状态与控制"));
+    const bodyHost = h("div");
+    bodyHost.setAttribute("aria-live", "polite");
+    content.append(bodyHost);
+    layout.append(panel, content);
+    setPage(breadcrumbs(a.displayName || a.name), layout);
+    await loadBodyPanel(bodyHost, id);
+    return;
+  }
   content.append(h("h2", "", `公开文章 · ${a.posts.total}`));
   a.posts.items.forEach((p) => content.append(postRow(p)));
   if (!a.posts.total) content.append(message("还没有已发布文章。", "empty"));
@@ -986,11 +1061,14 @@ window.addEventListener("beforeunload", (e) => {
 });
 async function boot() {
   try {
-    [info, admin] = await Promise.all([
-      api("/api/ai-info"),
-      api("/api/ai-auth/me").catch(() => null),
-    ]);
-    document.querySelector("#site-name").textContent = info.name;
+    info = await api("/api/ai-info");
+    if (info.forumEnabled) {
+      admin = await api("/api/ai-auth/me").catch(() => null);
+      document.querySelector("[data-nav=posts]").hidden = false;
+      const account = document.querySelector("#account-link");
+      account.href = "/ai/login";
+      account.textContent = "管理登录";
+    }
     document.title = info.name;
     const portal = document.querySelector("#portal-link");
     if (info.portalURL) {
@@ -1015,6 +1093,17 @@ async function boot() {
     }
     const parts = location.pathname.split("/").filter(Boolean);
     let nav = "directory";
+    if (
+      !info.forumEnabled &&
+      (hasForumPage(parts) || params.get("view") === "posts")
+    ) {
+      setPage(
+        breadcrumbs(),
+        heading("论坛暂未开放", "当前提供玩家资料与身体状态。"),
+        link("返回玩家列表", "/ai", "btn"),
+      );
+      return;
+    }
     if (parts[1] === "login") await login();
     else if (parts[1] === "new") await editor();
     else if (parts[1] === "moderation") {

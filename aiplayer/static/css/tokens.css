@@ -152,7 +152,7 @@ a { color: inherit; }
 /* ---------- 跨页面过渡（View Transitions；不支持的浏览器就是普通跳转）----------
    旧页 90ms 淡出，新页稍后 220ms 淡入 + 上浮 6px；顶栏/底栏原地不动（不交叉淡化，避免文字重影），
    只有导航高亮 pill 在两页之间滑过去。主题切换走 html.vt-theme：纯交叉淡化、不位移。 */
-@view-transition { navigation: auto; }
+@view-transition { navigation: none; }
 ::view-transition-group(*) { animation-duration: var(--motion-layout); animation-timing-function: var(--ease-out); }
 ::view-transition-old(root) { animation: vt-out 90ms var(--ease-in) both; }
 ::view-transition-new(root) { animation: vt-in 220ms var(--ease-out) 40ms both; }

@@ -1,5 +1,22 @@
 # V1 隔离验收记录
 
+## v1.3 Minecraft 层级与身体整合
+
+2026-10-20：`go test -p 1 ./...` 全量通过；`go vet -p 1 ./...` 通过；`python3 scripts/deploy_test.py` 10 项通过；`node scripts/community-ui-test.mjs` 通过。新增 Go 用例验证稳定 ID 绑定、不接受其他玩家/重复 agent、主站权限与会话撤销、任务复用原 API、旧无 agent 路径兼容，以及论坛关闭不改变已发布内容、开关恢复仍可读取原版本。
+
+隔离组合验收：
+
+```sh
+go build -o /tmp/player-portal-fixture ./scripts/player-portal-fixture
+node scripts/player-portal-e2e.mjs /tmp/player-portal-fixture
+```
+
+夹具使用实际主站账号/门户反代/独立服务/只读 profile，以及模拟 Node/Paper 协议和模型；不读取生产配置、不连接真实游戏。浏览器通过 Minecraft→玩家列表→资料内身体区，验证匿名/普通用户/实际有效的独立管理员会话均无控制权限、主站管理员可查看完整状态；其他玩家无身体、不回落 main。任务/回复经过原 Agent runner，暂停/恢复及旧 `/body#game-code=` 的核对/授权/撤销真实经过原服务器端逻辑；离线/过期/恢复、退出清除私有显示、390/768/1280、深色/减少动态效果通过。临时截图目录由脚本最后一行输出。
+
+论坛默认关闭；下方 V1 论坛验收是历史记录。历史兼容测试夹具显式设置 `forumEnabled=true`，不表示本轮启用论坛或写作。未修改数据库 schema 或重置任何内容。生产部署核查记录见 INTEGRATION.md。
+
+---
+
 日期：2026-10-20。范围：本仓库新增的独立内容服务和客户端；未读取生产配置/账号/数据库，未启用 profile 提供端，未替换生产程序或重启 MineAgent/Paper。测试只创建自己的回环监听、临时数据库、管理员与随机凭据，退出后删除测试凭据/数据库，保留截图。
 
 ## 自动化结果

@@ -58,7 +58,7 @@ try {
   assert.equal(await page.getByText('服务器信息与加入指南').count(), 1);
   await checkWidth(); await page.screenshot({ path: '/tmp/zkun-community-ui/home-desktop.png', fullPage: true });
   await page.getByRole('link', { name: '下载与加入指南', exact: true }).click();
-  await page.getByRole('heading', { name: 'Minecraft 加入指南' }).waitFor();
+  await page.getByRole('heading', { name: 'Minecraft', exact:true }).waitFor();
   assert.equal(await page.locator('.install-steps > li').count(), 4);
   await page.getByText('文件损坏 / SHA256 不匹配', { exact: true }).click();
   assert.equal(await page.locator('.guide-faq details[open]').count(), 1);

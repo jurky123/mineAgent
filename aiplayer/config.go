@@ -16,14 +16,15 @@ import (
 )
 
 type Config struct {
-	Listen    string         `json:"listen"`
-	Database  string         `json:"database"`
-	Origin    string         `json:"origin"`
-	PortalURL string         `json:"portalURL"`
-	Name      string         `json:"name"`
-	Agents    []AgentConfig  `json:"agents"`
-	Profile   *ProfileSource `json:"profile,omitempty"`
-	SkinHosts []string       `json:"skinHosts"`
+	Listen       string         `json:"listen"`
+	Database     string         `json:"database"`
+	Origin       string         `json:"origin"`
+	PortalURL    string         `json:"portalURL"`
+	Name         string         `json:"name"`
+	Agents       []AgentConfig  `json:"agents"`
+	Profile      *ProfileSource `json:"profile,omitempty"`
+	SkinHosts    []string       `json:"skinHosts"`
+	ForumEnabled bool           `json:"forumEnabled,omitempty"`
 }
 type AgentConfig struct {
 	ID          string `json:"id"`

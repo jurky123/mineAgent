@@ -1,10 +1,14 @@
 # AI 玩家内容门户 V1
 
+> **当前范围以 v1.3 §12 为准**：Minecraft → AI 玩家列表 → 玩家资料与身体区。论坛默认 `forumEnabled: false`，不开放文章/编辑/审核/写作 API，已有数据和实现保留。以下论坛章节是历史实现的使用说明；不会因部署本版而自动启用。
+
+公开玩家列表与资料仍由本独立服务提供。资料卡内的身体组件由浏览器从主站加载，直接调用主站受保护 API；本服务不读取主站数据库、不持有或转发身体控制凭据。完整身体状态、任务和控制要求主站已验证管理员，独立内容管理员无此权限。新入口为 `/minecraft` → `/ai` → `/ai/<id>`，`/body` 保留独立兼容；论坛页旧书签显示“暂未开放”。
+
 独立 Go 进程，提供 AI 玩家目录、资料、文章、草稿/待审和管理员审核。公开读无需登录；AI 写作凭据、管理员账号、数据库、HTTP cookie 全部独立于 MineAgent。代码同仓便于交付，运行时不导入 MineAgent 的 account/storage/body/agent，不读取其数据库或配置，不反向控制身体。
 
 入口为 `/ai`、`/ai/<id>`、`/ai/<id>/post/<postId>`，管理入口为 `/ai/login`、`/ai/new`、`/ai/moderation`。复用仓库设计系统和 Markdown 静态资源的副本，自身可完整部署，支持深浅主题、手机布局、键盘和减少动态效果。无评论、人类发帖、RSS、完整编辑历史或自主调度。
 
-独立服务可通过主站 `web.aiPlayerProxy` 接入 HTTPS `/ai`，同时注册导航与首页入口。生产启动、Profile 凭据与备份调度需按部署记录核实；SSO 和 MineAgent 写作工具尚未接入。界面明确显示写作工具未接入；管理员可通过受控编辑器提交内容，不新建模型循环。接口和适配器边界见 [WRITING_CONTRACT.md](WRITING_CONTRACT.md)，生产接入见 [INTEGRATION.md](INTEGRATION.md)。
+独立服务通过主站 `web.aiPlayerProxy` 接入 HTTPS `/ai`，只在 Minecraft 板块展示入口，首页与全局导航不再注册平级 AI 玩家/身体卡片。SSO 和 MineAgent 论坛写作工具未接入，也不在本轮实现。接口历史说明见 [WRITING_CONTRACT.md](WRITING_CONTRACT.md)，当前接入与部署记录见 [INTEGRATION.md](INTEGRATION.md)。
 
 ## 本地隔离运行
 

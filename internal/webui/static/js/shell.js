@@ -5,6 +5,17 @@
 import { passwordForm } from './passwords.js';
 import { h, icon, toast, gameIcon, segThumb, reducedMotion } from './ds.js';
 
+// Leaving a document or opting out of a cross-document animation can reject
+// ready. Consume the transition promises without suppressing application errors.
+for (const type of ['pageswap', 'pagereveal']) window.addEventListener(type, (event) => {
+  event.viewTransition?.ready.catch(() => {});
+  event.viewTransition?.finished.catch(() => {});
+  if (type === 'pageswap' && event.viewTransition) {
+    const next = new URL(event.activation?.entry?.url || location.href).pathname;
+    if (next === '/ai' || next.startsWith('/ai/')) event.viewTransition.skipTransition();
+  }
+});
+
 // 命令面板里的棋类图标（用真实棋子/石图）
 function gameIconEl(id, cls) { return gameIcon(id, cls); }
 
@@ -165,7 +176,7 @@ function paintTop(active) {
   };
   mk('首页', '/', 'home');
   for (const app of shell.apps) {
-    if (app.enabled && (!app.adminOnly || shell.user?.admin) && app.nav && app.path && ['agent', 'games', 'aiplayer', 'body'].includes(app.id)) mk(app.navLabel || app.name, app.path, app.icon || 'info');
+    if (app.enabled && (!app.adminOnly || shell.user?.admin) && app.nav && app.path && ['agent', 'games'].includes(app.id)) mk(app.navLabel || app.name, app.path, app.icon || 'info');
   }
   mk('Minecraft', '/minecraft', 'pickaxe');
   bar.appendChild(nav);

@@ -1,6 +1,18 @@
 # 部署与待接入项
 
-独立服务实现见下表。2026-10-20 补齐同域接入：主站可配置 `web.aiPlayerProxy` 为显式回环 HTTP 地址，仅反代 `/ai`、`/ai-assets/` 和固定 `/api/ai-*` 路由，并注册导航及首页入口。反代会移除 MineAgent Authorization 与 cookie，只传递独立内容服务自己的管理员 cookie；Origin 和 CSRF 保留。独立服务 Origin 应配置为主站 HTTPS origin。
+## v1.3 当前入口与权限（2026-10-20）
+
+本版正常入口为 `/minecraft` → `/ai` → `/ai/<id>`。全局导航只保留 Minecraft，独立资料页通过面包屑返回 Minecraft/玩家列表。主站注册的 aiplayer 应用为 hidden、非导航，首页不聚合；旧 body 应用不再作为平级入口。
+
+资料页在浏览器中读取主站 `GET /api/body/ui?agent=<id>` 的公开接入元数据，只有绑定当前身体的 ID 才加载已有身体组件；无匹配时显示未接入，不回落 main。完整状态/审批/控制/SSE 和游戏授权仍调用原主站 API，附加 `agent` 由主站校验；旧无 agent 的调用保留兼容。任务入口 `/api/body/task/send|history|stop?agent=<id>` 在主站重新验证管理员及 CSRF 后复用原 Agent 会话 API，没有第二个模型循环或独立执行器。
+
+独立服务不代理身体 API，也不持有主站凭据；反代继续剥离主站 cookie/Authorization。独立内容管理员、写作 token、profile token 均不能控制身体。`/body` 保留原站独立页面，使用同一组件，不依赖独立资料进程的可用性；游戏代码只从 fragment 读取、就地移除，短时保存在浏览器 sessionStorage 以跨登录保留，必须核对连接后手动授权。
+
+论坛默认 `forumEnabled=false`，文章/审核/登录/写作 API 返回 forum_closed，旧页面显示暂未开放；资料页不返回文章或计数。数据库不迁移、不重置，旧文章/版本/凭据/审计原样保留。历史模块兼容测试显式开启该开关；恢复旧模块仅需显式配置 true，不代表本轮建设或启用 AI 酒馆。
+
+下文 18:11 核查是本轮调整前的历史部署，不能将其中的平级入口与文章 UI 描述当成当前信息架构。
+
+主站配置 `web.aiPlayerProxy` 为显式回环 HTTP 地址，仅反代 `/ai`、`/ai-assets/` 和固定 `/api/ai-*` 路由；当前入口位于 Minecraft 内。反代移除 MineAgent Authorization 与 cookie，只传递独立内容服务自己的 cookie；Origin 和 CSRF 保留。独立服务 Origin 配置为主站 HTTPS origin。
 
 可以采用**主站 HTTPS 同域 `/ai` + 回环 8890**，或独立 HTTPS 子域名。主站自行终止 TLS，新增的内容服务专用反代不改变现有监听。服务只绑定显式回环，HTTPS Origin 由配置锁定，反代保留原 Origin、不得将管理员接口开放跨域。不要直接暴露 8890 到公网，也不要修改原站 IPv4/IPv6 443 监听。实际域名与证书/反代责任人须部署时确定，无需新增域名或公网端口。
 
@@ -13,11 +25,11 @@
 | 独立内容服务 | 代码、CLI、页面和隔离验收交付；通过独立 systemd 单元部署；以实际运维记录为准 |
 | Profile | 正式提供端已启用，使用独立只读凭据；已验证 MineAgentBot 实时 online/idle 投影 |
 | 域名与路由 | 2026-10-20 已在正式主站同域 `/ai` 接入回环 8890；HTTPS 实测通过 |
-| 门户入口 | 配置 web.aiPlayerProxy 后自动注册导航和首页入口；不接首页最新帖子聚合 |
+| 门户入口 | 配置 web.aiPlayerProxy 后在 Minecraft 内提供玩家列表；不注册平级导航/首页卡片 |
 | 身份 | 本服务独立管理员账号；不共享用户 cookie、数据库、token、昵称身份 |
 | SSO | 未实现；另定一次性凭据交换、audience/过期/撤销/登出，不能仅信原站用户名 |
 | MineAgent 写作 | 未接入；已交付受控 CLI 与契约，见 WRITING_CONTRACT.md；由 MineAgent 后续任务实现窄工具适配 |
-| 身体控制 | 不接入；无 status/events/control/WS 代理，不开放控制授权 |
+| 身体控制 | 资料卡在浏览器直连主站组件/API；独立服务不代理、不持有凭据，不授予控制身份 |
 | 备份 | 正式单独 timer 已安装，每日 04:25（服务器时区）随机延迟至多 5 分钟；首次备份 integrity_check=ok；未配置自动清理或异机副本 |
 
 ## 备份责任与恢复

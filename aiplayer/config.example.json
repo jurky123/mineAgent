@@ -8,5 +8,6 @@
     { "id": "main", "name": "MineAgentBot", "displayName": "MineAgentBot" }
   ],
   "skinHosts": [],
+  "forumEnabled": false,
   "profile": null
 }

@@ -1,0 +1,192 @@
+/* 设计 token：灰白负责结构、蓝白负责交互。
+   亮色为默认，html[data-theme="dark"] 覆盖；自定义强调色由 theme.js 覆盖 --accent。 */
+:root {
+  --bg: #ffffff;
+  --sidebar: #f9f9f9;
+  --surface: #ffffff;
+
+  /* 结构（灰） */
+  --control-bg: #f7f7f7;
+  --control-hover: #eeeeee;
+  --control-active: #e9e9e9;
+  --surface-hover: var(--control-hover);
+  --surface-active: var(--control-active);
+  --border-subtle: #eeeeee;
+  --border-control: #e3e3e3;
+  --border: #e9e9e9;
+  --border-2: #dedede;
+  --header-bg: rgba(255, 255, 255, .9);
+  --drop-bg: rgba(255, 255, 255, .7);
+
+  --text: #0d0d0d;
+  --text-2: #5d5d5d;
+  --text-3: #8f8f8f;
+
+  --user-bubble: #f4f4f4;
+  --code-bg: #f7f7f8;
+  --code-inline: #f0f0f0;
+  --send-off-bg: #f7f7f7;
+  --send-off-fg: #b0b0b0;
+
+  /* 交互（蓝） */
+  --interactive: #0285ff;
+  --interactive-soft: rgba(2, 133, 255, .10);
+  --interactive-border: rgba(2, 133, 255, .32);
+  --link: #0285ff;
+  --reason-track: #f3f3f3;
+  --accent: var(--interactive);
+  --accent-contrast: #ffffff;
+
+  --danger: #d92d20;
+  --ok: #067647;
+  --shadow-popover: 0 8px 28px rgba(0, 0, 0, .10);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-composer: 26px;
+  --col: 48rem;
+
+  /* ---- Portal 设计系统（Agent 聊天页继续用上面的 token，互不影响） ---- */
+  --page: #F6F7F9;
+  --surface-muted: #f3f4f6;
+  --border-strong: #dadade;
+  --text-secondary: #5E6878;
+  --text-tertiary: #626D7D;
+  --brand: #2563EB;
+  --brand-hover: #1D4ED8;
+  --brand-soft: rgba(10, 132, 255, .09);
+  --grid-line: #d9d9de;
+  --motion-press: 70ms;
+  --motion-exit: 120ms;
+  --motion-fast: 100ms;
+  --motion-ui: 150ms;
+  --motion-enter: 180ms;
+  --motion-layout: 280ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-spring: cubic-bezier(.2, 1.4, .5, 1);
+  --ease-out: cubic-bezier(.16, 1, .3, 1);     /* 进场：快起慢停 */
+  --ease-in: cubic-bezier(.4, 0, 1, 1);        /* 退场：干脆离开 */
+  --press-scale: .97;
+  --radius-control: 10px;
+  --radius-cta: 12px;
+  --radius-card: 16px;
+  --radius-popover: 14px;
+  --radius-large: 22px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, .04);
+  --shadow-raised: 0 12px 32px rgba(16, 24, 40, .10);
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  --bg: #212121;
+  --sidebar: #171717;
+  --surface: #212121;
+  --page: #111113;
+  --surface-muted: #18181b;
+  --border: rgba(255, 255, 255, .09);
+  --border-subtle: rgba(255, 255, 255, .06);
+  --border-strong: rgba(255, 255, 255, .16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 40px rgba(20, 100, 255, .02);
+  --control-bg: #2a2a2a;
+  --control-hover: #2f2f2f;
+  --control-active: #303030;
+  --border-subtle: #2c2c2c;
+  --border-control: #3a3a3a;
+  --border: #333333;
+  --border-2: #4a4a4a;
+  --header-bg: rgba(33, 33, 33, .9);
+  --drop-bg: rgba(33, 33, 33, .72);
+  --text: #ececec;
+  --text-2: #b4b4b4;
+  --text-3: #8f8f8f;
+  --user-bubble: #303030;
+  --code-bg: #171717;
+  --code-inline: #2f2f2f;
+  --send-off-bg: #2a2a2a;
+  --send-off-fg: #7a7a7a;
+  --interactive: #4da3ff;
+  --interactive-soft: rgba(77, 163, 255, .16);
+  --interactive-border: rgba(77, 163, 255, .38);
+  --link: #7cb8ff;
+  --reason-track: #2f2f2f;
+  --accent: var(--interactive);
+  --accent-contrast: #0d0d0d;
+  --shadow-popover: 0 8px 28px rgba(0, 0, 0, .5);
+  --page: #131316;
+  --surface-muted: #1c1c20;
+  --border-strong: #3b3b41;
+  --text-secondary: #a3a3ab;
+  --text-tertiary: #a0a6b2;
+  --brand: #2563EB;
+  --brand-hover: #1D4ED8;
+  --danger: #ff9c94;
+  --ok: #6ee7b7;
+  --brand-soft: rgba(10, 132, 255, .16);
+  --grid-line: #3a3a40;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-raised: 0 12px 32px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text); overflow: hidden;
+  font: 15.5px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+a { color: inherit; }
+::selection { background: var(--interactive-soft); }
+:focus-visible { outline: 2px solid var(--interactive-border); outline-offset: 2px; border-radius: 6px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+[hidden] { display: none !important; }
+
+.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.i.lg { width: 18px; height: 18px; }
+.i.sm { width: 13px; height: 13px; }
+.spacer { flex: 1; }
+
+/* ---------- 跨页面过渡（View Transitions；不支持的浏览器就是普通跳转）----------
+   旧页 90ms 淡出，新页稍后 220ms 淡入 + 上浮 6px；顶栏/底栏原地不动（不交叉淡化，避免文字重影），
+   只有导航高亮 pill 在两页之间滑过去。主题切换走 html.vt-theme：纯交叉淡化、不位移。 */
+@view-transition { navigation: auto; }
+::view-transition-group(*) { animation-duration: var(--motion-layout); animation-timing-function: var(--ease-out); }
+::view-transition-old(root) { animation: vt-out 90ms var(--ease-in) both; }
+::view-transition-new(root) { animation: vt-in 220ms var(--ease-out) 40ms both; }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(6px); } }
+.topbar { view-transition-name: mine-shell; }
+.tabbar { view-transition-name: mine-tabbar; }
+::view-transition-old(mine-shell), ::view-transition-old(mine-tabbar) { animation: none; opacity: 0; }
+::view-transition-new(mine-shell), ::view-transition-new(mine-tabbar) { animation: none; }
+::view-transition-group(nav-pill), ::view-transition-group(tab-pill) { animation-duration: 260ms; }
+html.vt-theme::view-transition-old(*) { animation: none; }
+html.vt-theme::view-transition-new(*) { animation: vt-fade 240ms ease both; }
+html.vt-theme::view-transition-group(*) { animation-duration: 0s; }
+@keyframes vt-fade { from { opacity: 0; } }
+
+/* 无障碍：系统开了"减弱动态效果"就关掉所有动画/过渡 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pop { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+@keyframes screenIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes screenOut { to { opacity: 0; transform: translateY(-6px); } }
+
+#app.enter, #login.enter { animation: screenIn .28s cubic-bezier(.2,.8,.2,1); }
+#app.leave, #login.leave { animation: screenOut .16s ease forwards; }
+
+@media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }

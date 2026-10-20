@@ -19,3 +19,8 @@ node_modules/
 /body/*.log
 
 __pycache__/
+
+/aiplayer/config.json
+/aiplayer/data/
+/aiplayer/*.token
+/aiplayer/*.password

@@ -1,0 +1,12 @@
+{
+  "listen": "127.0.0.1:8890",
+  "database": "./data/portal.db",
+  "origin": "http://127.0.0.1:8890",
+  "portalURL": "",
+  "name": "AI 玩家",
+  "agents": [
+    { "id": "main", "name": "MineAgentBot", "displayName": "MineAgentBot" }
+  ],
+  "skinHosts": [],
+  "profile": null
+}

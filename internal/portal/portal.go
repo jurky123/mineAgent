@@ -106,6 +106,9 @@ func (s *Server) Stop() {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	if s.cfg.AIPlayerProxy != "" {
+		mountAIPlayer(mux, s.cfg.AIPlayerProxy)
+	}
 	api := s.web.API()
 	if s.body != nil && s.body.Enabled() {
 		if s.bodyUI != nil {

@@ -137,6 +137,8 @@ type Web struct {
 	// HTTP 监听地址，默认 0.0.0.0:8766（公网访问要在腾讯云控制台放行该端口）。
 	// 置空字符串则禁用网页入口。
 	Listen string `json:"listen"`
+	// 独立 AI 玩家内容服务的回环 HTTP 地址；留空不注册入口与反代。
+	AIPlayerProxy string `json:"aiPlayerProxy,omitempty"`
 	// 允许登录的名字白名单；空 = 不限制（任何合法名字）。
 	Users []string `json:"users"`
 	// 管理员名字：workspace 写代码/跑代码 + MC 高权限审批路径。

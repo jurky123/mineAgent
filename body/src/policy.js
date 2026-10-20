@@ -62,7 +62,9 @@ export const vector = (v) =>
 export const forbiddenText = (s) =>
   typeof s !== "string" || /[\p{Cc}\p{Cf}]/u.test(s);
 export function inside(policy, worldId, pos, margin = 0.3) {
-  if (!vector(pos) || policy.zones?.mode !== "allowlist") return false;
+  if (!vector(pos) || !worldId) return false;
+  if (policy.zones?.mode === "unrestricted") return true;
+  if (policy.zones?.mode !== "allowlist") return false;
   return (policy.zones.areas || []).some(
     (a) =>
       a.worldId === worldId &&

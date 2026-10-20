@@ -88,8 +88,8 @@ func (b Body) Validate(mainToken, listen string) error {
 	if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
 		return fmt.Errorf("启用 body 要求后端 WS 仅监听回环地址")
 	}
-	if b.Zones.Mode != "allowlist" {
-		return fmt.Errorf("body.zones.mode 仅支持 allowlist")
+	if b.Zones.Mode != "allowlist" && b.Zones.Mode != "unrestricted" {
+		return fmt.Errorf("body.zones.mode 必须为 allowlist/unrestricted")
 	}
 	for _, a := range b.Zones.Areas {
 		for i := 0; i < 3; i++ {

@@ -87,7 +87,7 @@ export class MinecraftBody {
       p.bodyId !== this.config.backend.bodyId ||
       p.expectedMcVersion !== this.config.minecraft.targetVersion ||
       !["off", "observe", "assist"].includes(p.mode) ||
-      p.zones?.mode !== "allowlist"
+      !["allowlist", "unrestricted"].includes(p.zones?.mode)
     )
       fail("invalid_policy");
     for (const a of p.zones.areas || [])

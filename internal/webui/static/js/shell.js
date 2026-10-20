@@ -165,7 +165,7 @@ function paintTop(active) {
   };
   mk('首页', '/', 'home');
   for (const app of shell.apps) {
-    if (app.nav && app.path && ['agent', 'games'].includes(app.id)) mk(app.navLabel || app.name, app.path, app.icon || 'info');
+    if (app.enabled && (!app.adminOnly || shell.user?.admin) && app.nav && app.path && ['agent', 'games', 'aiplayer', 'body'].includes(app.id)) mk(app.navLabel || app.name, app.path, app.icon || 'info');
   }
   mk('Minecraft', '/minecraft', 'pickaxe');
   bar.appendChild(nav);

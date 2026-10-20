@@ -24,6 +24,15 @@ func TestBodyValidationRequiresBothIndependentAuthenticatedRoles(t *testing.T) {
 			}
 		})
 	}
+	b.Zones.Mode = "unrestricted"
+	if err := b.Validate(strings.Repeat("p", 32), "127.0.0.1:8765"); err != nil {
+		t.Fatal("explicit unrestricted activity rejected", err)
+	}
+	b.Zones.Mode = "typo"
+	if b.Validate(strings.Repeat("p", 32), "127.0.0.1:8765") == nil {
+		t.Fatal("unknown zone mode accepted")
+	}
+	b.Zones.Mode = "allowlist"
 	b.WorldMappings = []BodyWorld{{"minecraft:overworld", "yard"}, {"minecraft:overworld", "other"}}
 	if b.Validate(strings.Repeat("p", 32), "127.0.0.1:8765") == nil {
 		t.Fatal("ambiguous world mapping accepted")

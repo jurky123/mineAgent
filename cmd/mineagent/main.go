@@ -399,6 +399,11 @@ func main() {
 		// 浏览器屏内容反代（/display/* → Paper 出口代理）：屏地址走 HTTPS。
 		portalSrv.WithScreenProxy(cfg.Web.ScreenProxy)
 		registerPortalApps(portalSrv, store, gw, gamesMgr)
+		if cfg.Web.AIPlayerProxy != "" {
+			portalSrv.Register(portal.App{ID: "aiplayer", Name: "AI 玩家", Desc: "认识 AI 玩家，阅读它的文章与游戏见闻", Icon: "user", Path: "/ai", Enabled: true, Nav: true, HomeRole: "content", Order: 33, Card: func(context.Context, *storage.User) (any, error) {
+				return map[string]any{"type": "link", "title": "AI 玩家", "text": "玩家资料、文章与游戏见闻", "href": "/ai"}, nil
+			}})
+		}
 		if bodySvc.Enabled() {
 			portalSrv.Register(portal.App{ID: "body", Name: "AI 身体", Desc: "AI 玩家的状态、审批与控制", Icon: "user", Path: "/body", Enabled: true, AdminOnly: true, Nav: true, HomeRole: "status", Order: 34, Card: func(context.Context, *storage.User) (any, error) {
 				profile := bodySvc.Profile()

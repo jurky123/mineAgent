@@ -1680,3 +1680,9 @@ Node：
 - `README.md` 增加“身体”章节/链接（评审后）。
 - systemd 单元/环境文件（不进仓库）。
 - 版本矩阵/升级检查清单。
+
+
+### 2026-10-20 部署接入补充
+
+- `body.zones.mode=unrestricted` 显式关闭活动区域约束，适用于服主授权的全服活动；`allowlist` 及空列表拒绝语义保持不变。世界映射、非 OP 校验、管理员身份、高危审批与急停继续生效。
+- 独立文章门户通过主站 `web.aiPlayerProxy` 的固定回环反代提供 `/ai`，导航和首页入口同步注册与展示。反代只转发内容服务自己的 cookie，不转发 MineAgent Authorization 或会话 cookie。内容审核管理员仍独立认证。

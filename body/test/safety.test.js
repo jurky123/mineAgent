@@ -29,6 +29,14 @@ const spec = {
   offHand: "",
   hazards: [],
 };
+test("unrestricted zones allow distant positions but keep validation and hard denies", () => {
+  const unrestricted = { ...policy, zones: { mode: "unrestricted" } };
+  assert.equal(inside(unrestricted, "yard", [100000, 64, -100000]), true);
+  assert.equal(inside(unrestricted, "", [0, 64, 0]), false);
+  assert.equal(inside(unrestricted, "yard", [Infinity, 64, 0]), false);
+  assert.equal(inside({ ...policy, zones: { mode: "typo" } }, "yard", [0, 64, 0]), false);
+  assert.throws(() => checkSpec({ ...spec, block: "command_block" }, unrestricted));
+});
 test("implicit hand and contextual beds require a matching one-use grant", () => {
   assert.equal(risk(spec, policy), true);
   assert.throws(() => checkGrant(spec, null, policy, 1));

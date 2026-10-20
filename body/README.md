@@ -216,3 +216,9 @@ Node 12 项安全/导航测试、Go 相关包竞态/静态检查与全仓回归�
 `body.state` 和 `body_status` 新增 `pauseReason`；强制位置包另记录 `from/to/distance/tool`，仅用于诊断。原事件没有修正前的位置，无法追溯证明是碰撞纠正还是管理员传送。协议本身也不能可靠区分两者，因此小位移、零位移、心跳到达均不会自动解除暂停；认证管理员显式恢复后才接受新动作。暂停会清理准备好的动作并中止当前输入，恢复不重放旧任务。
 
 回归：在与正式服务相同的 `AmbientCapabilities=CAP_NET_BIND_SERVICE` 临时单元运行 workspace 测试，验证沙箱子进程 CapInh/CapPrm/CapEff/CapAmb 均为零、NoNewPrivs 为 1，父进程能力不变；宿主文件/符号链接逃逸、普通命令禁网、缺少隔离依赖、输出上限和超时子进程清理均通过。Go tools/body/bodyui 竞态测试、相关 vet 与 Node 13 项测试通过。
+
+隔离真实链路验收通过：13 工具、80 次模型调用，包含完整世界身份、暂停/恢复、审批、原生面板、连续观察、WorldEdit 和原始客户端挖掘/放置守卫。工件位于 `/tmp/mineagent-body-e2e-2MlY7Q/`，不包含正式世界。
+
+23:55 CST 发布前核查仅机器人在线 1 人，对局、模型任务、身体动作和待审批均为零；发送全服通告后经 `scripts/deploy.sh` 的对局/drain 检查部署后端 `dcf23aa`，重载 Node，未重启 Paper。旧二进制与 Node 源码保存在私有目录 `backups/cap-pause-20261020-235521/`。恢复维护前坐标和创造模式后，通过认证控制接口显式解除暂停，未恢复旧任务。
+
+正式管理员工具自检：`workspace_exec pwd` exitCode=0；审查现有 `cabin_plan.py` 后，用 `python3 -B -c` 导入并调用 `build(0,64,0)` 返回 348 个方块（仅内存计算，未覆盖施工文件）。一次附近 `body_goto` 成功、实际位移约 1.81 格，随后独立 `body_observe` 确认位置改变、创造模式且 paused=false；未挖掘、放置或执行建造命令。恢复位置时的明确传送被新诊断记录为约 23.46 格，说明 from/to/distance 采集已在正式协议链路生效。这次短距验证没有复现原位置包原因，不能据此断言所有位置纠正问题已经消失。

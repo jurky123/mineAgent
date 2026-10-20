@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { checkSpec, checkGrant, risk, inside } from "../src/policy.js";
 import { MinecraftBody } from "../src/minecraft.js";
 const policy = {
@@ -29,13 +30,81 @@ const spec = {
   offHand: "",
   hazards: [],
 };
+test("player command transport keeps WorldEdit double slash and immutable preparation", async () => {
+  const runtime = new MinecraftBody(
+    { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+    () => {},
+  );
+  const sent = [];
+  runtime.policy = policy;
+  runtime.epoch = 1;
+  runtime.ready = true;
+  runtime.connected = true;
+  runtime.paused = false;
+  runtime.lastLease = performance.now();
+  runtime.bot = Object.assign(new EventEmitter(), {
+    entity: { position: { x: 0, y: 64, z: 0 } },
+    game: { dimension: "overworld" },
+    inventory: { slots: Array(46).fill(null) },
+    chat(text) {
+      sent.push(text);
+    },
+    quit() {},
+    clearControlStates() {},
+    deactivateItem() {},
+    stopDigging() {},
+    pathfinder: { setGoal() {} },
+  });
+  try {
+    for (const [input, wire] of [
+      ["help", "/help"],
+      ["/give MineBodyTest stone 1", "/give MineBodyTest stone 1"],
+      ["//pos1 1,64,1", "//pos1 1,64,1"],
+    ]) {
+      runtime.lastLease = performance.now();
+      const prepared = runtime.describe("body_command", { command: input });
+      assert.equal(
+        runtime.describe("body_command", prepared.args).args.command,
+        prepared.args.command,
+      );
+      const action = {
+        tool: "body_command",
+        epoch: 1,
+        abort: new AbortController(),
+        spec: prepared,
+      };
+      // Prepared args, not a later dispatch payload, determine the command.
+      const result = await runtime.perform(action, { command: "op somebody" });
+      assert.equal(result.submitted, true);
+      assert.equal(sent.at(-1), wire);
+      assert.equal(runtime.bot.listenerCount("messagestr"), 0);
+    }
+    for (const command of [
+      "/agent test",
+      "//ma test",
+      "/minecraft:AI test",
+      "mineagent:/agent test",
+      "/",
+      "//",
+    ]) {
+      assert.throws(() => runtime.describe("body_command", { command }));
+    }
+  } finally {
+    await runtime.close();
+  }
+});
 test("unrestricted zones allow distant positions but keep validation and hard denies", () => {
   const unrestricted = { ...policy, zones: { mode: "unrestricted" } };
   assert.equal(inside(unrestricted, "yard", [100000, 64, -100000]), true);
   assert.equal(inside(unrestricted, "", [0, 64, 0]), false);
   assert.equal(inside(unrestricted, "yard", [Infinity, 64, 0]), false);
-  assert.equal(inside({ ...policy, zones: { mode: "typo" } }, "yard", [0, 64, 0]), false);
-  assert.throws(() => checkSpec({ ...spec, block: "command_block" }, unrestricted));
+  assert.equal(
+    inside({ ...policy, zones: { mode: "typo" } }, "yard", [0, 64, 0]),
+    false,
+  );
+  assert.throws(() =>
+    checkSpec({ ...spec, block: "command_block" }, unrestricted),
+  );
 });
 test("implicit hand and contextual beds require a matching one-use grant", () => {
   assert.equal(risk(spec, policy), true);

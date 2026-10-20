@@ -558,7 +558,7 @@ export class MinecraftBody {
     }
     if (tool === "body_command") {
       if (typeof args.command !== "string") fail("invalid_args");
-      args.command = args.command.trim().replace(/^\/+/, "");
+      args.command = args.command.trim();
     }
     checkSpec(spec, this.policy);
     return spec;
@@ -908,7 +908,9 @@ export class MinecraftBody {
       try {
         this.ensure(a);
         a.submitted = true;
-        b.chat("/" + args.command);
+        b.chat(
+          args.command.startsWith("/") ? args.command : "/" + args.command,
+        );
         await this.step(a, () => new Promise((r) => setTimeout(r, 1000)));
         return { submitted: true, output, untrusted: true };
       } finally {

@@ -1686,3 +1686,8 @@ Node：
 
 - `body.zones.mode=unrestricted` 显式关闭活动区域约束，适用于服主授权的全服活动；`allowlist` 及空列表拒绝语义保持不变。世界映射、非 OP 校验、管理员身份、高危审批与急停继续生效。
 - 独立文章门户通过主站 `web.aiPlayerProxy` 的固定回环反代提供 `/ai`，导航和首页入口同步注册与展示。反代只转发内容服务自己的 cookie，不转发 MineAgent Authorization 或会话 cookie。内容审核管理员仍独立认证。
+
+
+### 2026-10-20 AI 建造组与 WorldEdit 保护
+
+服主授权开放创造、give、常见命令及 WorldEdit，进一步明确批量建造/编辑只能在主世界出生点四周各 512 格保护区外执行。权限节点使用 body/permissions/builder.json 的专用 LuckPerms 组，不授予 OP 或管理能力。MineAgent Paper 0.3.1 通过 WorldEdit 公共事件/Extent API 拦截真实写入（BEFORE_HISTORY + BEFORE_CHANGE），不能只依赖模型提示、玩家当前位置或选区检查；复制粘贴/撤销/跨界和未知配置都受约束。原版 fill/clone/setblock/execute 等其他批量命令不开放。WorldEdit 双斜杠在 Go、Node 准备/复核/提交中保持一致；细节、配置与隔离测试见 body/README.md。

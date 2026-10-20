@@ -115,7 +115,11 @@ export function checkSpec(spec, policy) {
     fail("invalid_args");
   if (spec.tool === "body_command") {
     const text = spec.args.command;
-    if (forbiddenText(text) || !text.trim() || Array.from(text).length > 256)
+    if (
+      forbiddenText(text) ||
+      !text.trim().replace(/^\/+/, "").trim() ||
+      Array.from(text).length > 256
+    )
       fail("invalid_args");
     const first = text
       .trim()
@@ -123,7 +127,8 @@ export function checkSpec(spec, policy) {
       .split(/\s/)[0]
       .toLowerCase()
       .split(":")
-      .at(-1);
+      .at(-1)
+      .replace(/^\/+/, "");
     if (
       [
         "agent",

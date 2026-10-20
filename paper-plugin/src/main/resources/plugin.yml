@@ -4,7 +4,7 @@ main: com.mineagent.paper.MineAgentPlugin
 api-version: '26.2'
 description: MineAgent 后端连接插件（WebSocket）
 author: jurky123
-softdepend: [MineUI]
+softdepend: [MineUI, WorldEdit]
 commands:
   mineagent:
     description: MineAgent 状态、重连与操作审批

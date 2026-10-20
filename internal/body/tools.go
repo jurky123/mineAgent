@@ -153,7 +153,7 @@ func (s *Service) Tools() []tool.BaseTool {
 		{"body_interact", "右键指定方块，坐标需整数；支持门/按钮/拉杆及经审批的床/重生锚。首期不开放容器或实体交易/骑乘。", reason(coords(true))},
 		{"body_use_item", "使用自己背包内的安全食物或经审批的高危物品；无 item 时读取实际手持。未知行为拒绝。", reason(map[string]*schema.ParameterInfo{})},
 		{"body_say", "让机器人玩家说一句公开聊天，最多 256 字；不能用此工具发命令或触发助手。", map[string]*schema.ParameterInfo{"text": stringP("单行聊天内容", true)}},
-		{"body_command", "以机器人玩家自身权限提交单行命令；由 LuckPerms 决定权限，不走控制台、不做额外命令审批。回显不代表执行成功；不得递归触发助手。", map[string]*schema.ParameterInfo{"command": stringP("命令，不含前导 /", true)}},
+		{"body_command", "以机器人玩家自身权限提交单行命令；由 LuckPerms 决定权限，不走控制台、不做额外命令审批。支持常规命令和 WorldEdit（保留双斜杠，如 //pos1、//set、//copy、//paste、//undo）。先确认选区和材料，再执行明确授权的建造；回显不代表成功，不得自动重试或递归触发助手。", map[string]*schema.ParameterInfo{"command": stringP("常规命令可带或不带 /；WorldEdit 按游戏完整写法，例如 //pos1 10,64,10", true)}},
 	}
 	out := []tool.BaseTool{}
 	for _, d := range defs {

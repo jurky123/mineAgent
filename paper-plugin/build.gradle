@@ -15,6 +15,7 @@ tasks.withType(JavaCompile).configureEach {
 repositories {
     mavenLocal()
     mavenCentral()
+    maven { url = 'https://maven.enginehub.org/repo/' }
     maven {
         name = 'papermc'
         url = 'https://repo.papermc.io/repository/maven-public/'
@@ -25,10 +26,19 @@ dependencies {
     compileOnly "io.papermc.paper:paper-api:${paper_version}"
     compileOnly "com.google.code.gson:gson:${gson_version}"
     compileOnly "com.mineui:mineui-paper:0.16.1"
+    // Public WorldEdit API only; never bundle WorldEdit into MineAgent.
+    if (project.hasProperty('worldedit_jar')) {
+        compileOnly files(project.property('worldedit_jar'))
+        testImplementation files(project.property('worldedit_jar'))
+    } else {
+        compileOnly 'com.sk89q.worldedit:worldedit-core:7.4.5'
+        testImplementation 'com.sk89q.worldedit:worldedit-core:7.4.5'
+    }
 
     testImplementation platform('org.junit:junit-bom:6.1.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation "com.google.code.gson:gson:${gson_version}"
+    testRuntimeOnly 'com.google.guava:guava:33.6.0-jre'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

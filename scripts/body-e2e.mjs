@@ -14,6 +14,7 @@ import { chromium } from "playwright";
 const paperDir = process.argv[2],
   binary = process.argv[3] || "/tmp/mineagent-body-v1";
 const proxyJar = process.argv[4];
+const worldEditJar = process.env.MINEAGENT_WORLDEDIT_TEST_JAR;
 const require = createRequire(new URL("../body/package.json", import.meta.url));
 const mineflayer = require("mineflayer"),
   nbt = require("prismarine-nbt");
@@ -286,11 +287,43 @@ try {
     path.join(repo, "paper-plugin/build/libs", jar),
     path.join(paperDir, "plugins", jar),
   );
+  if (worldEditJar) {
+    await fs.copyFile(
+      worldEditJar,
+      path.join(paperDir, "plugins/WorldEdit.jar"),
+    );
+    await fs.writeFile(
+      path.join(paperDir, "permissions.yml"),
+      `mineagent-worldedit-fixture:
+  default: true
+  children:
+    worldedit.selection.pos: true
+    worldedit.region.set: true
+    worldedit.region.move: true
+    worldedit.clipboard.copy: true
+    worldedit.clipboard.paste: true
+    worldedit.history.undo: true
+    worldedit.history.undo.self: true
+    worldedit.history.redo: true
+    worldedit.history.redo.self: true
+`,
+    );
+  }
   await fs.writeFile(
     path.join(paperDir, "plugins/MineAgent/config.yml"),
     `backend:\n  url: "ws://127.0.0.1:${wsPort}/ws"\n  token: "${paperToken}"\n  reconnect:\n    initial-delay-ms: 1000\n    max-delay-ms: 10000\n  heartbeat-ms: 10000\n`,
     { mode: 0o600 },
   );
+  if (worldEditJar)
+    await fs.appendFile(
+      path.join(paperDir, "plugins/MineAgent/config.yml"),
+      `worldedit-protection:
+  enabled: true
+  player: MineBodyV1
+  world: m0-world
+  radius: 512
+`,
+    );
   const cfg = {
     listen: `127.0.0.1:${wsPort}`,
     allowedRoles: ["minecraft", "minecraft-body"],
@@ -334,7 +367,7 @@ try {
         actionsPerMin: 120,
         blocksPerMin: 120,
         chatPerMin: 20,
-        commandsPerMin: 10,
+        commandsPerMin: 120,
         approvalsPerMin: 20,
       },
       profile: {
@@ -519,6 +552,68 @@ MinecraftBody.prototype.movements=function(){
     (await send("body_command", { command: "help" })).result.outcome,
     "submitted",
   );
+  if (worldEditJar) {
+    console.log(
+      "WorldEdit protection: real agent -> command -> guarded extent",
+    );
+    await command("setworldspawn 0 -60 0");
+    await command("forceload add 512 0 528 0");
+    await command("tp MineBodyV1 0 -60 0");
+    await wait(1500);
+    assert.equal((await control("resume")).httpStatus, 200);
+    await command("setblock 512 -60 0 minecraft:glass");
+    await command("setblock 513 -60 0 minecraft:air");
+    const we = async (text) => {
+      const result = (await send("body_command", { command: text })).result;
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.outcome, "submitted");
+      return result;
+    };
+    const blockIs = async (x, block) => {
+      const marker = "worldedit-check-" + randomUUID();
+      await command(
+        `execute if block ${x} -60 0 minecraft:${block} run say ${marker}`,
+      );
+      await until(
+        () => logs.paper.includes("[Server] " + marker),
+        "actual WorldEdit block " + x + " " + block,
+      );
+    };
+    await we("//pos1 513,-60,0");
+    await we("//pos2 513,-60,0");
+    await we("//set stone");
+    await blockIs(513, "stone");
+    await we("//undo");
+    await blockIs(513, "air");
+    await we("//redo");
+    await blockIs(513, "stone");
+    await we("//pos1 512,-60,0");
+    await we("//pos2 512,-60,0");
+    await we("//set dirt");
+    await blockIs(512, "glass");
+    // Crossing a protected edge cannot alter its protected half.
+    await we("//pos2 513,-60,0");
+    await we("//set gold_block");
+    await blockIs(512, "glass");
+    await we("//pos1 513,-60,0");
+    await we("//copy");
+    await command("tp MineBodyV1 -1 -60 0");
+    await wait(1500);
+    assert.equal((await control("resume")).httpStatus, 200);
+    // Clipboard anchor moved one block: outside 513 now targets protected 512.
+    await we("//paste");
+    await blockIs(512, "glass");
+    await we("//move 1 west");
+    await blockIs(512, "glass");
+    await we("//undo");
+    await blockIs(512, "glass");
+    await command("tp MineBodyV1 0 -60 0");
+    await wait(1500);
+    assert.equal((await control("resume")).httpStatus, 200);
+    console.log(
+      "WorldEdit protection passed: outside edit, inclusive boundary, crossing selection, transformed paste, move, undo",
+    );
+  }
   const high = await send(
     "body_place",
     {

@@ -11,3 +11,10 @@ ui:
   mode: auto
   # 可选：门户的 HTTPS 根地址，不含令牌或查询参数。空字符串隐藏网页入口。
   portal-url: ""
+worldedit-protection:
+  # Applies only to the named AI player's WorldEdit edits, including undo/paste.
+  enabled: false
+  player: MineAgentBot
+  world: world
+  # Inclusive square around the world's current spawn; all vertical heights.
+  radius: 512

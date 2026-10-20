@@ -149,14 +149,15 @@ func parseArgs(tool, raw string) (protocol.BodyArgs, error) {
 			return a, errors.New("invalid_args")
 		}
 	case "body_command":
-		a.Command = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(a.Command), "/"))
-		if a.Command == "" || invalid(a.Command) || utf8.RuneCountInString(a.Command) > 256 {
+		a.Command = strings.TrimSpace(a.Command)
+		if strings.TrimSpace(strings.TrimLeft(a.Command, "/")) == "" || invalid(a.Command) || utf8.RuneCountInString(a.Command) > 256 {
 			return a, errors.New("invalid_args")
 		}
 		first := strings.ToLower(strings.Fields(a.Command)[0])
 		if i := strings.LastIndex(first, ":"); i >= 0 {
 			first = first[i+1:]
 		}
+		first = strings.TrimLeft(first, "/")
 		if contains([]string{"agent", "ai", "ma", "mineagent"}, first) {
 			return a, errors.New("loop_guard")
 		}
@@ -245,6 +246,7 @@ func (s *Service) policy(sp protocol.BodySpec) error {
 			if i := strings.LastIndex(cmd, ":"); i >= 0 {
 				cmd = cmd[i+1:]
 			}
+			cmd = strings.TrimLeft(cmd, "/")
 			if contains(s.cfg.LoopGuardCommands, cmd) {
 				return errors.New("loop_guard")
 			}

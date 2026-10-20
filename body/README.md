@@ -25,6 +25,30 @@ AI 玩家直接复用 Go 后端中同一个 Agent 和现有 `model.baseURL`、`m
 
 Node 只接收身体工具动作。现有模型凭据失效会同时影响主助手与 AI 玩家；应在 MineAgent 的原私有配置中更新，并通过正常部署流程重新加载，不能靠重启 Node 或另建模型调用解决。
 
+## AI 建造权限与出生点保护（Paper 0.3.1）
+
+服主可用 LuckPerms 为身体玩家分配 `mineagent_builder` 专用组，精确节点见 [权限清单](permissions/builder.json)。该组开放自己的创造/生存切换、give/item、飞行开关、治疗/饱食、位置/物品查询，以及 WorldEdit 选区、填充/替换、基础形状、复制/剪切/粘贴、移动/堆叠、撤销/重做。不授予 OP、权限管理、停服、sudo、execute、原版 fill/clone/setblock、WorldEdit 脚本、区块删除、重生成或保护绕过。WorldEdit 不是无风险命令，只按已验证管理员的明确建造任务使用。
+
+正式批量编辑授权须在保护插件生效后进行：MineAgent 通过 WorldEdit 公共 `EditSessionEvent` 和 Extent API，在 BEFORE_HISTORY 和 BEFORE_CHANGE 两层拒绝身体对主世界出生点四周各 512 格（含边界、全部高度）的实际写入。保护随出生点变更更新，其他玩家不受此 AI 专用规则影响；配置无法确认时拒绝该 AI 的 WorldEdit 写入。跨界操作可能已在区外产生部分改动，但不能改动区内；需核查结果，不能自动重试。复制粘贴、移动、撤销、实体与生物群系写入同样受检查。
+
+在 Paper 的私有 MineAgent config.yml 启用（示例不含后端密钥）：
+
+```yaml
+worldedit-protection:
+  enabled: true
+  player: MineAgentBot
+  world: world
+  radius: 512
+```
+
+必须安装兼容的 WorldEdit 并重启 Paper 后再授予批量写入节点。启用保护却缺少 WorldEdit 时，MineAgent 游戏桥接拒绝启动，不能带着失效保护继续下发 AI 动作。此保护约束 AI 的 WorldEdit 编辑，不是面向所有玩家的全局领地系统，也不改变单方块身体工具的原有规则。
+
+`body_command` 接受普通命令 `give ...` 或 `/give ...`；WorldEdit 按游戏完整写法传递，如 `//pos1 100,64,100`、`//set stone`、`//paste`、`//undo`。Go 和 Node 保留 WorldEdit 双斜杠，准备后的命令不可被后续参数替换。命令输出仍为不可信回显，`submitted` 不代表已修改成功。建造流程建议将 `body.limits.commandsPerMin` 设置为 30，支持连续选区/编辑/核查；普通动作预算与暂停/审批不变。
+
+编译使用 WorldEdit 7.4.5 公共 core API（compileOnly，不打入 jar）；已安装同版本完整插件 jar 时，可使用 Gradle `-Pworldedit_jar=/path/to/WorldEdit.jar` 或 `ORG_GRADLE_PROJECT_worldedit_jar` 提供编译/测试依赖。
+
+隔离实际链路验收：在原有 body-e2e 命令前设置 `MINEAGENT_WORLDEDIT_TEST_JAR=/path/to/WorldEdit.jar`。仅可使用已有隔离标记、回环端口与 m0-world 的测试目录；脚本会向该测试服复制 WorldEdit、写入测试专用 permissions.yml，并验证区外成功、区内/边界/跨界选区拒绝、带位移粘贴/移动/撤销保护，不读取正式权限数据或修改正式世界。
+
 ## 配置与启动
 
 需要 Node ≥22、Java 25、已连接并认证的 MineAgent Paper 插件。已验证组合及资源测量见 [M0_RESULTS.md](M0_RESULTS.md)。26.2 暂用回环 ViaProxy 桥接；不改动生产服务器版本或安装服务端协议插件。

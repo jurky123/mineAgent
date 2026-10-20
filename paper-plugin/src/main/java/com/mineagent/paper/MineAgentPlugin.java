@@ -1,9 +1,5 @@
 package com.mineagent.paper;
 
-import org.bukkit.command.PluginCommand;
-import org.bukkit.entity.Player;
-import org.bukkit.plugin.java.JavaPlugin;
-
 import com.google.gson.JsonObject;
 import com.mineagent.paper.command.AgentCommand;
 import com.mineagent.paper.command.MineAgentCommand;
@@ -12,16 +8,29 @@ import com.mineagent.paper.ui.AgentUi;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
+import org.bukkit.command.PluginCommand;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+
 public final class MineAgentPlugin extends JavaPlugin {
 
     private BackendClient backend;
     private ToolExecutor toolExecutor;
     private ApprovalHandler approvalHandler;
     private AgentUi ui;
+    private AutoCloseable worldEditProtection;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        if (getConfig().getBoolean("worldedit-protection.enabled", false)) {
+            if (!getServer().getPluginManager().isPluginEnabled("WorldEdit")) {
+                throw new IllegalStateException(
+                        "AI WorldEdit protection requires WorldEdit; refusing to start the AI"
+                            + " bridge");
+            }
+            worldEditProtection = new WorldEditProtection(this);
+        }
         String url = getConfig().getString("backend.url", "ws://127.0.0.1:8765/ws");
         String token = getConfig().getString("backend.token", "");
         long initial = getConfig().getLong("backend.reconnect.initial-delay-ms", 1000L);
@@ -31,8 +40,17 @@ public final class MineAgentPlugin extends JavaPlugin {
         toolExecutor = new ToolExecutor(this);
         approvalHandler = new ApprovalHandler(this);
 
-        backend = new BackendClient(getLogger(), url, token, initial, max, heartbeat, new BukkitSchedulerAdapter(this));
-        backend.setHelloInfo("minecraft", getPluginMeta().getVersion(), getServer().getMinecraftVersion());
+        backend =
+                new BackendClient(
+                        getLogger(),
+                        url,
+                        token,
+                        initial,
+                        max,
+                        heartbeat,
+                        new BukkitSchedulerAdapter(this));
+        backend.setHelloInfo(
+                "minecraft", getPluginMeta().getVersion(), getServer().getMinecraftVersion());
         backend.setHandler(this::handleBackendMessage);
         ui = new AgentUi(this);
         backend.start();
@@ -56,6 +74,13 @@ public final class MineAgentPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (worldEditProtection != null) {
+            try {
+                worldEditProtection.close();
+            } catch (Exception ignored) {
+                getLogger().warning("Could not unregister AI WorldEdit protection");
+            }
+        }
         if (ui != null) ui.shutdown();
         if (backend != null) {
             backend.shutdown();
@@ -66,8 +91,13 @@ public final class MineAgentPlugin extends JavaPlugin {
         return backend;
     }
 
-    public AgentUi ui() { return ui; }
-    public ApprovalHandler approvals() { return approvalHandler; }
+    public AgentUi ui() {
+        return ui;
+    }
+
+    public ApprovalHandler approvals() {
+        return approvalHandler;
+    }
 
     private void handleBackendMessage(String type, JsonObject data) {
         if (Protocol.AGENT_MESSAGE.equals(type)) {
@@ -86,22 +116,35 @@ public final class MineAgentPlugin extends JavaPlugin {
     private void handleAgentMessage(JsonObject data) {
         String text = data.has("text") ? data.get("text").getAsString() : "";
         String target = data.has("target") ? data.get("target").getAsString() : "";
-        getLogger().info("agent.message -> " + (target.isEmpty() ? "[广播] " : "[" + target + "] ") + text);
-        getServer().getScheduler().runTask(this, () -> {
-            Component message = Component.text("[MineAgent] ", NamedTextColor.AQUA)
-                    .append(Component.text(text, NamedTextColor.WHITE));
-            if (target.isEmpty()) {
-                getServer().broadcast(message);
-                for (Player viewer : getServer().getOnlinePlayers()) ui.reply(viewer, text);
-                return;
-            }
-            Player player = getServer().getPlayerExact(target);
-            if (player != null) {
-                player.sendMessage(message);
-                ui.reply(player, text);
-            } else {
-                getLogger().warning("agent.message target offline, skipped delivery: " + target);
-            }
-        });
+        getLogger()
+                .info(
+                        "agent.message -> "
+                                + (target.isEmpty() ? "[广播] " : "[" + target + "] ")
+                                + text);
+        getServer()
+                .getScheduler()
+                .runTask(
+                        this,
+                        () -> {
+                            Component message =
+                                    Component.text("[MineAgent] ", NamedTextColor.AQUA)
+                                            .append(Component.text(text, NamedTextColor.WHITE));
+                            if (target.isEmpty()) {
+                                getServer().broadcast(message);
+                                for (Player viewer : getServer().getOnlinePlayers())
+                                    ui.reply(viewer, text);
+                                return;
+                            }
+                            Player player = getServer().getPlayerExact(target);
+                            if (player != null) {
+                                player.sendMessage(message);
+                                ui.reply(player, text);
+                            } else {
+                                getLogger()
+                                        .warning(
+                                                "agent.message target offline, skipped delivery: "
+                                                        + target);
+                            }
+                        });
     }
 }

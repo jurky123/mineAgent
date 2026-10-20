@@ -33,7 +33,8 @@ public final class AgentCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (args.length == 0 || (args.length == 1 && ("ui".equalsIgnoreCase(args[0]) || "dialog".equalsIgnoreCase(args[0])))) {
-            plugin.ui().open(player, args.length == 1 && "dialog".equalsIgnoreCase(args[0]));
+            // Keep the default entry on the native path; enhanced UI is explicit via /agent ui.
+            plugin.ui().open(player, args.length == 0 || "dialog".equalsIgnoreCase(args[0]));
         } else plugin.ui().submit(player, String.join(" ", args));
         return true;
     }

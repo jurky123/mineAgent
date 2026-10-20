@@ -43,12 +43,13 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 @agent 给我 1 个钻石
 ```
 
-## 游戏内界面（Paper 插件 0.2.0）
+## 游戏内界面（Paper 插件 0.2.1）
 
-输入 **`/agent`**、`/agent ui` 或 `/mineagent ui` 打开助手面板，`/ai` 与 `/ma ui` 也可用。原有 `/agent <问题>` 和聊天 `@agent` 保持可用。
+输入 **`/agent`** 打开原版助手面板，`/ai` 也可用。`/agent ui`、`/mineagent ui` 或 `/ma ui` 自动选择 MineUI 增强界面或原版回退。原有 `/agent <问题>` 和聊天 `@agent` 保持可用。
 
 - **无需客户端 mod**：直接使用 Paper 原版对话框，提供文本输入、菜单、近期记录与审批；`/agent dialog` 可强制使用。
-- **可选 MineUI 增强**：安装 MineUI 服务端且玩家的 MineUI 客户端 ≥0.16.1 且已握手 `server_ui` 能力时，自动使用 MineUI 页面。只通过公开 `com.mineui.api` 接入，无需新增 MineAgent 客户端 mod；能力不支持或适配失败会回到原版对话框。
+- **默认入口与回退**：0.2.1 的无参数 `/agent` 直接走 `/agent dialog` 的原版路径。自动模式确认客户端支持 MineUI 后才关闭原版对话框；原版与旧版 MineUI 客户端直接打开原版面板。
+- **可选 MineUI 增强**：通过 `/agent ui` 等自动模式入口打开，安装 MineUI 服务端且玩家的 MineUI 客户端 ≥0.16.1 且已握手 `server_ui` 能力时使用 MineUI 页面。只通过公开 `com.mineui.api` 接入，无需新增 MineAgent 客户端 mod；能力不支持或适配失败会回到原版对话框。
 - **功能**：提问、服务器/玩家/时间天气查询、共享记忆概况/摘要、模型额度、身份查询、近期回复、待审批详情与批准/拒绝、管理员重连；权限不变，按钮点击时再次校验。
 - **消息与状态**：成功提交时显示 ActionBar 回执，回复仍遵循后端 `minecraft.replyMode`；MineUI 页面自动更新，原版对话框点击刷新。MC 会话仍是全服共享，不因打开面板变成私聊。
 - **记录**：只在内存保存本人本次在线实际收到的最近 30 条助手回复/面板提问，单条最多 1600 字符，离线即清理；定向回复不会进入其他玩家的记录。不是后端持久会话列表。
@@ -72,7 +73,7 @@ cd paper-plugin
 ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx384m -Dorg.gradle.parallel=false test jar
 ```
 
-产物为 `paper-plugin/build/libs/MineAgent-0.2.0.jar`。仅构建不会安装插件或重启 Paper；正式更新须按项目部署流程安排并确认停服窗口。
+产物为 `paper-plugin/build/libs/MineAgent-0.2.1.jar`。仅构建不会安装插件或重启 Paper；正式更新须按项目部署流程安排并确认停服窗口。
 
 隔离集成测试：安装 `body/` 锁定依赖后执行 `node scripts/paper-ui-e2e.mjs <已标记的测试 Paper 目录> <ViaProxy-3.4.14.jar>`。它只允许回环 25665、测试世界 `m0-world`，且目录必须包含 `.mineagent-body-test` 隔离标记；会覆盖测试插件配置并分两阶段启动自有 Paper（不装/安装 MineUI），请勿指向正式目录。测试覆盖原版按钮/表单回调、私密回复隔离、审批防重放/冒用/撤权/过期/重连，以及 MineUI 握手、输入、状态更新和旧会话拒绝；这是服务端及协议验证，客户端视觉布局仍需游戏内人工体验。
 

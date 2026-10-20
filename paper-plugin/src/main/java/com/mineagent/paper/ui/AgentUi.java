@@ -101,7 +101,6 @@ public final class AgentUi implements Listener {
         Panel panel = panel(player, view);
         if (!vanilla && enhanced != null) {
             try {
-                player.closeDialog();
                 if (enhanced.open(
                         player,
                         panel,

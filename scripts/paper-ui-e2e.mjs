@@ -86,7 +86,12 @@ async function connect(name) {
   });
   bots.push(bot);
   bot.dialogs = [];
+  bot.dialogPackets = [];
   bot.ui = [];
+  bot._client.on("packet", (_packet, meta) => {
+    if (meta.name === "show_dialog" || meta.name === "clear_dialog")
+      bot.dialogPackets.push(meta.name);
+  });
   bot.on("error", () => {});
   bot._client.on("show_dialog", (p) =>
     bot.dialogs.push({ raw: p.dialog.data, data: nbt.simplify(p.dialog.data) }),
@@ -107,8 +112,12 @@ async function connect(name) {
 }
 async function openDialog(bot, cmd = "/agent") {
   const old = bot.dialogs.length;
+  const packets = bot.dialogPackets.length;
   bot.chat(cmd);
-  return until(() => bot.dialogs[old], "dialog " + cmd);
+  const dialog = await until(() => bot.dialogs[old], "dialog " + cmd);
+  assert.deepEqual(bot.dialogPackets.slice(packets), ["show_dialog"],
+    "native dialog opening must not send a preceding clear-dialog packet");
+  return dialog;
 }
 function dialogButton(dialog, label) {
   const b = [...(dialog.data.actions || []), dialog.data.exit_action]
@@ -203,7 +212,7 @@ function currentUi(bot) {
 }
 async function openUi(bot) {
   const count = bot.ui.length;
-  bot.chat("/agent");
+  bot.chat("/agent ui");
   return until(
     () => bot.ui.slice(count).some((m) => m.type === 5) && currentUi(bot),
     "enhanced UI",
@@ -439,6 +448,8 @@ try {
       "向助手提问",
     ),
   );
+  for (const cmd of ["/agent dialog", "/mineagent:agent", "/mineagent:agent dialog", "/agent ui", "/ai", "/mineagent ui"])
+    assert.ok(JSON.stringify((await openDialog(enhancedGuest, cmd)).data).includes("向助手提问"), cmd);
   enhancedGuest._client.write("custom_payload", {
     channel: "minecraft:register", data: Buffer.from("mineui:main"),
   });
@@ -463,6 +474,8 @@ try {
     () => enhancedGuest.ui.some((m) => m.type === 2),
     "MineUI handshake",
   );
+  assert.ok(JSON.stringify((await openDialog(enhancedGuest)).data).includes("向助手提问"),
+    "default /agent stays native even for an enhanced client");
   const enhancedHome = await openUi(enhancedGuest);
   assert.equal(enhancedHome.state.title, "MineAgent · 助手");
   await uiAction(enhancedGuest, "chat");

@@ -205,10 +205,11 @@ func main() {
 			return fmt.Errorf("world_unknown")
 		}
 		var player struct {
-			Name    string `json:"name"`
-			World   string `json:"world"`
-			X, Y, Z float64
-			OP      bool `json:"op"`
+			Name            string `json:"name"`
+			World           string `json:"world"`
+			X, Y, Z         float64
+			OP              bool                  `json:"op"`
+			BlockProtection *body.BlockProtection `json:"blockProtection"`
 		}
 		if json.Unmarshal([]byte(raw), &player) != nil || player.Name != cfg.Body.Name || player.World != sp.WorldID || player.OP {
 			return fmt.Errorf("world_unknown")
@@ -219,7 +220,7 @@ func main() {
 				return fmt.Errorf("stale")
 			}
 		}
-		return nil
+		return body.CheckBlockProtection(sp, player.BlockProtection)
 	})
 	if bodySvc.Enabled() {
 		go bodySvc.Run(ctx)

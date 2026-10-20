@@ -101,6 +101,7 @@ public final class ToolExecutor {
         out.addProperty("gameMode", player.getGameMode().name());
         out.addProperty("ping", player.getPing());
         out.addProperty("op", player.isOp());
+        out.add("blockProtection", plugin.blockProtection(player));
         return out;
     }
 

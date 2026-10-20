@@ -18,6 +18,7 @@ const worldEditJar = process.env.MINEAGENT_WORLDEDIT_TEST_JAR;
 const require = createRequire(new URL("../body/package.json", import.meta.url));
 const mineflayer = require("mineflayer"),
   nbt = require("prismarine-nbt");
+const { Vec3 } = require("vec3");
 if (!paperDir)
   throw Error(
     "Usage: node scripts/body-e2e.mjs <marked disposable paper directory> [test binary]",
@@ -533,6 +534,7 @@ MinecraftBody.prototype.movements=function(){
     30000,
   );
   await command("difficulty peaceful");
+  if (worldEditJar) await command("setworldspawn 1024 -60 0");
   await command("tp MineBodyV1 0 -60 0");
   await command("clear MineBodyV1");
   await command(
@@ -564,6 +566,18 @@ MinecraftBody.prototype.movements=function(){
     40,
     "same task continues beyond former 12/32 round limits after initial resume",
   );
+  // Build allowlists do not fence a player's walking position or path.
+  await command("tp MineBodyV1 65 -60 0");
+  await wait(1500);
+  assert.equal((await control("resume")).httpStatus, 200);
+  confirmed(await send("body_goto", { x: 68, y: -60, z: 0, range: 1 }));
+  assert.ok(
+    (await state()).state.pos[0] > 66,
+    "actual movement outside the edit allowlist",
+  );
+  await command("tp MineBodyV1 0 -60 0");
+  await wait(1500);
+  assert.equal((await control("resume")).httpStatus, 200);
   confirmed(await send("body_observe", {}));
   confirmed(await send("body_inventory", {}));
   confirmed(await send("body_find_blocks", { blocks: "oak_log", radius: 16 }));
@@ -596,6 +610,16 @@ MinecraftBody.prototype.movements=function(){
     assert.equal((await control("resume")).httpStatus, 200);
     await command("setblock 512 -60 0 minecraft:glass");
     await command("setblock 513 -60 0 minecraft:air");
+    confirmed(await send("body_goto", { x: 2, y: -60, z: 0, range: 1 }));
+    const blockedDig = await send("body_dig", { x: 0, y: -61, z: 0 });
+    assert.equal(blockedDig.result.code, "spawn_protected");
+    const blockedPlace = await send("body_place", {
+      x: 1,
+      y: -60,
+      z: 2,
+      item: "oak_planks",
+    });
+    assert.equal(blockedPlace.result.code, "spawn_protected");
     const we = async (text) => {
       const result = (await send("body_command", { command: text })).result;
       assert.equal(result.ok, true, JSON.stringify(result));
@@ -646,6 +670,7 @@ MinecraftBody.prototype.movements=function(){
     console.log(
       "WorldEdit protection passed: outside edit, inclusive boundary, crossing selection, transformed paste, move, undo",
     );
+    await command("setworldspawn 1024 -60 0");
   }
   const high = await send(
     "body_place",
@@ -882,6 +907,86 @@ MinecraftBody.prototype.movements=function(){
   }, "body_stop ends its own task");
   assert.equal((await state()).paused, true);
   if (selfStop.result) confirmed(selfStop);
+  if (worldEditJar) {
+    // Bypass Go/Node tool checks using a real, non-OP game client with the
+    // body's identity. Bukkit itself must reject protected target writes.
+    assert.equal((await control("disconnect")).httpStatus, 200);
+    await until(
+      async () => !(await state()).state.connected,
+      "body leaves before raw client guard check",
+    );
+    await wait(700);
+    await command("setworldspawn 0 -60 0");
+    const raw = mineflayer.createBot({
+      host: "127.0.0.1",
+      port: 25666,
+      username: "MineBodyV1",
+      auth: "offline",
+      version: "26.1",
+    });
+    bots.push(raw);
+    raw.on("error", () => {});
+    await until(() => raw.entity, "raw guard client spawn", 30000);
+    await raw.waitForChunksToLoad();
+    await command("gamemode creative MineBodyV1");
+    await command("tp MineBodyV1 0 -60 0");
+    await command("give MineBodyV1 oak_planks 16");
+    await command("setblock 1 -60 0 stone");
+    await command("setblock 2 -60 0 air");
+    await wait(1000);
+    const actualBlock = async (x, y, z, block) => {
+      const marker = "block-guard-" + randomUUID();
+      await command(
+        `execute if block ${x} ${y} ${z} minecraft:${block} run say ${marker}`,
+      );
+      await until(
+        () => logs.paper.includes("[Server] " + marker),
+        "server block guard " + block,
+      );
+    };
+    await Promise.race([
+      raw.dig(raw.blockAt(new Vec3(1, -60, 0))).catch(() => {}),
+      wait(1800),
+    ]);
+    raw.stopDigging();
+    await actualBlock(1, -60, 0, "stone");
+    await raw.equip(
+      raw.inventory.items().find((i) => i.name === "oak_planks"),
+      "hand",
+    );
+    await Promise.race([
+      raw
+        .placeBlock(raw.blockAt(new Vec3(2, -61, 0)), new Vec3(0, 1, 0))
+        .catch(() => {}),
+      wait(1800),
+    ]);
+    await actualBlock(2, -60, 0, "air");
+    await command("tp MineBodyV1 513 -60 0");
+    await command("setblock 514 -60 0 stone");
+    await command("setblock 515 -60 0 air");
+    await wait(1200);
+    await Promise.race([
+      raw.dig(raw.blockAt(new Vec3(514, -60, 0))).catch(() => {}),
+      wait(1800),
+    ]);
+    raw.stopDigging();
+    await actualBlock(514, -60, 0, "air");
+    await raw.equip(
+      raw.inventory.items().find((i) => i.name === "oak_planks"),
+      "hand",
+    );
+    await Promise.race([
+      raw
+        .placeBlock(raw.blockAt(new Vec3(515, -61, 0)), new Vec3(0, 1, 0))
+        .catch(() => {}),
+      wait(1800),
+    ]);
+    await actualBlock(515, -60, 0, "oak_planks");
+    raw.quit();
+    console.log(
+      "Raw client protection passed: protected break/place rejected, outside break/place allowed",
+    );
+  }
   console.log(
     JSON.stringify({
       passed: true,
@@ -891,6 +996,8 @@ MinecraftBody.prototype.movements=function(){
         "real Paper world identity",
         "per-user authenticated tool context",
         "all core actions",
+        "walk outside edit allowlist and inside protected spawn",
+        "body dig/place preflight and raw game packet protection",
         "40 actual body observations in one model/tool task",
         "resume while a paused task is planning does not stale its reads",
         "portal approval and resume",

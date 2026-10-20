@@ -199,6 +199,15 @@ func timeoutMS(t string, a protocol.BodyArgs) int {
 	return n
 }
 func (s *Service) inZone(world string, pos [3]float64, margin float64) bool {
+	if !finitePos(pos) || world == "" {
+		return false
+	}
+	if s.cfg.Zones.Mode == "unrestricted" {
+		return true
+	}
+	if s.cfg.Zones.Mode != "allowlist" {
+		return false
+	}
 	for _, a := range s.cfg.Zones.Areas {
 		if a.WorldID != world {
 			continue
@@ -225,10 +234,11 @@ func (s *Service) policy(sp protocol.BodySpec) error {
 	if !mapped {
 		return errors.New("world_unknown")
 	}
-	if !s.inZone(sp.WorldID, sp.Pos, 0.3) {
-		return errors.New("out_of_zone")
+	if sp.Target != nil && !finitePos(*sp.Target) {
+		return errors.New("invalid_args")
 	}
-	if sp.Target != nil && (!finitePos(*sp.Target) || !s.inZone(sp.WorldID, *sp.Target, 0.3)) {
+	// Zones constrain changed blocks, never the player's position or movement.
+	if (sp.Tool == "body_dig" || sp.Tool == "body_place") && (sp.Target == nil || !s.inZone(sp.WorldID, *sp.Target, 0)) {
 		return errors.New("out_of_zone")
 	}
 	if contains(hardBlocks, sp.Block) || contains(s.cfg.DenyBlocks, sp.Block) || contains(hardBlocks, sp.Args.Item) || contains(s.cfg.DenyBlocks, sp.Args.Item) {

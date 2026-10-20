@@ -110,6 +110,7 @@ func TestPolicyCoversImplicitHandAndWorldBoundary(t *testing.T) {
 	}
 	sp.WorldID = "yard"
 	target[0] = 40
+	sp.Tool = "body_dig"
 	if s.policy(sp) == nil {
 		t.Fatal("out of zone allowed")
 	}

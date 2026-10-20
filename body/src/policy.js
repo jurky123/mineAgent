@@ -92,8 +92,8 @@ export function risk(spec, policy) {
 }
 export function checkSpec(spec, policy) {
   if (
-    !inside(policy, spec.worldId, spec.pos) ||
-    (spec.target && !inside(policy, spec.worldId, spec.target))
+    ["body_dig", "body_place"].includes(spec.tool) &&
+    (!spec.target || !inside(policy, spec.worldId, spec.target, 0))
   )
     fail("out_of_zone");
   for (const s of [spec.block, spec.args.item, spec.support])

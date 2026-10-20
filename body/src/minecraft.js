@@ -4,7 +4,6 @@ import { Vec3 } from "vec3";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import {
-  inside,
   risk,
   checkSpec,
   checkGrant,
@@ -206,19 +205,6 @@ export class MinecraftBody {
       this.publishState();
       this.scheduleReconnect();
     });
-    bot.on("physicsTick", () => {
-      if (!this.active || !this.connected) return;
-      const p = pos(bot.entity.position),
-        world = this.world();
-      const next = p.map(
-        (n, i) => n + pos(bot.entity.velocity || new Vec3(0, 0, 0))[i] * 2,
-      );
-      if (
-        !this.inBounds(world.worldId, p) ||
-        !this.inBounds(world.worldId, next)
-      )
-        this.pause("out_of_zone");
-    });
   }
   scheduleReconnect() {
     clearTimeout(this.reconnectTimer);
@@ -227,12 +213,6 @@ export class MinecraftBody {
     this.lastReconnect = Math.min(60000, this.lastReconnect * 2);
     this.reconnectTimer = setTimeout(() => this.connect(), ms);
     this.reconnectTimer.unref();
-  }
-  inBounds(worldId, p) {
-    return (
-      inside(this.policy, worldId, p) &&
-      inside(this.policy, worldId, [p[0], p[1] + 1.8, p[2]])
-    );
   }
   movements() {
     const bot = this.bot;
@@ -245,16 +225,6 @@ export class MinecraftBody {
     m.allowParkour = false;
     m.allowSprinting = false;
     m.maxDropDown = 3;
-    m.exclusionAreasStep = [
-      (b) =>
-        this.inBounds(this.world().worldId, [
-          b.position.x + 0.5,
-          b.position.y,
-          b.position.z + 0.5,
-        ])
-          ? 0
-          : Infinity,
-    ];
     bot.pathfinder.setMovements(m);
     bot.pathfinder.searchRadius = 32;
     bot.pathfinder.thinkTimeout = 3000;
@@ -511,7 +481,6 @@ export class MinecraftBody {
         break;
       }
       if (!found) fail("no_support");
-      if (!inside(this.policy, w.worldId, spec.reference)) fail("out_of_zone");
     }
     if (tool === "body_interact") {
       if (
@@ -603,8 +572,6 @@ export class MinecraftBody {
       fail(a.reason || "canceled");
     if (!readTools.has(a.tool)) {
       if (this.paused || this.policy.mode !== "assist") fail("body_paused");
-      if (!this.inBounds(this.world().worldId, pos(this.bot.entity.position)))
-        fail("out_of_zone");
     }
   }
   async step(a, fn) {

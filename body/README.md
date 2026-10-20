@@ -36,7 +36,7 @@ AI 玩家直接复用 Go 后端中同一个 Agent 和现有 `model.baseURL`、`m
 
 Node 只接收身体工具动作。现有模型凭据失效会同时影响主助手与 AI 玩家；应在 MineAgent 的原私有配置中更新，并通过正常部署流程重新加载，不能靠重启 Node 或另建模型调用解决。
 
-## AI 建造权限与出生点保护（Paper 0.3.1）
+## AI 建造权限与出生点保护（Paper 0.3.2）
 
 服主可用 LuckPerms 为身体玩家分配 `mineagent_builder` 专用组，精确节点见 [权限清单](permissions/builder.json)。该组开放自己的创造/生存切换、give/item、飞行开关、治疗/饱食、位置/物品查询，以及 WorldEdit 选区、填充/替换、基础形状、复制/剪切/粘贴、移动/堆叠、撤销/重做。不授予 OP、权限管理、停服、sudo、execute、原版 fill/clone/setblock、WorldEdit 脚本、区块删除、重生成或保护绕过。WorldEdit 不是无风险命令，只按已验证管理员的明确建造任务使用。
 
@@ -52,7 +52,7 @@ worldedit-protection:
   radius: 512
 ```
 
-必须安装兼容的 WorldEdit 并重启 Paper 后再授予批量写入节点。启用保护却缺少 WorldEdit 时，MineAgent 游戏桥接拒绝启动，不能带着失效保护继续下发 AI 动作。此保护约束 AI 的 WorldEdit 编辑，不是面向所有玩家的全局领地系统，也不改变单方块身体工具的原有规则。
+必须安装兼容的 WorldEdit 并重启 Paper 后再授予批量写入节点。启用保护却缺少 WorldEdit 时，MineAgent 游戏桥接拒绝启动，不能带着失效保护继续下发 AI 动作。0.3.2 将同一保护扩展到 AI 的真实破坏/放置事件（含多方块放置），并通过已认证 Paper 玩家查询上报实时边界。后端在单方块执行前复核该状态；旧插件未上报时，仅拒绝挖掘/放置，不影响移动与观察。这不是面向所有玩家的全局领地系统。
 
 `body_command` 接受普通命令 `give ...` 或 `/give ...`；WorldEdit 按游戏完整写法传递，如 `//pos1 100,64,100`、`//set stone`、`//paste`、`//undo`。Go 和 Node 保留 WorldEdit 双斜杠，准备后的命令不可被后续参数替换。命令输出仍为不可信回显，`submitted` 不代表已修改成功。建造流程建议将 `body.limits.commandsPerMin` 设置为 30，支持连续选区/编辑/核查；普通动作预算与暂停/审批不变。
 
@@ -94,9 +94,9 @@ worldedit-protection:
 }
 ```
 
-`zones.mode=unrestricted` 可显式关闭活动区域限制（不影响管理员认证、高危审批、世界身份校验和急停）；`allowlist` 仍按列出的区域限制，空列表拒绝行动。
+`zones` 现在只约束挖掘/放置的目标方块，不约束身体站位、路径、观察、聊天或命令。`zones.mode=unrestricted` 明确取消这层编辑白名单限制，仍遵守 Paper 出生点保护；`allowlist` 空列表仅拒绝单方块编辑。WorldEdit 根据服务端实际写入目标保护，不使用玩家当前位置判断。
 
-`body` 的其他配置与实际默认值在 `internal/config/body.go`：任务总轮数与总时长默认不限（两个预算值均为 0），单动作最多 20 秒，grant 最长 5 秒；allowlist 区域空列表时没有可操作区域。防护、路径规则和 PvP/容器禁用为固定规则，没有通过未实现字段开启的后门。配置更改沿用现有重启加载流程，无动态编辑接口。
+`body` 的其他配置与实际默认值在 `internal/config/body.go`：任务总轮数与总时长默认不限（两个预算值均为 0），单动作最多 20 秒，grant 最长 5 秒；allowlist 空列表时没有允许的单方块编辑目标。防护、路径规则和 PvP/容器禁用为固定规则，没有通过未实现字段开启的后门。配置更改沿用现有重启加载流程，无动态编辑接口。
 
 ## 门户与只读资料
 
@@ -173,3 +173,10 @@ cd body && npm test
 21:40–21:41 CST 线上核查：四个相关服务 active，身体控制连接/握手正常、状态新鲜，AI 保持创造模式。通过独立管理员自检会话调用真实模型，body_status、body_observe、body_inventory 均完成；观察和背包审计均为 confirmed/ok，无 stale，未发起任何世界写入。后端重连后保持暂停，需管理员明确恢复并提交新任务。
 
 验证包括 96 轮真实 Eino 工具循环、40 轮隔离 Minecraft 观察、13 工具/75 场景真实端到端测试、相关包竞态检查、Go 全仓回归（跳过既有固定延迟性能用例）、静态检查和 10 项部署脚本测试。隔离测试和上线自检不能替代长期运行及规划质量验收。
+
+
+### 2026-10-20 方块编辑保护与移动分离（Paper 0.3.2）
+
+修复 Go `inZone` 漏掉 unrestricted 分支，导致正式配置不限制活动区域但所有动作仍被空白名单拒绝的问题。Go/Node 的区域检查仅用于 body_dig/body_place 的目标方块；移除路径、身体站位和速度预测中的区域围栏，也不把放置支撑面当成被改动目标。移动仍不自动挖路、搭柱或开门。
+
+Paper 的 512 格保护共用实时出生点边界，在 Bukkit 实际破坏/放置事件及 WorldEdit Extent 拦截写入。后端读取 Paper 玩家信息中的 blockProtection，在派发前返回明确的 spawn_protected 或 protection_unavailable，避免让模型误报为缺少移动授权。配置/保护状态未知时仅拒绝编辑；连接、管理员认证和急停继续独立生效。

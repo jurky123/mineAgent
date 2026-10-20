@@ -106,6 +106,50 @@ test("unrestricted zones allow distant positions but keep validation and hard de
     checkSpec({ ...spec, block: "command_block" }, unrestricted),
   );
 });
+test("edit zones never fence movement, looking, chat or commands", () => {
+  for (const tool of [
+    "body_goto",
+    "body_look_at",
+    "body_say",
+    "body_command",
+  ]) {
+    const args =
+      tool === "body_command"
+        ? { command: "//size" }
+        : tool === "body_say"
+          ? { text: "hello" }
+          : {};
+    assert.doesNotThrow(() =>
+      checkSpec(
+        {
+          ...spec,
+          tool,
+          args,
+          pos: [100, 64, 100],
+          target: [101, 64, 100],
+          mainHand: "",
+        },
+        policy,
+      ),
+    );
+  }
+  for (const tool of ["body_dig", "body_place"]) {
+    assert.throws(
+      () =>
+        checkSpec(
+          { ...spec, tool, pos: [100, 64, 100], target: [101, 64, 100] },
+          policy,
+        ),
+      /out_of_zone/,
+    );
+    assert.doesNotThrow(() =>
+      checkSpec(
+        { ...spec, tool, pos: [31, 64, 0], target: [30, 64, 0] },
+        policy,
+      ),
+    );
+  }
+});
 test("implicit hand and contextual beds require a matching one-use grant", () => {
   assert.equal(risk(spec, policy), true);
   assert.throws(() => checkGrant(spec, null, policy, 1));
@@ -212,16 +256,25 @@ test("stale connection cannot refresh the local lease or resume actions", async 
   );
   await runtime.close();
 });
-test("path constraints cover the entire body and both worlds", async () => {
+test("movement outside edit zones keeps its lease and pause checks", async () => {
   const runtime = new MinecraftBody(
     { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
     () => {},
   );
   runtime.policy = policy;
-  assert.equal(runtime.inBounds("yard", [29.8, 64, 0]), false);
-  assert.equal(runtime.inBounds("yard", [0, 99, 0]), false);
-  assert.equal(runtime.inBounds("yard", [0, 64, 0]), true);
-  assert.equal(runtime.inBounds("other", [0, 64, 0]), false);
+  runtime.ready = runtime.connected = true;
+  runtime.paused = false;
+  runtime.epoch = 1;
+  runtime.lastLease = performance.now();
+  runtime.bot = {
+    entity: { position: { x: 100, y: 200, z: 100 } },
+    game: { dimension: "overworld" },
+    quit() {},
+  };
+  const action = { tool: "body_goto", epoch: 1, abort: new AbortController() };
+  assert.doesNotThrow(() => runtime.ensure(action));
+  runtime.paused = true;
+  assert.throws(() => runtime.ensure(action), /body_paused/);
   await runtime.close();
 });
 

@@ -8,7 +8,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 
 > **具身接入 V1**：通过独立 Node/Mineflayer 玩家执行 13 个 `body_*` 工具，网页管理员控制，门户 `/body` 提供状态、审批和急停。配置默认关闭；2026-10-20 已按服主授权启动生产试运行（无区域限制，首次连接仍暂停）。
 > **持续任务**：身体任务默认不限总轮数与总时长，限速时等待配额；`body_status` 独立诊断控制通道，停止/断线/撤权取消旧任务。普通聊天预算不变，详见 body/README.md。
-> **建造权限**：Paper 0.3.1 支持 AI 专用 LuckPerms 建造组，以及出生点四周各 512 格、全高度的 WorldEdit 实际写入保护；须先启用保护再授权批量编辑，详见 body/README.md。
+> **建造权限**：Paper 0.3.2 支持 AI 专用 LuckPerms 建造组，以及出生点四周各 512 格、全高度的方块破坏/放置与 WorldEdit 实际写入保护；保护区允许移动和观察，按目标方块拦截写入；须先启用保护再授权批量编辑，详见 body/README.md。
 > 使用与验证：[body/README.md](body/README.md)；架构与实施记录：[MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（§18）。
 > AI 玩家入口位于 **Minecraft → AI 玩家 → 玩家资料**（`/minecraft` → `/ai` → `/ai/<id>`）。公开资料由独立服务提供；资料内的身体状态、任务/回复、审批和控制由浏览器直接访问主站，仍须主站已验证管理员。`/body` 保留旧书签、游戏 fragment 配对及急停兼容。论坛默认关闭，既有代码与数据保留，不接写作。见 [aiplayer/README.md](aiplayer/README.md) 和 [v1.3 需求 §12](AI_PLAYER_PORTAL_REQUIREMENTS.md#12-用户确认的信息架构调整2026-10-20当前实施依据)。
 
@@ -45,7 +45,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 @agent 给我 1 个钻石
 ```
 
-## 游戏内界面（Paper 插件 0.3.1）
+## 游戏内界面（Paper 插件 0.3.2）
 
 输入 **`/agent`** 打开原版助手面板，`/ai` 也可用。`/agent ui`、`/mineagent ui` 或 `/ma ui` 自动选择 MineUI 增强界面或原版回退。原有 `/agent <问题>` 和聊天 `@agent` 保持可用。
 
@@ -76,7 +76,7 @@ cd paper-plugin
 ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx384m -Dorg.gradle.parallel=false test jar
 ```
 
-产物为 `paper-plugin/build/libs/MineAgent-0.3.1.jar`。身体面板须配套本版后端；仅构建不会安装插件或重启 Paper，正式更新须按项目部署流程安排并确认停服窗口。
+产物为 `paper-plugin/build/libs/MineAgent-0.3.2.jar`。身体面板须配套本版后端；仅构建不会安装插件或重启 Paper，正式更新须按项目部署流程安排并确认停服窗口。
 
 隔离集成测试：安装 `body/` 锁定依赖后执行 `node scripts/paper-ui-e2e.mjs <已标记的测试 Paper 目录> <ViaProxy-3.4.14.jar>`。它只允许回环 25665、测试世界 `m0-world`，且目录必须包含 `.mineagent-body-test` 隔离标记；会覆盖测试插件配置并分两阶段启动自有 Paper（不装/安装 MineUI），请勿指向正式目录。测试覆盖原版按钮/表单回调、私密回复隔离、审批防重放/冒用/撤权/过期/重连，以及 MineUI 握手、输入、状态更新和旧会话拒绝；这是服务端及协议验证，客户端视觉布局仍需游戏内人工体验。
 

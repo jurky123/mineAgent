@@ -27,7 +27,7 @@ public final class MineAgentPlugin extends JavaPlugin {
             if (!getServer().getPluginManager().isPluginEnabled("WorldEdit")) {
                 throw new IllegalStateException(
                         "AI WorldEdit protection requires WorldEdit; refusing to start the AI"
-                            + " bridge");
+                                + " bridge");
             }
             worldEditProtection = new WorldEditProtection(this);
         }
@@ -97,6 +97,17 @@ public final class MineAgentPlugin extends JavaPlugin {
 
     public ApprovalHandler approvals() {
         return approvalHandler;
+    }
+
+    public JsonObject blockProtection(Player player) {
+        if (worldEditProtection != null) {
+            return ((WorldEditProtection) worldEditProtection).snapshot(player);
+        }
+        JsonObject result = new JsonObject();
+        result.addProperty(
+                "enabled", getConfig().getBoolean("worldedit-protection.enabled", false));
+        result.addProperty("ready", !getConfig().getBoolean("worldedit-protection.enabled", false));
+        return result;
     }
 
     private void handleBackendMessage(String type, JsonObject data) {

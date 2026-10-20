@@ -78,6 +78,10 @@ func (s *Service) toolFailure(id, code string, p *Principal) protocol.BodyResult
 		r.Summary = "身体控制端或游戏连接尚未就绪；用 body_status 区分连接、握手和状态过期。"
 	case "body_paused":
 		r.Summary = "身体已暂停；只读查询仍可用，行动需要管理员在面板恢复。"
+	case "spawn_protected":
+		r.Summary = "目标方块位于出生点四周 512 格保护区内，禁止挖掘或放置；移动、观察和背包不受此限制，请到区外施工。"
+	case "protection_unavailable":
+		r.Summary = "服务器尚未确认方块保护状态，暂不执行挖掘或放置；移动和观察仍可用。需要新版 Paper 插件提供保护状态，不是缺少活动区域授权。"
 	}
 	r.Data = []byte(output(d))
 	return r

@@ -806,7 +806,7 @@ func cancellationText(ctx context.Context, req Request) string {
 			case "not_operator":
 				return "管理员授权已失效，已停止身体任务。已完成的操作不会撤销。"
 			case "run_failed":
-				return "身体动作连续失败，已停止任务。请核查真实状态后再决定下一步。"
+				return "身体动作连续三次未完成且没有明显进展，已停止任务。" + req.BodyPrincipal.FailureSummary() + "请核查真实状态并调整路线或目标后再执行。"
 			}
 		}
 	}

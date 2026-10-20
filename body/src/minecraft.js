@@ -63,6 +63,7 @@ export class MinecraftBody {
     this.results = new Map();
     this.usedGrants = new Set();
     this.recent = [];
+    this.lastNavigation = null;
     this.limits = new Map();
     this.lastReconnect = 5000;
     this.safetyTimer = setInterval(() => {
@@ -739,17 +740,29 @@ export class MinecraftBody {
           ? "已提交，实际结果以服务器状态为准"
           : "动作完成，已读取结果状态";
     } catch (e) {
-      result.code = e.code || "failed";
+      result.code =
+        e.code ||
+        (a?.tool === "body_goto"
+          ? {
+              NoPath: "path_not_found",
+              Timeout: "path_search_timeout",
+              GoalChanged: "goal_changed",
+              PathStopped: "path_stopped",
+            }[e.name]
+          : undefined) ||
+        "failed";
       result.error = clean(e.message);
       result.summary = result.error;
       result.outcome = a?.submitted ? "unknown" : "not_executed";
-      if (a?.tool === "body_goto" && this.connected && this.bot?.entity) {
+      if (
+        a?.tool === "body_goto" &&
+        a.submitted &&
+        a.spec?.target &&
+        this.connected &&
+        this.bot?.entity
+      ) {
         result.outcome = "confirmed";
-        result.data = {
-          partial: true,
-          reached: false,
-          position: pos(this.bot.entity.position),
-        };
+        result.data = this.navigationData(a, false);
       } else if (a?.submitted) {
         this.paused = true;
         this.prepared.clear();
@@ -763,12 +776,35 @@ export class MinecraftBody {
       if (resolveDone) resolveDone();
       result.elapsedMs = a ? Date.now() - a.startedAt : 0;
       result.state = this.state();
+      if (a?.tool === "body_goto" && result.data) {
+        this.lastNavigation = {
+          at: Date.now(),
+          code: result.code,
+          ...result.data,
+        };
+      }
       this.results.set(p.callId, result);
       if (this.results.size > 128)
         this.results.delete(this.results.keys().next().value);
       this.send("body.result", result);
       this.publishState();
     }
+  }
+  navigationData(a, reached) {
+    const current = pos(this.bot.entity.position);
+    const target = a.spec.target;
+    const start = a.origin || current;
+    const remaining = distance(current, target);
+    return {
+      partial: !reached,
+      reached,
+      position: current,
+      distance: remaining,
+      initialDistance: distance(start, target),
+      progressDistance: distance(start, target) - remaining,
+      movedDistance: distance(start, current),
+      path: a.path || null,
+    };
   }
   async perform(a, raw) {
     const b = this.bot;
@@ -794,6 +830,7 @@ export class MinecraftBody {
             position: pos(e.position),
           })),
         look: b.blockAtCursor(5)?.name || null,
+        navigation: this.lastNavigation,
         events: this.recent.slice(-8).map((e) => ({
           type: e.type,
           at: e.at,
@@ -839,6 +876,7 @@ export class MinecraftBody {
     }
     if (t === "body_goto") {
       this.movements();
+      a.origin = pos(b.entity.position);
       a.submitted = true;
       const range = args.range || 2;
       const goal = new pathfinder.goals.GoalNear(...sp.target, range);
@@ -850,11 +888,24 @@ export class MinecraftBody {
           [Math.floor(node.x) + 0.5, node.y, Math.floor(node.z) + 0.5],
           sp.target,
         ) <= range;
-      await this.step(a, () => b.pathfinder.goto(goal));
+      const pathUpdate = (p) => {
+        a.path = {
+          status: p.status,
+          visitedNodes: p.visitedNodes || 0,
+          generatedNodes: p.generatedNodes || 0,
+          elapsedMs: p.time || 0,
+        };
+      };
+      b.on?.("path_update", pathUpdate);
+      try {
+        await this.step(a, () => b.pathfinder.goto(goal));
+      } finally {
+        b.removeListener?.("path_update", pathUpdate);
+      }
       const final = pos(b.entity.position);
       const d = distance(final, sp.target);
       if (d > (args.range || 2) + 0.25) fail("path_not_found");
-      return { reached: true, position: final, distance: d };
+      return this.navigationData(a, true);
     }
     if (t === "body_look_at") {
       await this.step(a, () => b.lookAt(new Vec3(...sp.target), true));

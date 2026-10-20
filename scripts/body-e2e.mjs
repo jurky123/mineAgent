@@ -672,6 +672,26 @@ MinecraftBody.prototype.movements=function(){
     );
     await command("setworldspawn 1024 -60 0");
   }
+  // A real closed shaft has no walking route out. The result must distinguish
+  // NoPath from an opaque executor error and carry the actual partial position.
+  await command("tp MineBodyV1 0 -60 0");
+  await command("fill -1 -60 -1 1 -57 1 stone");
+  await command("fill 0 -60 0 0 -57 0 air");
+  await wait(1200);
+  assert.equal((await control("resume")).httpStatus, 200);
+  const noRoute = await send("body_goto", {
+    x: 5,
+    y: -60,
+    z: 0,
+    range: 1,
+    timeoutSec: 8,
+  });
+  assert.equal(noRoute.result.ok, false);
+  assert.equal(noRoute.result.code, "path_not_found");
+  assert.equal(noRoute.result.outcome, "confirmed");
+  assert.equal(noRoute.result.data.path.status, "noPath");
+  assert.equal(noRoute.result.data.partial, true);
+  await command("fill -1 -60 -1 1 -57 1 air");
   const high = await send(
     "body_place",
     {
@@ -996,6 +1016,7 @@ MinecraftBody.prototype.movements=function(){
         "real Paper world identity",
         "per-user authenticated tool context",
         "all core actions",
+        "real closed terrain returns path_not_found with partial position and search stats",
         "walk outside edit allowlist and inside protected spawn",
         "body dig/place preflight and raw game packet protection",
         "40 actual body observations in one model/tool task",

@@ -26,12 +26,13 @@ type Principal struct {
 	Epoch                 uint64
 	Deadline              time.Time
 	// Valid optionally limits a delegated controller to its live transport session.
-	Valid          func(context.Context) bool
-	mu             sync.Mutex
-	failures       int
-	service        *Service
-	connection     string
-	awaitingResume bool
+	Valid              func(context.Context) bool
+	mu                 sync.Mutex
+	failures           int
+	lastTool, lastCode string
+	service            *Service
+	connection         string
+	awaitingResume     bool
 }
 type principalKey struct{}
 
@@ -347,7 +348,11 @@ func (s *Service) audit(ctx context.Context, p *Principal, id, tool, decision, o
 	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 500*time.Millisecond)
 	defer cancel()
 	if r, ok := data.(protocol.BodyResult); ok {
-		data = map[string]any{"ok": r.OK, "outcome": r.Outcome, "code": r.Code, "elapsedMs": r.ElapsedMS}
+		entry := map[string]any{"ok": r.OK, "outcome": r.Outcome, "code": r.Code, "elapsedMs": r.ElapsedMS}
+		if tool == "body_goto" {
+			entry["navigation"] = navigation(r)
+		}
+		data = entry
 	}
 	b, _ := json.Marshal(data)
 	var value any
@@ -532,10 +537,14 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 	}
 	if !isRead(tool) {
 		p.mu.Lock()
-		if res.OK {
+		if res.OK || navigationProgress(res, sp) {
 			p.failures = 0
 		} else {
 			p.failures++
+			p.lastTool, p.lastCode = tool, res.Code
+			if p.lastCode == "" {
+				p.lastCode = "failed"
+			}
 		}
 		p.mu.Unlock()
 	}

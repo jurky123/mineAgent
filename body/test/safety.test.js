@@ -428,3 +428,88 @@ test("goto uses the same physical radius for integer and optimized path nodes", 
     await runtime.close();
   }
 });
+
+test("navigation failures preserve concrete cause, partial progress and listener cleanup", async () => {
+  for (const [name, code] of [
+    ["NoPath", "path_not_found"],
+    ["Timeout", "path_search_timeout"],
+    ["GoalChanged", "goal_changed"],
+    ["PathStopped", "path_stopped"],
+  ]) {
+    const sent = [];
+    const runtime = new MinecraftBody(
+      { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+      (type, data) => sent.push({ type, data }),
+    );
+    Object.assign(runtime, {
+      policy,
+      connectionId: "fixture",
+      epoch: 1,
+      revision: 1,
+      ready: true,
+      connected: true,
+      paused: false,
+      lastLease: performance.now(),
+    });
+    runtime.movements = () => {};
+    const bot = Object.assign(new EventEmitter(), {
+      entity: { position: { x: 0, y: 64, z: 0 } },
+      game: { dimension: "overworld" },
+      inventory: { slots: Array(46).fill(null) },
+      blockAt(p) {
+        return { name: "air", stateId: 0, position: p };
+      },
+      quit() {},
+      clearControlStates() {},
+      deactivateItem() {},
+      stopDigging() {},
+    });
+    bot.pathfinder = {
+      setGoal() {},
+      async goto() {
+        bot.emit("path_update", {
+          status: name === "Timeout" ? "timeout" : "noPath",
+          visitedNodes: 42,
+          generatedNodes: 50,
+          time: 20,
+        });
+        bot.entity.position.x = 2;
+        const e = new Error("deterministic route failure");
+        e.name = name;
+        throw e;
+      },
+    };
+    runtime.bot = bot;
+    try {
+      const spec = runtime.describe("body_goto", {
+        x: 5,
+        y: 64,
+        z: 0,
+        range: 1,
+      });
+      runtime.prepared.set(spec.id, spec);
+      await runtime.call({
+        callId: "nav-" + name,
+        connectionId: "fixture",
+        controlEpoch: 1,
+        policyRevision: 1,
+        tool: "body_goto",
+        args: spec.args,
+        specId: spec.id,
+        timeoutMs: 1000,
+      });
+      const r = sent.findLast((e) => e.type === "body.result").data;
+      assert.equal(r.ok, false);
+      assert.equal(r.code, code);
+      assert.equal(r.outcome, "confirmed");
+      assert.equal(r.data.reached, false);
+      assert.equal(r.data.progressDistance, 2);
+      assert.equal(r.data.distance, 3);
+      assert.equal(r.data.path.visitedNodes, 42);
+      assert.equal(bot.listenerCount("path_update"), 0);
+      assert.equal(runtime.lastNavigation.code, code);
+    } finally {
+      await runtime.close();
+    }
+  }
+});

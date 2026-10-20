@@ -59,6 +59,20 @@
 
 `GET /api/body/profile` 是固定白名单快照，不含坐标、背包、聊天、审批理由。启用 `body.profile.enabled` 后，外部服务用独立只读 `MINEAGENT_BODY_PROFILE_TOKEN` 的 Bearer 请求；Go 加载时只保存其 SHA-256，也可直接配置 `body.profile.tokenHash`。令牌轮换通过私有环境文件和正常后端部署完成。管理员也只能从此接口拿到同一资料投影。论坛本体与写作工具不在本版实现。
 
+## 游戏内 AI 玩家面板（Paper 0.3.0）
+
+输入 `/agent` →「AI 玩家」，无需客户端 mod；`/agent ui` 可选 MineUI 增强。身体未启用或后端不支持时显示实际状态，不自动启动 Node、代理或修改区域。
+
+1. 完整状态与控制需要 `mineagent.use`、`mineagent.body`（默认 OP），并关联已验证的网页管理员。游戏内 OP 本身不能控制身体。
+2. 点击「关联管理员」获取 2 分钟一次性代码；打开网站 `/body`，密码/Passkey 登录管理员，核对玩家 UUID 与当前游戏连接后确认授权。链接中的代码仅在 URL fragment 中传递，页面读取后清除，不能自动授权。
+3. 回到游戏点击「刷新身体状态」。授权最长 10 分钟；完整状态含生命、饥饿、手持、位置、当前任务；可下达短任务、看本人回复、查看并逐条审批身体动作、暂停/恢复/断开和急停。原版面板用刷新按钮获取新状态与回复。
+4. 任务复用同一个 Agent 与 12 个 `body_*` 工具，使用独立 `bodyui:<网页用户ID>:<当前连接>` 会话，任务和回复不向公共 MC 聊天广播。面板保留本连接最近 12 段消息，重连/撤权清空；独立会话记录仍使用既有 SQLite 存储，不包含关联代码、密码或网页原始令牌。
+5. 授权绑定已认证 Paper WS、玩家 UUID 和插件为本次连接生成的随机 nonce。离线、Paper/后端断连、权限撤销、网页登录退出、授权到期或主动解除都会撤销；正在运行的游戏面板任务被取消并请求暂停。重新关联不能复活旧任务/旧审批，恢复后仍须重新下达任务。
+
+暂停/急停绕过模型队列，只有收到现有身体 ACK 才确认；`stop_unconfirmed` 明确显示结果未确认，不自动重试副作用。暂停/恢复会更新控制代次。高危动作仍通过原有不可变 spec/一次性 grant 审批，游戏身体审批和普通 MC 指令审批分开。面板任务不暴露 workspace、网页管理或其他通道工具。
+
+需同时部署支持 `body.ui.request/response` 的 Go 后端和 Paper 插件。后端部署仍走 `scripts/deploy.sh` 的对局与 drain 检查，Paper 安装后重启需单独确认窗口；本功能不会自动启用正式身体，活动世界与区域须在启用时明确。
+
 ## 运行与部署
 
 建议分别管理 Go、Node、ViaProxy 进程，Node 内存上限 512M，ViaProxy 上限至少 768M（实测 RSS 约 455MiB，原设计 384MB 估计不足）。这里不自动安装 systemd 单元，也不读取正式配置。WS 控制租约每 500ms 续期，Node 超过 1.5 秒未收到即停止主动输入；这不能撤回已发出的游戏包或消除液体、爆炸、重力后果。
@@ -69,12 +83,12 @@
 
 ```sh
 go test ./...
-go test -race ./internal/body ./internal/ws ./internal/agent ./internal/tools ./internal/account ./internal/storage ./internal/webui ./internal/portal ./cmd/mineagent
+go test -race ./internal/body ./internal/bodyui ./internal/ws ./internal/agent ./internal/tools ./internal/account ./internal/storage ./internal/webui ./internal/portal ./cmd/mineagent
 python3 -m unittest discover -s scripts -p 'deploy_test.py'
 cd body && npm test
 ```
 
-真实 E2E 使用 `scripts/body-e2e.mjs <disposable-paper-dir> /tmp/mineagent-body-v1`，需要根目录已有 Playwright、已构建 Paper 插件 jar，以及运行中的测试 ViaProxy（回环 25666 → 25665）。测试目录必须有包含 `isolated test` 的 `.mineagent-body-test` 标记，且 Paper 为 `paper-26.2-124.jar`、全新平坦世界 `m0-world`、仅回环 25665、离线模式、关闭出生保护。脚本会更改这个测试世界、清空测试玩家背包和覆盖其中的测试插件配置；不要指向正式目录。它创建私有临时后端、测试账号、模拟模型和数据库，真实完成网页聊天到工具动作、审批恢复、陈旧目标拒绝、急停、资料权限和手机浏览器验证，结束后只关闭自身子进程。
+真实 E2E 使用 `node scripts/body-e2e.mjs <disposable-paper-dir> /tmp/mineagent-body-v1 <ViaProxy-3.4.14.jar>`，需要根目录已有 Playwright 和当前版本 Paper 插件 jar；第四个参数会启动仅回环的测试 ViaProxy（25666 → 25665），不提供时须已有测试代理。测试目录必须有包含 `isolated test` 的 `.mineagent-body-test` 标记，且 Paper 为 `paper-26.2-124.jar`、全新平坦世界 `m0-world`、仅回环 25665、离线模式、关闭出生保护。脚本会更改这个测试世界、清空测试玩家背包和覆盖其中的测试插件配置；不要指向正式目录。它创建私有临时后端、测试账号、模拟模型和数据库，真实完成网页聊天到工具动作、审批恢复、陈旧目标拒绝、急停、资料权限、手机浏览器，以及原版面板授权→任务→真实身体执行→面板审批→急停→同名重连撤权验证，结束后只关闭自身子进程。
 
 当前已完成隔离环境验证，24 小时长期运行、固定负载的 MSPT/CPU/换页对比及生产权限/保护验收仍是上线门槛，不能由 30 分钟兼容性测试代替。
 

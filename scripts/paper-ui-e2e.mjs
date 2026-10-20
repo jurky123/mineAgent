@@ -42,6 +42,9 @@ const children = [],
   logs = { paper: "", proxy: "" };
 let paper, peer, server;
 const messages = [];
+const bodyLinked = new Set(),
+  bodyOps = [],
+  bodyApproved = new Set();
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, name, ms = 20000) {
   const started = Date.now();
@@ -114,9 +117,18 @@ async function openDialog(bot, cmd = "/agent") {
   const old = bot.dialogs.length;
   const packets = bot.dialogPackets.length;
   bot.chat(cmd);
-  const dialog = await until(() => bot.dialogs[old], "dialog " + cmd);
-  assert.deepEqual(bot.dialogPackets.slice(packets), ["show_dialog"],
-    "native dialog opening must not send a preceding clear-dialog packet");
+  const dialog = await until(
+    () =>
+      bot.dialogs
+        .slice(old)
+        .find((d) => JSON.stringify(d.data.title).includes("MineAgent · 助手")),
+    "dialog " + cmd,
+  );
+  assert.ok(
+    bot.dialogPackets.slice(packets).length > 0 &&
+      bot.dialogPackets.slice(packets).every((p) => p === "show_dialog"),
+    "native dialog opening must not send a preceding clear-dialog packet",
+  );
   return dialog;
 }
 function dialogButton(dialog, label) {
@@ -297,6 +309,81 @@ try {
             },
           }),
         );
+      } else if (m.type === "body.ui.request") {
+        const r = m.data,
+          linked = r.allowed && bodyLinked.has(r.uuid);
+        const data = {
+          enabled: true,
+          linked,
+          canLink: r.allowed,
+          profile: {
+            status: "online",
+            activity: "idle",
+            displayName: "Fixture Body",
+          },
+        };
+        if (r.action === "pair" && r.allowed)
+          data.pairCode = "0123456789abcdef0123456789abcdef";
+        if (linked) {
+          data.operator = "FixtureAdmin";
+          data.expiresAt = Date.now() + 600000;
+          data.snapshot = {
+            name: "Fixture Body",
+            mode: "assist",
+            paused: r.action === "stop",
+            state: {
+              health: 20,
+              food: 20,
+              pos: [0, 64, 0],
+              worldId: "fixture",
+            },
+          };
+          data.approvals = bodyApproved.has(r.uuid)
+            ? []
+            : [
+                {
+                  approvalId: "body-ui-approval",
+                  prompt: "fixture bounded body action",
+                  tool: "body_place",
+                  source: "body",
+                },
+              ];
+          data.messages = ["fixture-body-private-ui"];
+          if (["task", "stop", "approve", "deny"].includes(r.action))
+            bodyOps.push(r);
+          if (r.action === "approve") {
+            bodyApproved.add(r.uuid);
+            data.approvals = [];
+          }
+        }
+        if (r.action !== "leave") {
+          ws.send(
+            JSON.stringify({
+              v: 1,
+              type: "body.ui.response",
+              data: {
+                requestId: r.requestId,
+                uuid: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                session: r.session,
+                data: { ...data, linked: true },
+                error: "",
+              },
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              v: 1,
+              type: "body.ui.response",
+              data: {
+                requestId: r.requestId,
+                uuid: r.uuid,
+                session: r.session,
+                data,
+                error: "",
+              },
+            }),
+          );
+        }
       } else if (m.type === "approval.result")
         messages.push({ approval: m.data });
     });
@@ -359,6 +446,15 @@ try {
   await until(
     () => messages.some((m) => m.message === "@agent native-ui-question"),
     "native input routed to backend",
+  );
+  const unlinkedBody = await navigate(
+    guest,
+    await openDialog(guest),
+    "AI 玩家",
+  );
+  assert.ok(
+    !JSON.stringify(unlinkedBody.data).includes("急停"),
+    "ordinary client does not get body controls",
   );
   const adminHistory = await navigate(
     admin,
@@ -448,16 +544,40 @@ try {
       "向助手提问",
     ),
   );
-  for (const cmd of ["/agent dialog", "/mineagent:agent", "/mineagent:agent dialog", "/agent ui", "/ai", "/mineagent ui"])
-    assert.ok(JSON.stringify((await openDialog(enhancedGuest, cmd)).data).includes("向助手提问"), cmd);
+  for (const cmd of [
+    "/agent dialog",
+    "/mineagent:agent",
+    "/mineagent:agent dialog",
+    "/agent ui",
+    "/ai",
+    "/mineagent ui",
+  ])
+    assert.ok(
+      JSON.stringify((await openDialog(enhancedGuest, cmd)).data).includes(
+        "向助手提问",
+      ),
+      cmd,
+    );
   enhancedGuest._client.write("custom_payload", {
-    channel: "minecraft:register", data: Buffer.from("mineui:main"),
+    channel: "minecraft:register",
+    data: Buffer.from("mineui:main"),
   });
   uiFrame(enhancedGuest, 1, 0, 0, {
-    protocol: 1, modVersion: "0.6.4", minecraft: "26.2", capabilities: ["server_ui"],
+    protocol: 1,
+    modVersion: "0.6.4",
+    minecraft: "26.2",
+    capabilities: ["server_ui"],
   });
-  await until(() => enhancedGuest.ui.some(m => m.type === 2), "old client handshake");
-  assert.ok(JSON.stringify((await openDialog(enhancedGuest)).data).includes("向助手提问"), "old MineUI clients must fall back");
+  await until(
+    () => enhancedGuest.ui.some((m) => m.type === 2),
+    "old client handshake",
+  );
+  assert.ok(
+    JSON.stringify((await openDialog(enhancedGuest)).data).includes(
+      "向助手提问",
+    ),
+    "old MineUI clients must fall back",
+  );
   for (const bot of [enhancedGuest, enhancedAdmin]) {
     bot._client.write("custom_payload", {
       channel: "minecraft:register",
@@ -474,8 +594,12 @@ try {
     () => enhancedGuest.ui.some((m) => m.type === 2),
     "MineUI handshake",
   );
-  assert.ok(JSON.stringify((await openDialog(enhancedGuest)).data).includes("向助手提问"),
-    "default /agent stays native even for an enhanced client");
+  assert.ok(
+    JSON.stringify((await openDialog(enhancedGuest)).data).includes(
+      "向助手提问",
+    ),
+    "default /agent stays native even for an enhanced client",
+  );
   const enhancedHome = await openUi(enhancedGuest);
   assert.equal(enhancedHome.state.title, "MineAgent · 助手");
   await uiAction(enhancedGuest, "chat");
@@ -531,6 +655,70 @@ try {
   });
   await pause(250);
   assert.equal(messages.filter((m) => m.message).length, before);
+  await uiAction(enhancedGuest, "body");
+  await until(
+    () => currentUi(enhancedGuest)?.state.title === "AI 玩家",
+    "unlinked enhanced body panel",
+  );
+  assert.ok(
+    !JSON.stringify(currentUi(enhancedGuest).state).includes(
+      "fixture-body-private-ui",
+    ),
+  );
+  const noControl = bodyOps.length;
+  await uiAction(enhancedGuest, "body_stop");
+  assert.equal(
+    bodyOps.length,
+    noControl,
+    "unlinked enhanced client cannot stop body",
+  );
+  await openUi(enhancedAdmin);
+  await uiAction(enhancedAdmin, "body");
+  await uiAction(enhancedAdmin, "body_pair_new");
+  await until(
+    () => currentUi(enhancedAdmin)?.state.title === "关联管理员",
+    "enhanced pairing page",
+  );
+  assert.ok(
+    JSON.stringify(currentUi(enhancedAdmin).state).includes("0123456789abcdef"),
+  );
+  // Authentication itself is covered by the real body/browser E2E; this fixture verifies its MineUI presentation.
+  bodyLinked.add(enhancedAdmin.player.uuid);
+  await uiAction(enhancedAdmin, "body_refresh");
+  await until(
+    () => currentUi(enhancedAdmin)?.state.title === "AI 玩家",
+    "linked enhanced body panel",
+  );
+  await uiAction(enhancedAdmin, "body_task");
+  await uiAction(enhancedAdmin, "send", { text: "private-enhanced-body-task" });
+  await until(
+    () =>
+      bodyOps.some(
+        (r) => r.action === "task" && r.text === "private-enhanced-body-task",
+      ),
+    "enhanced body task routed separately",
+  );
+  assert.ok(
+    !messages.some((m) => m.message?.includes("private-enhanced-body-task")),
+    "body task never enters shared chat protocol",
+  );
+  await uiAction(enhancedAdmin, "body");
+  await uiAction(enhancedAdmin, "body_approvals");
+  await uiAction(enhancedAdmin, "body_request:body-ui-approval");
+  await uiAction(enhancedAdmin, "body_approve");
+  await until(
+    () =>
+      bodyOps.some(
+        (r) => r.action === "approve" && r.approvalId === "body-ui-approval",
+      ),
+    "enhanced body approval",
+  );
+  await uiAction(enhancedAdmin, "body");
+  await uiAction(enhancedAdmin, "body_stop");
+  await until(
+    () => bodyOps.some((r) => r.action === "stop"),
+    "enhanced emergency stop",
+  );
   console.log(
     JSON.stringify({
       passed: true,
@@ -540,11 +728,12 @@ try {
         "targeted history privacy",
         "one-use/actor/revoked approval guards",
         "vanilla with MineUI installed",
-      "old MineUI client fallback",
+        "old MineUI client fallback",
         "MineUI handshake/open/input/live patches",
         "enhanced approvals",
         "stale sessions",
         "unknown privilege actions rejected",
+        "MineUI body pairing/state/private task/approval/stop",
       ],
       artifacts: temp,
     }),

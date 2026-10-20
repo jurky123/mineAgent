@@ -25,8 +25,10 @@ type Principal struct {
 	Name, RunID           string
 	Epoch                 uint64
 	Deadline              time.Time
-	mu                    sync.Mutex
-	failures              int
+	// Valid optionally limits a delegated controller to its live transport session.
+	Valid    func(context.Context) bool
+	mu       sync.Mutex
+	failures int
 }
 type principalKey struct{}
 
@@ -90,7 +92,7 @@ func (s *Service) Principal(userID, sessionID int64, name string) *Principal {
 }
 func (s *Service) Enabled() bool { return s != nil && s.cfg.Enabled && s.cfg.Mode != "off" }
 func (s *Service) Check(ctx context.Context, p *Principal, control bool) error {
-	if p == nil || p.UserID == 0 || p.AuthSessionID == 0 || s.authorize == nil || !s.authorize(ctx, p.UserID, p.AuthSessionID) {
+	if p == nil || p.UserID == 0 || p.AuthSessionID == 0 || s.authorize == nil || !s.authorize(ctx, p.UserID, p.AuthSessionID) || (p.Valid != nil && !p.Valid(ctx)) {
 		return errors.New("not_operator")
 	}
 	if control {
@@ -208,7 +210,7 @@ func (s *Service) Run(ctx context.Context) {
 			}
 			lease := map[string]any{"connectionId": s.connection, "controlEpoch": s.epoch, "leaseMs": 1500}
 			s.mu.Unlock()
-			if principal != nil && s.authorize != nil && !s.authorize(ctx, principal.UserID, principal.AuthSessionID) {
+			if principal != nil && s.Check(ctx, principal, true) != nil {
 				s.pauseUnknown()
 				continue
 			}

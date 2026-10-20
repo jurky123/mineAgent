@@ -27,6 +27,60 @@ const labels = {
 };
 let refreshing = false,
   stream;
+function readGameCode() {
+  const gameCode = new URLSearchParams(location.hash.slice(1)).get("game-code");
+  if (gameCode) {
+    if (/^[0-9a-f]{32}$/.test(gameCode)) $("body-game-code").value = gameCode;
+    history.replaceState(null, "", location.pathname);
+  }
+}
+readGameCode();
+window.addEventListener("hashchange", readGameCode);
+$("body-game-link").onsubmit = (event) => {
+  event.preventDefault();
+  withPending($("body-game-approve"), async () => {
+    const code = $("body-game-code").value.trim();
+    if (!/^[0-9a-f]{32}$/.test(code)) {
+      toast("请输入游戏面板中的 32 位临时代码。");
+      return;
+    }
+    try {
+      const preview = await apiPost("/api/body/minecraft/link", {
+        action: "preview",
+        code,
+      });
+      if (
+        !(await confirmDialog({
+          title: "授权当前游戏连接",
+          body: `玩家：${preview.player}\nUUID：${preview.uuid}\n允许在本次连接中查看完整身体状态、下达任务、审批和控制 AI 玩家，最长 10 分钟。请确认这是你当前的游戏连接。`,
+          confirmText: "授权此连接",
+        }))
+      )
+        return;
+      await apiPost("/api/body/minecraft/link", {
+        action: "approve",
+        code,
+        uuid: preview.uuid,
+        session: preview.session,
+      });
+      $("body-game-code").value = "";
+      $("body-game-result").textContent =
+        "已授权。回到游戏面板刷新后即可使用，离线或 10 分钟后失效。";
+    } catch (e) {
+      $("body-game-result").textContent =
+        "未能确认授权，请检查临时代码是否过期，并在游戏面板刷新核查。";
+    }
+  });
+};
+$("body-game-revoke").onclick = () =>
+  withPending($("body-game-revoke"), async () => {
+    try {
+      await apiPost("/api/body/minecraft/link", { action: "revoke" });
+      $("body-game-result").textContent = "已撤销本次网页登录授予的游戏控制。";
+    } catch (e) {
+      showError(e);
+    }
+  });
 function showError(e) {
   $("body-error").hidden = false;
   $("body-error").textContent =

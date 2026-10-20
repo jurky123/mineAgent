@@ -33,6 +33,7 @@ type Server struct {
 	web      *webui.Channel
 	apps     []App
 	body     *body.Service
+	bodyUI   http.Handler
 	games    http.Handler // 小游戏 API（main 注入，见 WithGames）
 	textKeys *textcrypt.Vault
 
@@ -60,6 +61,8 @@ func (s *Server) PortalEnabled() bool {
 
 // WithGames 挂上小游戏 API（internal/games 的 Handler）。
 func (s *Server) WithBody(b *body.Service) *Server { s.body = b; return s }
+
+func (s *Server) WithBodyUI(h http.Handler) *Server { s.bodyUI = h; return s }
 
 func (s *Server) WithGames(h http.Handler) *Server {
 	s.games = h
@@ -105,16 +108,17 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	api := s.web.API()
 	if s.body != nil && s.body.Enabled() {
+		if s.bodyUI != nil {
+			mux.Handle("/api/body/minecraft/link", s.bodyUI)
+		}
 		mux.Handle("/api/body/", s.body.Handler(s.acct))
 		mux.HandleFunc("/body", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				http.Error(w, "method not allowed", 405)
 				return
 			}
-			if s.body.Admin(r, s.acct) == nil {
-				http.Error(w, "需要已认证管理员", 403)
-				return
-			}
+			// Render the empty shell so first-time game pairing can use the
+			// existing login flow. Every body API still requires a verified admin.
 			s.render(w, "body/index.html")
 		})
 	}

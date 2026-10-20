@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"mineagent/internal/bodyui"
 	"mineagent/internal/protocol"
 )
 
@@ -17,6 +18,10 @@ func TestAuthorizeMessage(t *testing.T) {
 		{"attached mc chat", protocol.RoleMinecraft, protocol.TypeChatMessage, true, true},
 		{"attached mc tool result", protocol.RoleMinecraft, protocol.TypeToolResult, true, true},
 		{"attached mc approval result", protocol.RoleMinecraft, protocol.TypeApprovalResult, true, true},
+		{"attached mc body UI", protocol.RoleMinecraft, bodyui.RequestType, true, true},
+		{"detached mc body UI", protocol.RoleMinecraft, bodyui.RequestType, false, false},
+		{"body cannot control game UI", protocol.RoleBody, bodyui.RequestType, true, false},
+		{"web cannot impersonate game UI", protocol.RoleWeb, bodyui.RequestType, true, false},
 		{"detached mc chat", protocol.RoleMinecraft, protocol.TypeChatMessage, false, false},
 		{"qq chat rejected", protocol.RoleQQ, protocol.TypeChatMessage, true, false},
 		{"web chat rejected", protocol.RoleWeb, protocol.TypeChatMessage, true, false},

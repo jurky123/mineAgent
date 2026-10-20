@@ -72,6 +72,8 @@ public final class MineAgentPlugin extends JavaPlugin {
     private void handleBackendMessage(String type, JsonObject data) {
         if (Protocol.AGENT_MESSAGE.equals(type)) {
             handleAgentMessage(data);
+        } else if ("body.ui.response".equals(type)) {
+            getServer().getScheduler().runTask(this, () -> ui.bodyMessage(data));
         } else if (Protocol.TOOL_CALL.equals(type)) {
             toolExecutor.handle(data);
         } else if (Protocol.APPROVAL_REQUEST.equals(type)) {

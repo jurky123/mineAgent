@@ -48,10 +48,12 @@ public final class AgentUi implements Listener {
     private final Map<UUID, View> views = new HashMap<>();
     private final BukkitTask ticker;
     private MineUiPanel enhanced;
+    private final BodyUiClient bodyClient;
     private final String portal;
 
     public AgentUi(MineAgentPlugin plugin) {
         this.plugin = plugin;
+        bodyClient = new BodyUiClient(plugin);
         String base = plugin.getConfig().getString("ui.portal-url", "").strip();
         portal = validPortal(base);
         if (!base.isEmpty() && portal.isEmpty())
@@ -68,7 +70,14 @@ public final class AgentUi implements Listener {
         ticker =
                 plugin.getServer()
                         .getScheduler()
-                        .runTaskTimer(plugin, this::refreshEnhanced, 20L, 20L);
+                        .runTaskTimer(
+                                plugin,
+                                () -> {
+                                    bodyClient.tick();
+                                    refreshEnhanced();
+                                },
+                                20L,
+                                20L);
     }
 
     public static String validPortal(String base) {
@@ -119,6 +128,13 @@ public final class AgentUi implements Listener {
     }
 
     private Panel panel(Player player, View view) {
+        if (view.page().equals("body") || view.page().startsWith("body_"))
+            return BodyPanels.panel(
+                    view.page(),
+                    bodyClient.data(player),
+                    bodyClient.error(player),
+                    player.hasPermission("mineagent.body"),
+                    view.approvalId());
         List<Choice> buttons = new ArrayList<>();
         String content;
         boolean input = false;
@@ -184,7 +200,7 @@ public final class AgentUi implements Listener {
                     buttons.add(new Choice("approvals", "返回审批列表"));
                 } else {
                     List<ApprovalInbox.Pending> pending = plugin.approvals().pending();
-                    content = "仅显示现有 Minecraft 操作审批。\nAI 身体动作须在认证网页控制台审核。\n\n";
+                    content = "仅显示现有 Minecraft 操作审批。\nAI 身体动作请从 AI 玩家 → 动作审批查看，需先关联管理员。\n\n";
                     int from = view.offset() * 5;
                     if (pending.isEmpty()) content += "暂无待审批请求。";
                     else if (from >= pending.size()) content += "列表已变化，请刷新。";
@@ -207,16 +223,17 @@ public final class AgentUi implements Listener {
             case "help" ->
                     content =
                             "直接输入 /agent 打开面板，/agent dialog 强制原版界面。\n"
-                                + "/agent <问题> 和聊天 @agent 仍可用。\n\n"
-                                + "增强界面在输入框按回车发送；原版对话框点击发送。\n"
-                                + "原版对话框通过刷新查看新回复，也会收到聊天提示。\n"
-                                + "仅保存本次在线、本人实际收到的最近 30 条记录，离线即清除。\n\n"
-                                + "AI 身体需要已验证网页管理员控制，游戏内 OP 身份不能代替网页认证。";
+                                    + "/agent <问题> 和聊天 @agent 仍可用。\n\n"
+                                    + "增强界面在输入框按回车发送；原版对话框点击发送。\n"
+                                    + "原版对话框通过刷新查看新回复，也会收到聊天提示。\n"
+                                    + "仅保存本次在线、本人实际收到的最近 30 条记录，离线即清除。\n\n"
+                                    + "AI 玩家面板首次关联已验证网页管理员后可控制；离线或授权到期后失效，游戏内 OP 不能代替网页认证。";
             default -> {
                 content = "在游戏内提问、查询服务器，并处理你有权限审核的操作。\n\n对话为全服共享；高权限操作仍需原有权限与审批。";
                 buttons.add(new Choice("chat", "向助手提问"));
                 buttons.add(new Choice("queries", "常用查询"));
                 buttons.add(new Choice("history", "本次在线记录"));
+                buttons.add(new Choice("body", "AI 玩家"));
                 if (player.hasPermission("mineagent.approve"))
                     buttons.add(
                             new Choice(
@@ -225,7 +242,6 @@ public final class AgentUi implements Listener {
                     buttons.add(new Choice("reconnect", "重连后端"));
                 if (!portal.isEmpty()) {
                     buttons.add(new Choice("portal", "网页助手"));
-                    buttons.add(new Choice("body", "AI 玩家控制（网页）"));
                 }
                 buttons.add(new Choice("help", "使用说明"));
             }
@@ -251,7 +267,13 @@ public final class AgentUi implements Listener {
 
     private void dialog(Player player, View view, Panel panel) {
         List<ActionButton> buttons = new ArrayList<>();
-        if (panel.input()) buttons.add(button(player, view, "send", "发送问题"));
+        if (panel.input())
+            buttons.add(
+                    button(
+                            player,
+                            view,
+                            "send",
+                            "body_task".equals(view.page()) ? "发送任务" : "发送问题"));
         for (Choice choice : panel.choices())
             buttons.add(button(player, view, choice.id(), choice.label()));
         DialogBase base =
@@ -267,7 +289,13 @@ public final class AgentUi implements Listener {
                                         ? List.of(
                                                 DialogInput.text(
                                                                 "question",
-                                                                Component.text("问题（全服共享）"))
+                                                                Component.text(
+                                                                        "body_task"
+                                                                                        .equals(
+                                                                                                view
+                                                                                                        .page())
+                                                                                ? "任务（仅本人）"
+                                                                                : "问题（全服共享）"))
                                                         .width(310)
                                                         .maxLength(512)
                                                         .build())
@@ -338,6 +366,21 @@ public final class AgentUi implements Listener {
         }
         switch (action) {
             case "send" -> {
+                if ("body_task".equals(view.page())) {
+                    try {
+                        bodyRequest(
+                                player,
+                                view,
+                                "task",
+                                UiState.question(input),
+                                null,
+                                "body_task",
+                                "");
+                    } catch (IllegalArgumentException e) {
+                        player.sendMessage(Component.text(e.getMessage()));
+                    }
+                    break;
+                }
                 boolean sent = submit(player, input);
                 // Do not rebuild a MineUI input on a rejected request; preserve the draft.
                 if (sent || enhanced == null || !enhanced.isOpen(id))
@@ -364,7 +407,28 @@ public final class AgentUi implements Listener {
                 }
                 show(player, "home", 0, "", view.vanilla());
             }
-            case "portal", "body" -> link(player, "body".equals(action) ? "/body" : "/agent");
+            case "portal" -> link(player, "/agent");
+            case "body",
+                    "body_task",
+                    "body_approvals",
+                    "body_confirm_resume",
+                    "body_confirm_disconnect" ->
+                    bodyRequest(player, view, "status", null, null, action, "");
+            case "body_refresh" ->
+                    bodyRequest(player, view, "status", null, null, view.page(), view.approvalId());
+            case "body_pair_new" -> bodyRequest(player, view, "pair", null, null, "body_pair", "");
+            case "body_stop", "body_pause", "body_resume", "body_disconnect", "body_unlink" ->
+                    bodyRequest(player, view, action.substring(5), null, null, "body", "");
+            case "body_approve", "body_deny" ->
+                    bodyRequest(
+                            player,
+                            view,
+                            action.substring(5),
+                            null,
+                            view.approvalId(),
+                            "body_approvals",
+                            "");
+            case "body_web" -> bodyWeb(player);
             case "query_status",
                     "query_players",
                     "query_weather",
@@ -388,11 +452,56 @@ public final class AgentUi implements Listener {
                 show(player, "chat", 0, "", view.vanilla());
             }
             default -> {
-                if (action.startsWith("request:"))
+                if (action.startsWith("body_request:"))
+                    bodyRequest(
+                            player,
+                            view,
+                            "status",
+                            null,
+                            null,
+                            "body_approval",
+                            action.substring(13));
+                else if (action.startsWith("request:"))
                     show(player, "approval", 0, action.substring(8), view.vanilla());
                 else show(player, action, 0, "", view.vanilla());
             }
         }
+    }
+
+    public void bodyMessage(JsonObject data) {
+        bodyClient.receive(data);
+    }
+
+    private void bodyRequest(
+            Player player,
+            View view,
+            String action,
+            String text,
+            String approval,
+            String page,
+            String detail) {
+        player.sendActionBar(Component.text("正在读取 AI 玩家…", NamedTextColor.AQUA));
+        bodyClient.request(
+                player,
+                action,
+                text,
+                approval,
+                () -> {
+                    if (player.isOnline() && state.current(player.getUniqueId(), view.token()))
+                        show(player, page, 0, detail, view.vanilla());
+                });
+    }
+
+    private void bodyWeb(Player player) {
+        JsonObject data = bodyClient.data(player);
+        String base = validPortal(BodyPanels.text(data, "portalURL"));
+        if (base.isEmpty()) base = portal;
+        String code = BodyPanels.text(data, "pairCode");
+        if (base.isEmpty() || !player.hasPermission("mineagent.body") || code.length() != 32) {
+            player.sendMessage(Component.text("请在网站 /body 输入面板中的临时代码。"));
+            return;
+        }
+        openLink(player, base + "/body#game-code=" + code);
     }
 
     public boolean submit(Player player, String raw) {
@@ -450,11 +559,15 @@ public final class AgentUi implements Listener {
     }
 
     private void link(Player player, String path) {
-        close(player);
         if (portal.isEmpty()) return;
+        openLink(player, portal + path);
+    }
+
+    private void openLink(Player player, String url) {
+        close(player);
         ActionButton open =
                 ActionButton.builder(Component.text("在浏览器打开"))
-                        .action(DialogAction.staticAction(ClickEvent.openUrl(portal + path)))
+                        .action(DialogAction.staticAction(ClickEvent.openUrl(url)))
                         .build();
         player.showDialog(
                 Dialog.create(
@@ -507,12 +620,14 @@ public final class AgentUi implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
+        bodyClient.leave(e.getPlayer());
         if (enhanced != null) enhanced.close(e.getPlayer().getUniqueId());
         views.remove(e.getPlayer().getUniqueId());
         state.leave(e.getPlayer().getUniqueId());
     }
 
     public void shutdown() {
+        bodyClient.shutdown();
         ticker.cancel();
         for (UUID id : List.copyOf(views.keySet())) {
             Player player = plugin.getServer().getPlayer(id);

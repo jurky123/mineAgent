@@ -107,7 +107,7 @@ final class MineUiPanel {
         if (panel.input()) {
             JsonObject input = node("input", "100%", 22);
             input.addProperty("skin", "vanilla:input");
-            input.addProperty("placeholder", "输入问题，回车发送（全服共享）");
+            input.addProperty("placeholder", "输入内容，回车发送");
             input.addProperty("action", "send");
             input.addProperty("id", "question");
             input.addProperty("maxLength", 512);

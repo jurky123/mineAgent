@@ -22,6 +22,7 @@ import (
 	"mineagent/internal/agent"
 	"mineagent/internal/aibot"
 	"mineagent/internal/body"
+	"mineagent/internal/bodyui"
 	"mineagent/internal/channels/minecraft"
 	"mineagent/internal/commentary"
 	"mineagent/internal/config"
@@ -371,6 +372,12 @@ func main() {
 	// 网页入口：账号由 Passkey 验证；会话按稳定 user ID 隔离。
 	var webCh *webui.Channel
 	var portalSrv *portal.Server
+	bodyPortalURL := ""
+	if cfg.Web.Domain != "" {
+		bodyPortalURL = "https://" + cfg.Web.Domain
+	}
+	gameBodyUI := bodyui.New(bodySvc, store, hub, ag, cfg.Body.MaxSteps, bodyPortalURL)
+	go gameBodyUI.Run(ctx)
 	if cfg.Web.Listen != "" {
 		acct := account.New(store, log, cfg.Web.Users, cfg.Web.AdminUsers)
 		// Old name-only tokens are not evidence of identity. Activation preserves user IDs/data.
@@ -382,7 +389,7 @@ func main() {
 			WithMCStatus(mcStatusFn)
 
 		webCh.WithBody(bodySvc, cfg.Body.MaxSteps)
-		portalSrv = portal.New(log, cfg, store, acct, webCh).WithBody(bodySvc)
+		portalSrv = portal.New(log, cfg, store, acct, webCh).WithBody(bodySvc).WithBodyUI(gameBodyUI.Handler(acct))
 		gamesMgr := games.NewManager(log, store)
 		// AI 解说（每步点评）：用同一个模型网关，失败不影响对局
 		gamesMgr.SetCommentator(commentary.New(cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Name, log).Comment)
@@ -479,6 +486,8 @@ func main() {
 			return
 		}
 		switch env.Type {
+		case bodyui.RequestType:
+			gameBodyUI.Handle(ctx, c, env)
 		case protocol.TypeChatMessage:
 			var chat protocol.ChatMessage
 			if err := env.Decode(&chat); err != nil {
@@ -564,6 +573,7 @@ func main() {
 		}
 		if c.RemoteRole() == protocol.RoleMinecraft {
 			mc.Attach(c)
+			gameBodyUI.Attach(c)
 		}
 	})
 	srv.OnDisconnect(func(c *ws.Conn) {
@@ -572,6 +582,7 @@ func main() {
 			return
 		}
 		if c.RemoteRole() == protocol.RoleMinecraft {
+			gameBodyUI.Detach(c)
 			mc.Detach(c)
 		}
 	})
@@ -596,6 +607,7 @@ func main() {
 }
 
 var minecraftMessageTypes = map[string]bool{
+	bodyui.RequestType:          true,
 	protocol.TypeChatMessage:    true,
 	protocol.TypeToolResult:     true,
 	protocol.TypeApprovalResult: true,

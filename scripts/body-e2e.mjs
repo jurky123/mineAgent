@@ -9,9 +9,14 @@ import http from "node:http";
 import net from "node:net";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { chromium } from "playwright";
 const paperDir = process.argv[2],
   binary = process.argv[3] || "/tmp/mineagent-body-v1";
+const proxyJar = process.argv[4];
+const require = createRequire(new URL("../body/package.json", import.meta.url));
+const mineflayer = require("mineflayer"),
+  nbt = require("prismarine-nbt");
 if (!paperDir)
   throw Error(
     "Usage: node scripts/body-e2e.mjs <marked disposable paper directory> [test binary]",
@@ -24,6 +29,19 @@ assert.ok(
 const repo = process.cwd(),
   temp = await fs.mkdtemp(path.join(os.tmpdir(), "mineagent-body-e2e-"));
 await fs.chmod(temp, 0o700);
+const properties = await fs.readFile(
+  path.join(paperDir, "server.properties"),
+  "utf8",
+);
+for (const entry of [
+  "server-ip=127.0.0.1",
+  "server-port=25665",
+  "level-name=m0-world",
+])
+  assert.ok(
+    properties.split(/\r?\n/).includes(entry),
+    "isolated Paper must use " + entry,
+  );
 const env = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: "C.UTF-8" };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, description, ms = 20000) {
@@ -53,9 +71,10 @@ const webPort = await port(),
 const bodyToken = randomBytes(24).toString("hex"),
   paperToken = randomBytes(24).toString("hex"),
   profileToken = randomBytes(24).toString("hex");
-const logs = { paper: "", backend: "", body: "" },
+const logs = { paper: "", backend: "", body: "", proxy: "" },
   children = [];
-let browser, paper, backend, body;
+let browser, paper, backend, body, proxy;
+const bots = [];
 const scenarios = new Map();
 let calls = 0;
 const model = http.createServer(async (req, res) => {
@@ -68,7 +87,11 @@ const model = http.createServer(async (req, res) => {
     res.writeHead(400).end();
     return;
   }
-  const tool = request.messages?.findLast((m) => m.role === "tool");
+  const lastUser =
+    request.messages?.findLastIndex((m) => m.role === "user") ?? -1;
+  const tool = request.messages
+    ?.slice(lastUser + 1)
+    .findLast((m) => m.role === "tool");
   let message,
     finish = "stop";
   if (tool) {
@@ -182,13 +205,83 @@ async function pending() {
     return r.approvals?.[0];
   }, "portal approval");
 }
+async function connectController() {
+  const bot = mineflayer.createBot({
+    host: "127.0.0.1",
+    port: 25666,
+    username: "BodyController",
+    auth: "offline",
+    version: "26.1",
+  });
+  bots.push(bot);
+  bot.dialogs = [];
+  bot.on("error", () => {});
+  bot._client.on("show_dialog", (p) =>
+    bot.dialogs.push(nbt.simplify(p.dialog.data)),
+  );
+  await until(() => bot.entity, "controller spawn", 30000);
+  await wait(800);
+  return bot;
+}
+function vi(n) {
+  const out = [];
+  do {
+    let b = n & 127;
+    n >>>= 7;
+    if (n) b |= 128;
+    out.push(b);
+  } while (n);
+  return Buffer.from(out);
+}
+function click(bot, dialog, label, text) {
+  const button = [...(dialog.actions || []), dialog.exit_action]
+    .filter(Boolean)
+    .find((b) => typeof b.label === "string" && b.label.includes(label));
+  assert.ok(button, "missing native button: " + label);
+  const action = button.action,
+    payload = { id: nbt.intArray(action.additions.id) };
+  if (text !== undefined) payload.question = nbt.string(text);
+  const named = nbt.writeUncompressed(nbt.comp(payload)),
+    tag = Buffer.concat([named.subarray(0, 1), named.subarray(3)]),
+    id = Buffer.from(action.id);
+  const mappings =
+    require("minecraft-data")("26.1").protocol.play.toServer.types.packet[1][0]
+      .type[1].mappings;
+  const packet = Number(
+    Object.entries(mappings).find(([, n]) => n === "custom_click_action")[0],
+  );
+  bot._client.writeRaw(
+    Buffer.concat([vi(packet), vi(id.length), id, vi(tag.length), tag]),
+  );
+}
+async function openPanel(bot) {
+  const n = bot.dialogs.length;
+  bot.chat("/agent");
+  return until(() => bot.dialogs[n], "native home");
+}
+async function navigate(bot, dialog, label, text) {
+  const n = bot.dialogs.length;
+  click(bot, dialog, label, text);
+  return until(() => bot.dialogs[n], "native click " + label);
+}
+async function bodyTask(bot, dialog, tool, args) {
+  const id = "body-ui-" + randomUUID(),
+    scenario = { id, query: "fixture-case-" + id, tool, args };
+  scenarios.set(id, scenario);
+  const next = await navigate(bot, dialog, "发送任务", scenario.query);
+  return { scenario, dialog: next };
+}
 try {
   await fs.mkdir(path.join(paperDir, "plugins", "MineAgent"), {
     recursive: true,
   });
-  const jars = await fs.readdir(path.join(repo, "paper-plugin/build/libs"));
-  const jar = jars.find((x) => x.endsWith(".jar"));
-  assert.ok(jar, "build the Paper plugin first");
+  const version = (
+    await fs.readFile(path.join(repo, "paper-plugin/gradle.properties"), "utf8")
+  ).match(/^version=(.+)$/m)[1];
+  const jar = `MineAgent-${version}.jar`;
+  for (const file of await fs.readdir(path.join(paperDir, "plugins")))
+    if (/^MineAgent.*\.jar$/.test(file))
+      await fs.unlink(path.join(paperDir, "plugins", file));
   await fs.copyFile(
     path.join(repo, "paper-plugin/build/libs", jar),
     path.join(paperDir, "plugins", jar),
@@ -267,6 +360,39 @@ try {
       return false;
     }
   }, "test backend startup");
+  if (proxyJar) {
+    proxy = start(
+      "proxy",
+      "nice",
+      [
+        "-n",
+        "10",
+        "java",
+        "-Xms64M",
+        "-Xmx320M",
+        "-XX:ActiveProcessorCount=1",
+        "-jar",
+        path.resolve(proxyJar),
+        "cli",
+        "--bind-address",
+        "127.0.0.1:25666",
+        "--target-address",
+        "127.0.0.1:25665",
+        "--target-version",
+        "26.2",
+        "--log-ips",
+        "false",
+        "--chat-signing",
+        "false",
+      ],
+      path.dirname(path.resolve(proxyJar)),
+    );
+    await until(
+      () => logs.proxy.includes("25666"),
+      "test proxy startup",
+      30000,
+    );
+  }
   paper = start(
     "paper",
     "nice",
@@ -484,6 +610,114 @@ MinecraftBody.prototype.movements=function(){
   await page.evaluate((t) => localStorage.setItem("mineagent.token", t), token);
   await page.reload();
   await page.locator("#body-name").filter({ hasText: "MineBodyV1" }).waitFor();
+  const controller = await connectController();
+  await command("op BodyController");
+  let bodyPanel = await navigate(
+    controller,
+    await openPanel(controller),
+    "AI 玩家",
+  );
+  assert.ok(
+    !bodyPanel.actions.some((a) => a.label.includes("急停")),
+    "OP alone must not control body",
+  );
+  const pairPanel = await navigate(controller, bodyPanel, "关联管理员");
+  const pairCode = JSON.stringify(pairPanel).match(/[0-9a-f]{32}/)?.[0];
+  assert.ok(pairCode, "pair code displayed only in controller panel");
+  await page.goto(origin + "/body#game-code=" + pairCode);
+  await until(
+    async () =>
+      (await page.locator("#body-game-code").inputValue()) === pairCode,
+    "authorization code from URL fragment",
+  );
+  assert.equal(new URL(page.url()).hash, "");
+  await page.locator("#body-game-approve").click();
+  await page.getByRole("button", { name: "授权此连接", exact: true }).click();
+  await page
+    .locator("#body-game-result")
+    .filter({ hasText: "已授权" })
+    .waitFor();
+  bodyPanel = await navigate(controller, pairPanel, "刷新身体状态");
+  assert.ok(
+    bodyPanel.actions.some((a) => a.label.includes("急停")),
+    "verified delegation enables native controls",
+  );
+  let confirmPanel = await navigate(controller, bodyPanel, "恢复");
+  bodyPanel = await navigate(controller, confirmPanel, "确认");
+  let taskPanel = await navigate(controller, bodyPanel, "下达任务");
+  const observed = await bodyTask(controller, taskPanel, "body_observe", {});
+  await until(
+    () => observed.scenario.result,
+    "panel-to-agent-to-body observe",
+    30000,
+  );
+  confirmed(observed.scenario);
+  taskPanel = await navigate(controller, observed.dialog, "刷新身体状态");
+  assert.ok(
+    JSON.stringify(taskPanel).includes("fixture finished"),
+    "private result returns to native task panel",
+  );
+  await command("tp MineBodyV1 0 -60 0");
+  await command("setblock 2 -60 2 minecraft:air");
+  await wait(1200);
+  bodyPanel = await navigate(controller, taskPanel, "返回 AI 玩家");
+  confirmPanel = await navigate(controller, bodyPanel, "恢复");
+  bodyPanel = await navigate(controller, confirmPanel, "确认");
+  taskPanel = await navigate(controller, bodyPanel, "下达任务");
+  const proposed = await bodyTask(controller, taskPanel, "body_place", {
+    x: 2,
+    y: -60,
+    z: 2,
+    item: "tnt",
+    reason: "isolated game panel approval",
+  });
+  await pending();
+  bodyPanel = await navigate(controller, proposed.dialog, "返回 AI 玩家");
+  const approvalList = await navigate(controller, bodyPanel, "动作审批");
+  const detail = await navigate(controller, approvalList, "查看动作");
+  const decided = await navigate(controller, detail, "批准本次动作");
+  await until(
+    () => proposed.scenario.result,
+    "native approval resumes original agent task",
+    30000,
+  );
+  confirmed(proposed.scenario);
+  bodyPanel = await navigate(controller, decided, "返回 AI 玩家");
+  taskPanel = await navigate(controller, bodyPanel, "下达任务");
+  const panelMoving = await bodyTask(controller, taskPanel, "body_goto", {
+    x: 20,
+    y: -60,
+    z: 0,
+    range: 1,
+  });
+  await until(async () => {
+    const s = await state();
+    return s.state?.task?.tool === "body_goto" && s.state.pos[0] > 3;
+  }, "body moving under panel task");
+  bodyPanel = await navigate(controller, panelMoving.dialog, "返回 AI 玩家");
+  const stopStarted = Date.now();
+  await navigate(controller, bodyPanel, "急停并暂停");
+  await until(
+    async () => (await state()).paused,
+    "native emergency stop confirmed",
+  );
+  assert.ok(
+    Date.now() - stopStarted < 3000,
+    "native emergency stop bypasses active model/action work",
+  );
+  controller.quit();
+  await wait(700);
+  const rejoined = await connectController();
+  const freshPanel = await navigate(
+    rejoined,
+    await openPanel(rejoined),
+    "AI 玩家",
+  );
+  assert.ok(
+    !freshPanel.actions.some((a) => a.label.includes("急停")),
+    "rejoin does not inherit delegated control",
+  );
+  rejoined.quit();
   assert.ok(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -513,6 +747,10 @@ MinecraftBody.prototype.movements=function(){
         "stop during movement",
         "profile scope/privacy",
         "mobile control UI and SSE",
+        "native body panel with verified web pairing",
+        "native task to real agent/body and private reply",
+        "native high-risk approval and emergency stop",
+        "same-name reconnect revokes game delegation",
       ],
       artifacts: temp,
     }),
@@ -529,8 +767,10 @@ MinecraftBody.prototype.movements=function(){
     console.error(kind + ":\n" + redact(text.slice(-6000)));
   throw e;
 } finally {
+  for (const bot of bots) bot.quit();
   if (browser) await browser.close();
   if (body && body.exitCode === null) body.kill("SIGTERM");
+  if (proxy && proxy.exitCode === null) proxy.kill("SIGTERM");
   if (paper && paper.exitCode === null) paper.stdin.end("stop\n");
   await Promise.all(
     children

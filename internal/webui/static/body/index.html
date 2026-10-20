@@ -36,6 +36,16 @@
     <div class="body-buttons"><button class="btn danger" id="body-stop">停止并暂停</button><button class="btn primary" id="body-resume">恢复</button><button class="btn" id="body-disconnect">离开游戏</button><a class="btn" href="/agent">向 AI 下达任务</a></div>
   </section>
   <p id="body-error" class="body-error" role="alert" hidden></p>
+  <section class="body-card" aria-label="游戏内控制授权">
+    <h2>游戏内控制授权</h2>
+    <p class="field-hint">在游戏内 AI 玩家面板获取临时代码，核对玩家与连接后授权。授权最长 10 分钟，离线后失效；游戏内 OP 不会自动获得网页管理员身份。</p>
+    <form id="body-game-link" class="body-buttons">
+      <label for="body-game-code">临时代码</label><input id="body-game-code" name="code" maxlength="32" minlength="32" autocomplete="off" spellcheck="false" required>
+      <button type="submit" class="btn primary" id="body-game-approve">核对并授权</button>
+      <button type="button" class="btn" id="body-game-revoke">撤销本次网页登录授予的游戏控制</button>
+    </form>
+    <p id="body-game-result" role="status" class="field-hint"></p>
+  </section>
   <section class="body-grid" aria-label="玩家状态">
     <article class="body-card"><h2 id="body-name">AI 玩家</h2><dl><dt>当前活动</dt><dd id="body-task">—</dd><dt>生命 / 饥饿</dt><dd id="body-health">—</dd><dt>手持</dt><dd id="body-item">—</dd><dt>位置</dt><dd id="body-position">—</dd><dt>状态更新</dt><dd id="body-updated">—</dd></dl></article>
     <article class="body-card"><h2>待审核动作 <span class="badge" id="body-pending-count">0</span></h2><p class="field-hint">批准仅适用于这一项具体动作。目标或控制状态变化后，需要重新发起。</p><div id="body-approvals" aria-live="polite"></div></article>

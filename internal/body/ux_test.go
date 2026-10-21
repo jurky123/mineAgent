@@ -140,3 +140,35 @@ func TestUnknownSideEffectsCannotResumeAnAlreadyPausedTask(t *testing.T) {
 		t.Fatal("unknown effects revived original paused authority", err)
 	}
 }
+
+func TestUnknownResultCoalescesWithInFlightEmergencyStop(t *testing.T) {
+	s, peer, p, _ := setup(t)
+	sent := make(chan protocol.BodyControl, 1)
+	peer.send = func(typ string, v any) error {
+		if typ == protocol.TypeBodyControl {
+			sent <- v.(protocol.BodyControl)
+		}
+		return nil
+	}
+	done := make(chan error, 1)
+	go func() { _, err := s.Control(context.Background(), "stop", p); done <- err }()
+	req := <-sent
+	s.pauseUnknown()
+	select {
+	case extra := <-sent:
+		t.Fatalf("unknown advanced pending stop epoch: %+v", extra)
+	default:
+	}
+	s.Handle(peer, envelope(protocol.TypeBodyControlAck, protocol.BodyAck{ID: req.ID, ConnectionID: req.ConnectionID, ControlEpoch: req.ControlEpoch, Paused: true}))
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal("emergency ACK was invalidated", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("emergency ACK not delivered")
+	}
+	if err := s.Check(context.Background(), p, false); err == nil {
+		t.Fatal("stop retained old write authority")
+	}
+}

@@ -43,6 +43,9 @@ func (s *Service) Control(ctx context.Context, action string, p *Principal) (pro
 		s.resumeFromEpoch = s.epoch
 	}
 	s.epoch++
+	if action == "stop" || action == "disconnect" {
+		s.emergencyEpoch = s.epoch
+	}
 	s.paused = true
 	s.waiting = map[string]pendingAction{}
 	if action == "resume" {

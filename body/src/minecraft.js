@@ -145,6 +145,7 @@ export class MinecraftBody {
       auth: "offline",
       version: mc.version,
       respawn: false,
+      viewDistance: mc.viewDistance ?? 4,
     });
     this.bot = bot;
     bot.loadPlugin(pathfinder.pathfinder);

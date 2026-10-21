@@ -64,6 +64,7 @@ type Service struct {
 	epoch, revision               uint64
 	resumeFromEpoch               uint64
 	pauseFromEpoch                uint64
+	emergencyEpoch                uint64
 	activeCallID                  string
 	ready, paused, draining, busy bool
 	running                       *Principal
@@ -578,10 +579,14 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 }
 func (s *Service) pauseUnknown() {
 	s.mu.Lock()
+	alreadyRevoked := s.paused && s.emergencyEpoch == s.epoch
 	s.waiting = map[string]pendingAction{}
 	s.mu.Unlock()
 	s.invalidateApprovals()
-	// Unknown effects revoke run authority even if a forced move already paused us.
+	if alreadyRevoked {
+		return // preserve the in-flight emergency ACK instead of advancing again
+	}
+	// Unknown effects revoke a continuable pause, but coalesce with an emergency stop.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, _ = s.Control(ctx, "stop", nil)

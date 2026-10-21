@@ -237,4 +237,8 @@ Node 12 项安全/导航测试、Go 相关包竞态/静态检查与全仓回归�
 
 验证记录与遗留项见本轮 BODY_UX_FOLLOWUP_2026-10-21.md。历史发布条目保留当时语义，以上修订优先。
 
-完整 body-e2e 测试会额外启动 Paper/ViaProxy/Node/浏览器，不能按 JVM 的 -Xmx 估算总峰值。脚本现在启动前要求 Linux MemAvailable 至少4GiB，不足时在创建测试进程之前拒绝；请在独立测试环境运行，没有跳过预检的开关。低成本前置检查：node --test scripts/body-test-resources.test.mjs。
+Node 身体配置新增 `minecraft.viewDistance`，默认4，整数范围2–8；限制该客户端请求和缓存的区块距离，不修改正式服务器或其他玩家视距。Mineflayer 及26.1注册表在尚未连接时已有约100MiB RSS基础开销，不能把区块视距优化当作移除 Node/ViaProxy。固定版本仍需要 ViaProxy 完成26.1→26.2协议兼容；普通木门仍须显式交互。
+
+完整 body-e2e 测试会额外启动 Paper/ViaProxy/Node/浏览器，不能按 JVM 的 -Xmx 估算总峰值。脚本启动前要求 Linux MemAvailable 至少4GiB；若实际Linux cgroup（含父级）具有≤2GiB硬上限，则要求该上限加1GiB余量。不足时在创建测试进程之前拒绝，无环境变量绕过。示例本轮测试1850MiB硬上限、禁止swap、独立OOM域；不得仅调高限额来绕过资源不足。低成本前置检查：`node --test scripts/body-test-resources.test.mjs`。
+
+`/ai/main` 的私有任务面板复用已有会话 `runEvents`，显示最近20项工具名称、状态与耗时；不显示参数或原始结果。相同轮询不替换节点，切换新会话清空，迟到的旧会话响应被忽略。返回事件只证明工具返回，实际执行结果仍以身体状态和回复为准。

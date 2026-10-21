@@ -22,6 +22,7 @@ export async function runExperience({
     at: new Date().toISOString(),
     model: "existing configured model",
     samples: [],
+    failures: [],
   };
   const persist = () =>
     fs.writeFile(
@@ -29,11 +30,20 @@ export async function runExperience({
       JSON.stringify(report, null, 2),
       { mode: 0o600 },
     );
+  const check = async (label, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      report.failures.push({ label, error: e.message });
+      await persist();
+    }
+  };
   async function mc(bot, text, label) {
     const messages = [];
     const onMessage = (m) => messages.push(m);
     bot.on("messagestr", onMessage);
-    const start = Date.now();
+    const start = Date.now(),
+      metricStart = uxModelMetrics.length;
     try {
       bot.chat("@agent [UX REAL] " + text);
       const reply = await until(
@@ -41,7 +51,12 @@ export async function runExperience({
         "MC real-model reply",
         90000,
       );
-      const result = { label, elapsedMs: Date.now() - start, reply };
+      const result = {
+        label,
+        elapsedMs: Date.now() - start,
+        reply,
+        metrics: uxModelMetrics.slice(metricStart),
+      };
       report.samples.push(result);
       await persist();
       return result;
@@ -49,8 +64,13 @@ export async function runExperience({
       bot.off("messagestr", onMessage);
     }
   }
-  async function task(text, label, check = () => {}, during) {
+  async function task(text, label, verify = () => {}, during) {
+    await until(
+      async () => await page.locator("#body-task-stop").isDisabled(),
+      "previous web task idle",
+    );
     await page.locator("#body-task-new").click();
+    const initialPosition = (await state()).state.pos;
     const start = Date.now(),
       metricStart = uxModelMetrics.length;
     await page.locator("#body-task-input").fill("[UX REAL] " + text);
@@ -64,10 +84,12 @@ export async function runExperience({
     assert.ok(sent.conv, "web task accepted");
     const snapshots = [];
     let history;
-    if (during) await during(sent.conv);
+    if (during) await check(label + " control", () => during(sent.conv));
     history = await until(
       async () => {
-        const h = await api("/api/body/task/history?conv=" + sent.conv);
+        const h = await api(
+          "/api/body/task/history?agent=main&conv=" + sent.conv,
+        );
         snapshots.push({
           elapsedMs: Date.now() - start,
           progress: await page.locator("#body-run-status").innerText(),
@@ -84,6 +106,8 @@ export async function runExperience({
     const sample = {
       label,
       elapsedMs: Date.now() - start,
+      initialPosition,
+      finalPosition: (await state()).state.pos,
       reply: history.messages
         .filter((m) => m.role === "agent")
         .map((m) => m.text)
@@ -94,9 +118,21 @@ export async function runExperience({
         .filter((v, i, a) => i === 0 || v.progress !== a[i - 1].progress)
         .slice(-20),
     };
+    sample.movedDistance = Math.hypot(
+      ...sample.finalPosition.map((v, i) => v - sample.initialPosition[i]),
+    );
+    sample.toolNames = events.map((e) => e.name);
+    sample.readCalls = sample.toolNames.filter((n) =>
+      [
+        "body_status",
+        "body_observe",
+        "body_inventory",
+        "body_find_blocks",
+      ].includes(n),
+    ).length;
     report.samples.push(sample);
     await persist();
-    await check(sample);
+    await check(label, () => verify(sample));
     return sample;
   }
   const visitor = mineflayer.createBot({
@@ -116,21 +152,28 @@ export async function runExperience({
       "你在哪、在做什么？只答一句公开身体状态，不要坐标。",
       "MC public awareness",
     );
-    assert.ok(awareness.reply.includes("MineBodyV1"));
-    assert.ok(!/我没有.*身体|我不在游戏世界/.test(awareness.reply));
+    await check(awareness.label, () => {
+      assert.ok(awareness.reply.includes("MineBodyV1"));
+      assert.ok(!/我没有.*身体|我不在游戏世界/.test(awareness.reply));
+    });
     const denied = await mc(
       visitor,
       "请移动到我身边。",
       "MC unverified action",
     );
-    assert.ok(/关联|管理员|ai\/main|授权/.test(denied.reply));
+    await check(denied.label, () => {
+      assert.ok(/关联|管理员|ai\/main|授权/.test(denied.reply));
+    });
   } finally {
     visitor.quit();
   }
-  await mc(
+  const verified = await mc(
     controller,
     "只调用一次 body_observe 并一句话报告当前状态。",
     "MC verified observe",
+  );
+  await check(verified.label, () =>
+    assert.ok(verified.metrics.some((m) => m.tools.includes("body_observe"))),
   );
   await page.goto(origin + "/ai/main");
   await page.locator("#body-task-send").waitFor();
@@ -140,26 +183,40 @@ export async function runExperience({
   await control("resume");
   for (let i = 0; i < 3; i++) {
     await task(
-      "观察附近地形一次，从 terrain.standablePoints 选择最近的约3格可站立点，调用一次 body_goto 走过去（range=1），一句话汇报。不要查找方块，不要再次观察。",
+      "观察附近地形一次，根据 terrain 选一个距你4–5格的安全可站立点（7×7网格的对角位置也可），调用一次 body_goto 走过去（range=1，实际步行约3格），一句话汇报。不要查找方块，不要再次观察。",
       "terrain move " + i,
+      (s) => {
+        assert.ok(s.toolNames.includes("body_goto"), "must invoke movement");
+        assert.ok(
+          s.readCalls >= 1 && s.readCalls <= 2,
+          "one or two observations",
+        );
+        assert.ok(s.movedDistance >= 2, "body must actually move");
+      },
     );
   }
   for (let i = 0; i < 3; i++) {
     const pos = (await state()).state.pos;
     await task(
-      `直接走到 x=${Math.floor(pos[0]) + 3},z=${Math.floor(pos[2])}，y省略，range=1。只调用一次 body_goto，不要先观察或查询，最后一句话汇报。`,
+      `直接走到 x=${Math.floor(pos[0]) + 4},z=${Math.floor(pos[2])}，y省略，range=1。只调用一次 body_goto，不要先观察或查询，最后一句话汇报。`,
       "direct goto " + i,
+      (s) => {
+        assert.ok(s.toolNames.includes("body_goto"), "must invoke movement");
+        assert.equal(s.readCalls, 0, "explicit coordinates need no extra scan");
+        assert.ok(s.movedDistance >= 2, "body must actually move");
+      },
     );
   }
   await task(
     "以身体身份执行一次 /help，准确区分已提交和实际回显，不要查询服务器或玩家。",
     "help",
+    (s) => assert.ok(s.toolNames.includes("body_command")),
   );
   await task("取消当前动作，调用一次 body_stop，然后结束。", "body_stop");
   assert.equal((await state()).paused, false);
   // A real authenticated pause while a tool is running. Resume the same conversation.
   await task(
-    "直接走到 x=28,z=10，y省略，range=1，只走一次。",
+    "直接走到 x=28,z=10，y省略，range=1。若管理员暂停，恢复后在当前任务中继续目标，不要要求重新提交。",
     "pause/resume",
     () => {},
     async (conv) => {
@@ -173,7 +230,7 @@ export async function runExperience({
       const paused = await state();
       assert.equal(paused.paused, true);
       assert.ok(
-        (await api("/api/body/task/history?conv=" + conv)).running,
+        (await api("/api/body/task/history?agent=main&conv=" + conv)).running,
         "original task must remain live",
       );
       await until(async () => !(await state()).busy, "pause cleanup");
@@ -207,6 +264,17 @@ export async function runExperience({
         path: path.join(temp, "ux-experience.json"),
         ...report.summary,
       }),
+  );
+  await check("terrain latency", () =>
+    assert.ok(report.summary.terrainP50 < 15000),
+  );
+  await check("direct latency", () =>
+    assert.ok(report.summary.directP50 < 5000),
+  );
+  assert.equal(
+    report.failures.length,
+    0,
+    "real UX acceptance failures; see ux-experience.json",
   );
 }
 function median(a) {

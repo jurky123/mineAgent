@@ -65,13 +65,16 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     conv = null,
     runBusy = false,
     lastApprovals = "",
-    lastReplies = "";
+    lastReplies = "",
+    lastTools = "";
   const pairingKey = "mineagent.body-pair." + agentId;
   let conversationKey = "";
   const pending = async (button, fn) => {
     try {
       await withPending(button, fn);
     } finally {
+      // withPending restores enabled; reapply the actual task/connection state.
+      if (latest && authorized && !disposed) render(latest);
       if (button.isConnected && !document.querySelector(".dialog-mask"))
         button.focus({ preventScroll: true });
     }
@@ -214,6 +217,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     $("body-resume").disabled = !st.ready || stale || !!st.busy;
     $("body-task-send").disabled = stale || runBusy;
     $("body-task-stop").disabled = !runBusy;
+    $("body-task-new").disabled = runBusy;
     const list = $("body-events");
     list.replaceChildren();
     for (const e of (st.events || []).slice(-12).reverse()) {
@@ -278,13 +282,42 @@ export async function mountBodyPanel(root, { agentId } = {}) {
   }
   async function replies() {
     if (!conv || !authorized) return;
+    const requestedConv = conv;
     const data = await get(
-      "/api/body/task/history?conv=" + encodeURIComponent(conv),
+      "/api/body/task/history?conv=" + encodeURIComponent(requestedConv),
     );
-    if (disposed || !authorized) return;
+    if (disposed || !authorized || conv !== requestedConv) return;
     runBusy = !!data.running;
     $("body-run-status").textContent =
       data.running?.text || (runBusy ? "正在处理…" : "");
+    const events = (data.runEvents || []).slice(-20);
+    const toolSignature = JSON.stringify([conv, events]);
+    if (toolSignature !== lastTools) {
+      lastTools = toolSignature;
+      const tools = $("body-tool-progress");
+      tools.replaceChildren();
+      const statuses = {
+        started: "调用中",
+        returned: "已返回（结果以回复为准）",
+        failed: "调用失败",
+        cancelled: "已取消",
+        unconfirmed: "完成状态未确认",
+        approval: "等待审批",
+      };
+      for (const event of events) {
+        const row = h("li", "field-hint");
+        const duration = Number(event.durationMs);
+        row.textContent =
+          `${event.name || "工具"} · ${statuses[event.status] || "状态未知"}` +
+          (Number.isFinite(duration) &&
+          duration >= 0 &&
+          event.durationMs != null
+            ? ` · ${(duration / 1000).toFixed(1)}s`
+            : "");
+        tools.append(row);
+      }
+      $("body-tools").hidden = !events.length;
+    }
     const list = $("body-replies");
     const messages = (data.messages || []).slice(-12),
       signature = JSON.stringify([conv, messages]);
@@ -448,6 +481,9 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     }
     conv = null;
     lastReplies = "";
+    lastTools = "";
+    $("body-tool-progress").replaceChildren();
+    $("body-tools").hidden = true;
     try {
       localStorage.removeItem(conversationKey);
     } catch {}
@@ -539,6 +575,7 @@ const BODY_MARKUP = `
     <h3>任务与回复</h3><p class="field-hint">仅向当前 AI 玩家提交明确任务。沿用 Agent 的会话、权限与审批；提交不代表执行完成。</p>
     <ol id="body-replies" class="body-replies" aria-live="polite" aria-relevant="additions"><li class="field-hint">暂无回复，发送任务后会显示在这里。</li></ol>
     <p id="body-run-status" role="status" class="field-hint"></p>
+    <details id="body-tools" hidden><summary>工具进度（最近20项）</summary><ol id="body-tool-progress"></ol></details>
     <form id="body-task-form"><label for="body-task-input">给当前玩家的任务</label><textarea class="input" id="body-task-input" maxlength="4000" rows="3" required></textarea>
       <div class="body-buttons" role="group" aria-label="任务操作"><button class="btn primary" type="submit" id="body-task-send">发送任务</button><button class="btn" type="button" id="body-task-stop">停止本次任务</button><button class="btn" type="button" id="body-task-new">新任务会话</button></div>
     </form>

@@ -51,6 +51,10 @@ public final class AgentUi implements Listener {
     private final BodyUiClient bodyClient;
     private final String portal;
 
+    public String bodyChatSession(Player player) {
+        return bodyClient.chatSession(player);
+    }
+
     public AgentUi(MineAgentPlugin plugin) {
         this.plugin = plugin;
         bodyClient = new BodyUiClient(plugin);
@@ -529,6 +533,7 @@ public final class AgentUi implements Listener {
         data.addProperty("uuid", player.getUniqueId().toString());
         data.addProperty("world", player.getWorld().getName());
         data.addProperty("message", "@agent " + question);
+        data.addProperty("session", bodyChatSession(player));
         if (!plugin.backend().send(Protocol.CHAT_MESSAGE, data)) {
             player.sendMessage(Component.text("发送失败，问题未进入后端队列"));
             return false;

@@ -2,10 +2,56 @@ package body
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"mineagent/internal/protocol"
 )
+
+func (p *Principal) MaxSteps() int {
+	if p.service == nil {
+		return 12
+	}
+	return p.service.cfg.MaxSteps
+}
+func (p *Principal) ReasoningEffort() string {
+	if p.service == nil || p.service.cfg.ReasoningEffort == "" {
+		return "medium"
+	}
+	return p.service.cfg.ReasoningEffort
+}
+
+// WaitForResume parks the existing model/tool task only for an explicit pause or
+// a forced move. It rechecks live authorization while waiting. Connection loss,
+// emergency stop, unknown side effects and revoked grants are never resumed.
+func (s *Service) WaitForResume(ctx context.Context, p *Principal) error {
+	for {
+		if err := s.Check(ctx, p, false); err != nil {
+			return err
+		}
+		s.mu.Lock()
+		paused := s.paused || s.state.Paused
+		reason := s.state.PauseReason
+		safe := reason == "pause" || reason == "forced_move" || s.pauseFromEpoch != 0 && s.epoch == s.pauseFromEpoch+1
+		if paused && safe && p.connection == s.connection {
+			p.mu.Lock()
+			p.awaitingResume = true
+			p.mu.Unlock()
+		}
+		s.mu.Unlock()
+		if !paused {
+			return nil
+		}
+		if !safe {
+			return errors.New("body_paused")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
 
 // RunContext watches authority even while the model is thinking or waiting for
 // rate limits. A stop must end the whole task, not just its current game action.
@@ -47,7 +93,7 @@ func (s *Service) health(p *Principal) map[string]any {
 	d := map[string]any{
 		"source": "backend", "connectionId": s.connection, "controlEpoch": s.epoch,
 		"controlConnected": s.peer != nil,
-		"ready":            s.ready, "gameConnected": s.peer != nil && s.state.Connected,
+		"ready":            s.ready, "policyRevision": s.revision, "gameConnected": s.peer != nil && s.state.Connected,
 		"paused": s.paused || s.state.Paused, "draining": s.draining,
 		"pauseReason": s.state.PauseReason,
 		"busy":        s.busy, "stateStale": s.peer == nil || s.received.IsZero() || time.Since(s.received) > 10*time.Second,

@@ -108,7 +108,13 @@ func (a *Agent) respondDSH(ctx context.Context, req Request, msgs []*schema.Mess
 		case "minimal":
 			effort = "low"
 		case "medium":
-			effort = "high"
+			// This provider has no medium tier. Preserve the body's latency
+			// budget instead of silently promoting its default to high.
+			if req.BodyPrincipal != nil {
+				effort = "low"
+			} else {
+				effort = "high"
+			}
 		case "xhigh":
 			effort = "max"
 		}

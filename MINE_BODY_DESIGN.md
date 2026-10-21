@@ -571,7 +571,7 @@ const RoleBody = "minecraft-body"
 {"type": "forced_move", "at": 1760000004000, "data": {"from": [101, 64, -32], "to": [100.8, 64, -32], "distance": 0.2, "tool": "body_goto"}}
 ```
 
-暂停原因保存在 `body.state.pauseReason` 并由 `body_status` 返回，避免事件环形缓冲淘汰后丢失原因。`forcedMove` 表示服务端强制位置包；协议本身不能区分位置纠正与管理员传送。记录修正前后位置、距离和当前工具用于诊断，不根据距离小或心跳恢复而自动解除保护暂停。缺少修正前位置时记录 null，不推测原因。
+暂停原因保存在 `body.state.pauseReason` 并由 `body_status` 返回，避免事件环形缓冲淘汰后丢失原因。`forcedMove` 表示服务端强制位置包；协议本身不能区分位置纠正与管理员传送。记录修正前后位置、距离和当前工具用于诊断。活动动作中的≤0.75格修正、2秒内至多3次可记correction:true而不进入暂停；大位移、无active、未知起点或连续第4次仍暂停。已进入的保护暂停不按小位移/心跳自动解除，须管理员明确恢复；缺少修正前位置时记录null。
 
 `body.policy`：
 
@@ -712,12 +712,12 @@ const RoleBody = "minecraft-body"
 | 工具 | 层 | 参数 | 返回 | 超时 | 审批 |
 |---|---|---|---|---|---|
 | `body_status` | read | 无 | 后端连接/握手、游戏在线、暂停及 pauseReason、快照新鲜度、当前及任务代次、任务预算 | 后端本地查询 | 否 |
-| `body_observe` | read | `range?`（4–16，默认 8） | 状态 + 注视 + 附近玩家/实体/物品 + 背包摘要 + 最近事件 | 3s | 否 |
+| `body_observe` | read | `range?`（4–16，默认 8） | 状态 + 7×7地形/可站立点 + 注视 + 附近玩家/实体/物品 + 背包摘要 + 最近事件 | 3s | 否 |
 | `body_inventory` | read | `filter?`（物品名/关键字） | 槽位、物品、数量、耐久、装备 | 2s | 否 |
 | `body_find_blocks` | read | `blocks`（数组/逗号串）、`radius?`（≤32）、`count?`（≤16） | 最近 N 个坐标/距离/方块名 | 5s | 否 |
-| `body_goto` | move | `x,y,z` 或 `player`；`range?`（默认 2）；`timeoutSec?`（≤20） | `reached`、位置、距离、原因 | 12s（默认） | 否（区域检查） |
+| `body_goto` | move | `x,z`必填、`y?`按已加载地表解析，或 `player`；`range?`（默认 2）；`timeoutSec?`（≤20） | `reached`、位置、距离、原因 | 12s（默认） | 否（区域检查） |
 | `body_look_at` | move | `x,y,z` 或 `player` 或 `entityId` | yaw/pitch/注视对象 | 3s | 否 |
-| `body_stop` | control | 无 | 暂停/停止 ACK 与当前位置；不受 busy 限制 | ≤2s 确认目标 | 否 |
+| `body_stop` | control | 无 | 当前动作取消 ACK；不暂停、不变更epoch；管理员急停独立保留 | ≤2s 确认目标 | 否 |
 | `body_dig` | build | `x,y,z`；`timeoutSec?`（默认 12，≤15）；`reason?` | 方块变化、工具、附近掉落物 | 15s | 高危上下文需（reason）；硬拒绝优先 |
 | `body_place` | build | `x,y,z`；`face?`；`item?`；`reason?` | 目标方块变化、消耗物品 | 5s | **高危方块需**（agent 写 reason） |
 | `body_interact` | build | 方块坐标 或 `entityId`；`item?`；`reason?` | 交互对象、状态变化 | 5s | 高危交互需（reason）；容器默认拒绝 |
@@ -859,11 +859,11 @@ P3 可选：`body_craft`、`body_sleep`、`body_screenshot`（prismarine-viewer�
 
 ### 7.7 持续任务、动作预算与控制生命周期（2026-10-20 修订）
 
-- 身体任务默认 `body.maxSteps=0`、`body.runTimeoutSec=0`，表示不设置任务总轮数和总时长上限。循环持续到模型给出最终答复、任务取消或权限/连接失效；不因固定轮数要求用户反复“继续”。仍复用现有 Agent/Eino，不新增第二个模型循环。Eino 的 0 实为 20 轮，适配时使用其底层图同等的 MaxInt 上限，不把 0 原样传入 SDK。
+- 身体任务默认 `body.maxSteps=12`、`body.maxConsecutiveReads=3`、`body.reasoningEffort=medium`、`body.runTimeoutSec=0`，轮数和连续只读有界，总时长仍不限。仅显式配置 maxSteps=0 才不限总轮数。循环持续到模型给出最终答复、任务取消或权限/连接失效；不因固定轮数要求用户反复“继续”。仍复用现有 Agent/Eino，不新增第二个模型循环。Eino 的 0 实为 20 轮，适配时使用其底层图同等的 MaxInt 上限，不把 0 原样传入 SDK。
 - 普通 MC 问答维持 8 轮，QQ/非身体请求沿用原预算。身体请求不再叠加 IM 的 300 秒总超时；仍可配置正数任务预算，首次执行与审批恢复共享同一绝对截止时间。游戏内短期委托不能超出其真实授权有效期。
 - 单次移动/挖掘/命令仍有时限；不可变准备动作与审批仍独立过期，不能因长任务而永久有效。动作速率继续受限，但 Go 原子预留各类配额，配额耗尽时在取消可响应的等待中继续，不消耗其他桶或要求用户重发任务。未知结果不自动重试。
 - 任务、控制会话与游戏在线状态分开：`body_status` 直接查询后端握手/暂停/新鲜度，观察与背包通过当前通道只读查询，不从本地拒绝结果中的空 ID 推断断线。错误返回实际连接/代次与失败阶段。
-- 暂停期间提交且尚未行动的任务，只能接续同一连接紧随其后的一次明确恢复；停止、再次切换控制或重连后的旧动作不能重新获得授权。已恢复状态的重复恢复幂等。控制变更和撤权不仅取消当前动作，也取消正在思考/等待配额的模型任务；首次执行和审批恢复共用这一生命周期管理。
+- 管理员 pause 或 forced_move 暂停时保留当前任务，并在工具边界等待同一连接的一次明确 resume；新的准备和审批必须使用恢复后的控制代次。急停、未知副作用、撤权或重连后的旧任务不能重新获得写入授权。已恢复状态的重复恢复幂等。急停/断线和撤权不仅取消当前动作，也取消正在思考/等待配额的模型任务；普通 pause 保留原任务等待明确恢复；首次执行和审批恢复共用这一生命周期管理。
 - 执行失败按连续次数计数，成功动作或经真实起点/目标/终点核验的部分寻路净前进至少 0.5 格时清零；连续三次执行失败停止任务并汇报，不把贯穿整个长任务的三个零散失败累计为永久失败。完成与进度仍以真实工具结果核验，不承诺模型规划必然成功，也不在服务重启后自动重放旧任务。
 
 ---
@@ -1087,9 +1087,9 @@ P3 可选：`body_craft`、`body_sleep`、`body_screenshot`（prismarine-viewer�
 
 ### 9.11 急停与回滚
 
-- **M1 即交付门户控制**，M2 任何移动前先验收停止。`POST /api/body/control` 的 stop/pause/disconnect 走 §6.4 独立控制通道，锁存暂停；resume 必须由认证管理员显式操作。
+- **M1 即交付门户控制**，M2 任何移动前先验收停止。`POST /api/body/control` 的 stop/pause/disconnect 走 §6.4 独立控制通道，锁存暂停；pause 保留待恢复任务，stop/disconnect 废弃旧任务；resume 必须由认证管理员显式操作。
 - MC 未来启用认证控制后才提供 `/agent /body stop` 硬编码入口，在 agent.Submit 之前识别；v1 不把尚不存在的 MC 系统命令写成可用的安全通道。
-- 急停同时废弃待审批与旧 run 的身体权限；只发 body_stop 而让同一 run 下一个工具继续执行不算急停。
+- 急停同时废弃待审批与旧 run 的身体权限；body_stop 已于2026-10-21改为非锁存取消当前动作，不作为急停；急停必须使用管理员 stop。
 - 控制 API 与审批 API 必须校验实时认证/管理员、HTTP 方法、JSON Content-Type、同源 Origin（cookie 写请求的 CSRF 防护），限制请求体并拒绝跨源写入；前端隐藏按钮或 CORS 不能代替授权。SSE 验证管理员，令牌不放 URL。
 - `disconnect` 是取消 + MC quit + 禁止自动登录，保留后端控制连接；只有显式 resume/connect 才重新登录。普通网络断线可按退避重连，但恢复为 paused。普通 systemctl 停止是运维动作，不由模型执行。
 - 回滚通过 `body.enabled=false` 与项目部署流程；不为验证文档重启生产。旧副作用不会撤销，世界恢复由管理员评估、非临时目录备份后另行执行。
@@ -1109,7 +1109,9 @@ P3 可选：`body_craft`、`body_sleep`、`body_screenshot`（prismarine-viewer�
     "name": "MineAgentBot",
     "expectedMcVersion": "26.2",
     "token": "",
-    "maxSteps": 0,
+    "maxSteps": 12,
+    "maxConsecutiveReads": 3,
+    "reasoningEffort": "medium",
     "runTimeoutSec": 0,
     "worldMappings": [
       {
@@ -1719,3 +1721,10 @@ Paper 0.3.2 在原 WorldEdit 实际写入守卫上增加 Bukkit 破坏/放置拦
 生产审计显示同一任务最后三次 body_goto 于 22:29:58、22:30:12、22:30:19 返回 failed/confirmed，触发旧的三次失败终止；中间观察/查找虽成功，但不重置行动失败计数。身体连接正常、无 stale/out_of_zone；旧结果审计丢弃底层异常信息，因此不能从历史记录精确还原 NoPath/计算超时/目标变化。
 
 修正 Node 对路径异常的分类与部分移动结果，保留有界路径统计；Go 审计只取结构化导航字段，按自身持有的起点与目标核验净进展。明确有进展的部分移动不视为连续卡死，仍保留三次无明显进展停止及权限/急停边界。停止文案携带具体动作与错误码。该修复不增加飞行、挖路、搭桥或无限重试能力，也不移除单动作寻路计算预算。
+
+
+### 2026-10-21 身体体验 P0 修订（隔离候选，未部署）
+
+本轮覆盖 MC 公开投影与已验证私密会话、动作取消与管理员暂停的分离、碰撞修正阈值、地形摘要/可选y导航，以及12步/3次只读/medium预算。精确语义、兼容性和限界见 [body/README.md](body/README.md#身体体验修订2026-10-21候选版本未部署)；实测与后续一轮迭代见 [BODY_UX_FOLLOWUP_2026-10-21.md](BODY_UX_FOLLOWUP_2026-10-21.md)。不变更审批、出生点512格/WorldEdit两层保护、非OP与实时operator gate，不增加第二套模型循环。
+
+体验迭代增加私有任务工具进度（既有runEvents的名称、状态、耗时，最近20项），无需独立执行器或新增权限。Node客户端视距默认4、可配置2–8以控制区块缓存；ViaProxy仍是固定协议版本的前置依赖。完整测试启动前核验真实cgroup硬限额及主机余量，具体门槛与当轮结果见执行层说明和体验记录。

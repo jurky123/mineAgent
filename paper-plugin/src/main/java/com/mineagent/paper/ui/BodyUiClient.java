@@ -69,6 +69,16 @@ final class BodyUiClient {
         return c == null ? "" : c.error;
     }
 
+    String chatSession(Player player) {
+        checkGeneration();
+        Connection c = connections.get(player.getUniqueId());
+        return c != null
+                        && player.hasPermission("mineagent.use")
+                        && player.hasPermission("mineagent.body")
+                ? c.nonce
+                : "";
+    }
+
     void request(Player player, String action, String text, String approval, Runnable done) {
         checkGeneration();
         if (!player.isOnline() || !player.hasPermission("mineagent.use")) return;

@@ -107,12 +107,13 @@ type BodyInspect struct {
 	ExpiresAt      int64    `json:"expiresAt"`
 }
 type BodyInspectResult struct {
-	InspectID    string    `json:"inspectId"`
-	ConnectionID string    `json:"connectionId"`
-	OK           bool      `json:"ok"`
-	Code         string    `json:"code"`
-	Error        string    `json:"error"`
-	Spec         *BodySpec `json:"spec"`
+	Data         json.RawMessage `json:"data,omitempty"`
+	InspectID    string          `json:"inspectId"`
+	ConnectionID string          `json:"connectionId"`
+	OK           bool            `json:"ok"`
+	Code         string          `json:"code"`
+	Error        string          `json:"error"`
+	Spec         *BodySpec       `json:"spec"`
 }
 type BodyGrant struct {
 	ApprovalID   string `json:"approvalId"`
@@ -121,6 +122,7 @@ type BodyGrant struct {
 	ControlEpoch uint64 `json:"controlEpoch"`
 }
 type BodyCall struct {
+	RunID          string     `json:"runId,omitempty"`
 	CallID         string     `json:"callId"`
 	ConnectionID   string     `json:"connectionId"`
 	ControlEpoch   uint64     `json:"controlEpoch"`
@@ -145,6 +147,7 @@ type BodyResult struct {
 	ElapsedMS    int64           `json:"elapsedMs"`
 }
 type BodyControl struct {
+	CallID       string `json:"callId,omitempty"`
 	ID           string `json:"id"`
 	ConnectionID string `json:"connectionId"`
 	ControlEpoch uint64 `json:"controlEpoch"`

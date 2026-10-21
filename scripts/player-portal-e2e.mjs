@@ -45,6 +45,7 @@ try {
   );
   await page.goto(origin + "/");
   await page.getByRole("heading", { name: "zkun 门户" }).waitFor();
+  await page.waitForLoadState("networkidle");
   assert.equal(
     await page
       .locator(
@@ -55,17 +56,24 @@ try {
   );
   await page.getByRole("link", { name: "下载与加入指南" }).click();
   await page.getByRole("heading", { name: "Minecraft", exact: true }).waitFor();
+  await page.waitForLoadState("networkidle");
   await page.getByRole("link", { name: "查看玩家列表 →" }).click();
   await page.getByRole("heading", { name: "AI 玩家", exact: true }).waitFor();
   await page.evaluate(() => localStorage.setItem("mineagent.theme", "dark"));
   await page.reload();
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
   await page.getByRole("button", { name: "切换深浅主题" }).click();
-  assert.equal(await page.evaluate(() => localStorage.getItem("mineagent.theme")), "light");
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem("mineagent.theme")),
+    "light",
+  );
   await page.getByRole("link", { name: "跳到正文", exact: true }).focus();
   await page.keyboard.press("Enter");
   assert.equal(await page.evaluate(() => document.activeElement.id), "main");
-  await page.screenshot({ path: path.join(artifacts, "directory-desktop.png"), fullPage: true });
+  await page.screenshot({
+    path: path.join(artifacts, "directory-desktop.png"),
+    fullPage: true,
+  });
   assert.equal(
     await page.getByRole("link", { name: "文章", exact: true }).count(),
     0,
@@ -127,11 +135,21 @@ try {
   ]);
   await page.reload();
   await page.locator("#body-stop").waitFor();
-  assert.equal(await page.locator(".player-body-section > div").getAttribute("aria-live"), null);
-  await page.route("**/api/body/status?agent=main", (route) => route.fulfill({ status: 503, json: { error: "service_unavailable" } }));
+  assert.equal(
+    await page.locator(".player-body-section > div").getAttribute("aria-live"),
+    null,
+  );
+  await page.route("**/api/body/status?agent=main", (route) =>
+    route.fulfill({ status: 503, json: { error: "service_unavailable" } }),
+  );
   await page.reload();
-  await page.getByText("暂时无法读取身体服务，请检查连接后重新检查。", { exact: true }).waitFor();
-  assert.equal(await page.getByText("登录主站账号", { exact: true }).count(), 0);
+  await page
+    .getByText("暂时无法读取身体服务，请检查连接后重新检查。", { exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByText("登录主站账号", { exact: true }).count(),
+    0,
+  );
   await page.unroute("**/api/body/status?agent=main");
   await page.getByRole("button", { name: "重新检查权限", exact: true }).click();
   await page.locator("#body-stop").waitFor();
@@ -155,7 +173,7 @@ try {
     ),
     404,
   );
-  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await page.getByRole("button", { name: "恢复并继续", exact: true }).click();
   await page.locator("#body-status").filter({ hasText: "在线待机" }).waitFor();
   await page
     .getByLabel("给当前玩家的任务", { exact: true })
@@ -165,6 +183,54 @@ try {
     .locator("#body-replies")
     .getByText("已收到隔离任务。", { exact: true })
     .waitFor({ timeout: 15000 });
+  // Render only lifecycle metadata from the existing private history endpoint.
+  let toolStatus = "started";
+  await page.route("**/api/body/task/history?*", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.running = toolStatus === "started" ? { text: "隔离工具处理中" } : null;
+    data.runEvents = [
+      {
+        id: "ui-only-tool",
+        name: "body_goto",
+        status: toolStatus,
+        durationMs: toolStatus === "returned" ? 1250 : undefined,
+        args: "private-arguments-must-not-render",
+        result: "private-result-must-not-render",
+      },
+    ];
+    await route.fulfill({ response, json: data });
+  });
+  await page.locator("#body-tools summary").click();
+  await page
+    .locator("#body-tool-progress")
+    .getByText("body_goto · 调用中", { exact: true })
+    .waitFor();
+  assert(await page.locator("#body-task-send").isDisabled());
+  assert(await page.locator("#body-task-new").isDisabled());
+  toolStatus = "returned";
+  await page
+    .locator("#body-tool-progress")
+    .getByText("body_goto · 已返回（结果以回复为准） · 1.3s", { exact: true })
+    .waitFor();
+  assert(
+    !(await page
+      .locator("#body-tool-progress")
+      .innerText()
+      .then((v) => v.includes("private-"))),
+  );
+  await page.unroute("**/api/body/task/history?*");
+  await page.getByRole("button", { name: "新任务会话", exact: true }).click();
+  assert.equal(await page.locator("#body-tool-progress li").count(), 0);
+  assert(await page.locator("#body-tools").isHidden());
+  // Direct web commands remain system notices when used from the body panel.
+  await page.locator("#body-task-input").fill("/help");
+  await page.locator("#body-task-send").click();
+  await page
+    .locator("#body-replies strong")
+    .getByText("系统消息", { exact: true })
+    .waitFor();
+  assert((await page.locator("#body-replies").innerText()).includes("/fork"));
   await page.getByRole("button", { name: "停止并暂停", exact: true }).click();
   await page.locator("#body-status").filter({ hasText: "已暂停" }).waitFor();
   assert.equal(await page.locator("#body-pending-count").innerText(), "0");
@@ -172,6 +238,8 @@ try {
   // after the administrator explicitly confirms the exact game connection.
   await page.goto(origin + "/body#game-code=" + gameCode);
   await page.locator("#body-game-code").waitFor();
+  // The legacy HTML contains a placeholder form before the module mounts.
+  await page.waitForFunction(() => location.hash === "");
   assert.equal(await page.locator("#body-game-code").inputValue(), gameCode);
   assert.equal(new URL(page.url()).hash, "");
   await page.getByRole("button", { name: "核对并授权", exact: true }).click();
@@ -206,9 +274,18 @@ try {
     await page.goto(origin + "/ai/main");
     await page.locator("#body-stop").waitFor();
     if (width === 390) {
-      assert.equal(await page.locator(".body-control").evaluate((el) => getComputedStyle(el).position), "static");
+      assert.equal(
+        await page
+          .locator(".body-control")
+          .evaluate((el) => getComputedStyle(el).position),
+        "static",
+      );
       await page.getByLabel("给当前玩家的任务", { exact: true }).focus();
-      assert(await page.locator("#body-task-input").evaluate((el) => el.matches(":focus-visible")));
+      assert(
+        await page
+          .locator("#body-task-input")
+          .evaluate((el) => el.matches(":focus-visible")),
+      );
     }
     assert(
       await page.evaluate(
@@ -224,31 +301,68 @@ try {
   }
   await page.getByRole("button", { name: "切换深浅主题" }).click();
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
-  assert(await page.locator("#body-agent-chat").evaluate((el) => getComputedStyle(el).backgroundColor === getComputedStyle(document.querySelector(".body-card")).backgroundColor));
+  await page.evaluate(() =>
+    Promise.all(
+      document.getAnimations().map((a) => a.finished.catch(() => {})),
+    ),
+  );
+  assert(
+    await page
+      .locator("#body-agent-chat")
+      .evaluate(
+        (el) =>
+          getComputedStyle(el).backgroundColor ===
+          getComputedStyle(document.querySelector(".body-card"))
+            .backgroundColor,
+      ),
+  );
   await page.screenshot({
     path: path.join(artifacts, "profile-dark.png"),
     fullPage: true,
   });
   // Identical polling must retain keyboard focus and avoid repeated live-region
   // replacement. This synthetic approval is UI-only; no approval POST is sent.
-  await page.route("**/api/body/approvals?agent=main", (route) => route.fulfill({
-    json: { approvals: [{ approvalId: "ui-only", prompt: "仅用于键盘验收的模拟审批" }] },
-  }));
-  const approve = page.getByRole("button", { name: "批准本次动作", exact: true });
+  await page.route("**/api/body/approvals?agent=main", (route) =>
+    route.fulfill({
+      json: {
+        approvals: [
+          { approvalId: "ui-only", prompt: "仅用于键盘验收的模拟审批" },
+        ],
+      },
+    }),
+  );
+  const approve = page.getByRole("button", {
+    name: "批准本次动作",
+    exact: true,
+  });
   await approve.waitFor();
   await approve.focus();
   await page.keyboard.press("Tab");
-  assert.equal(await page.evaluate(() => document.activeElement.textContent), "拒绝");
+  assert.equal(
+    await page.evaluate(() => document.activeElement.textContent),
+    "拒绝",
+  );
   await page.evaluate(() => {
     window.uiApprovalButton = document.activeElement;
     window.uiReplyList = document.querySelector("#body-replies").firstChild;
   });
-  const poll = await page.waitForResponse((r) => r.url().includes("/api/body/approvals?agent=main"));
+  const poll = await page.waitForResponse((r) =>
+    r.url().includes("/api/body/approvals?agent=main"),
+  );
   await poll.finished();
   await page.waitForTimeout(150);
-  assert(await page.evaluate(() => document.activeElement === window.uiApprovalButton));
-  assert(await page.evaluate(() => document.querySelector("#body-replies").firstChild === window.uiReplyList));
+  assert(
+    await page.evaluate(
+      () => document.activeElement === window.uiApprovalButton,
+    ),
+  );
+  assert(
+    await page.evaluate(
+      () =>
+        document.querySelector("#body-replies").firstChild ===
+        window.uiReplyList,
+    ),
+  );
   await page.unroute("**/api/body/approvals?agent=main");
   await page.locator("#body-approval-title").focus();
   await page.getByText("暂无待审核动作。", { exact: true }).waitFor();
@@ -304,6 +418,8 @@ try {
         "main vs independent identity",
         "no body fallback",
         "task/reply on existing Agent",
+        "private tool lifecycle progress, duration and new-conversation reset",
+        "web conversation commands remain system notices in body panel",
         "pause/resume",
         "legacy fragment pairing/revoke",
         "forum closed",

@@ -227,6 +227,7 @@ func main() {
 	}
 	remindTools := tools.NewRemind(store, log).Tools()
 	agentTools := append(append(tools.ReadOnly(gw), tools.Privileged(gw, approvals, store, log)...), remindTools...)
+	agentTools = append(agentTools, bodySvc.PublicTools()...)
 
 	// MC 通道的查服状态闭包（/status 直回用，经网关调 minecraft_server_status）。
 	mcStatusFn := func(ctx context.Context) (string, error) {
@@ -530,6 +531,10 @@ func main() {
 					return
 				}
 				log.Info("agent trigger", "player", chat.Player, "query", query, "messageId", msg.ID)
+				// Verified game delegates use their private body session, never shared MC history.
+				if gameBodyUI.Chat(ctx, c, chat, query) {
+					return
+				}
 				// 人设 + MC 内置能力组合（管理员改人设/系统提示词后即时生效）。
 				if !ag.Submit(agent.Request{
 					Session:           sess,
@@ -537,7 +542,7 @@ func main() {
 					RequesterID:       chat.UUID,
 					Query:             query,
 					TriggerMessageID:  msg.ID,
-					SystemInstruction: prompts.Resolve("minecraft", "", agent.DefaultCapabilities()),
+					SystemInstruction: prompts.Resolve("minecraft", "", agent.DefaultCapabilities()) + bodySvc.MCInstruction(),
 				}) {
 					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}

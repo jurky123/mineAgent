@@ -4,6 +4,8 @@
     "minecraft.command.give",
     "minecraft.command.help",
     "minecraft.command.list",
+    "essentials.help",
+    "essentials.list",
     "essentials.gamemode",
     "essentials.gamemode.creative",
     "essentials.gamemode.survival",

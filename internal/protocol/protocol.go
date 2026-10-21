@@ -60,6 +60,7 @@ type HelloAck struct {
 }
 
 type ChatMessage struct {
+	Session string `json:"session,omitempty"` // server-generated game connection nonce; never client supplied
 	Player  string `json:"player"`
 	UUID    string `json:"uuid,omitempty"`
 	World   string `json:"world,omitempty"`

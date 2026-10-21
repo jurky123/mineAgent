@@ -32,7 +32,7 @@ final class BodyPanels {
             case "permission_denied" -> "没有游戏内 AI 玩家控制权限。";
             case "agent_unavailable" -> "助手模型尚未就绪，任务未提交。";
             case "body_not_ready", "body_offline" -> "AI 玩家尚未连接或准备好。";
-            case "body_paused" -> "AI 玩家已暂停，请先恢复，再下达新任务。";
+            case "body_paused" -> "AI 玩家已暂停，请管理员恢复；保留的任务将继续。";
             case "stale_approval" -> "审批已过期、已处理或目标状态已变化。";
             case "busy", "rate_limited" -> "正在处理，请稍后刷新。";
             case "backend_offline" -> "后端未连接，操作未发送。";
@@ -85,7 +85,7 @@ final class BodyPanels {
         } else if ("body_task".equals(page)) {
             title = "向 AI 玩家下达任务";
             input = true;
-            content = "任务和回复仅在本人的身体面板显示。\n每次下达明确的短任务；高危动作须另行审批。\n暂停或重连后旧任务不会继续。\n\n";
+            content = "任务和回复仅在本人的身体面板显示。\n每次下达明确的短任务；高危动作须另行审批。\n碰撞或管理员暂停可恢复原任务；急停或重连使旧任务失效。\n\n";
             if (data.has("messages") && data.get("messages").isJsonArray())
                 for (JsonElement m : data.getAsJsonArray("messages"))
                     content += UiState.clip(m.getAsString(), 1600) + "\n\n";
@@ -115,7 +115,7 @@ final class BodyPanels {
         } else if (page.startsWith("body_confirm_")) {
             boolean resume = page.endsWith("resume");
             title = resume ? "恢复 AI 玩家" : "断开 AI 玩家";
-            content = resume ? "恢复允许接收新任务，旧任务不会继续。确认恢复？" : "AI 玩家将离开游戏。确认断开？";
+            content = resume ? "恢复后继续保留的任务；急停或重连后旧任务不恢复。确认恢复？" : "AI 玩家将离开游戏。确认断开？";
             choices.add(new AgentUi.Choice(resume ? "body_resume" : "body_disconnect", "确认"));
         } else {
             String position =
@@ -128,6 +128,8 @@ final class BodyPanels {
                             + (yes(snapshot, "stale")
                                     ? "状态已过期，请刷新"
                                     : yes(snapshot, "paused") ? "已暂停" : "可接收任务")
+                            + "\n暂停原因："
+                            + text(state, "pauseReason")
                             + "\n生命 / 饥饿："
                             + text(state, "health")
                             + " / "

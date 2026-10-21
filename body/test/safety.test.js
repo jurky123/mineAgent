@@ -31,7 +31,7 @@ const spec = {
   hazards: [],
 };
 test("server position changes latch pause, record displacement and require explicit resume", async () => {
-  for (const offset of [0, 0.2, 50]) {
+  for (const offset of [0, 0.5, 1.25, 50]) {
     const runtime = new MinecraftBody(
       { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
       () => {},
@@ -57,6 +57,13 @@ test("server position changes latch pause, record displacement and require expli
     runtime.prepared.set("old", spec);
     try {
       runtime.forcedMove({ position: [0, 64, 0], at: Date.now() });
+      if (offset <= 0.75) {
+        assert.equal(runtime.paused, false);
+        assert.equal(a.abort.signal.aborted, false);
+        assert.equal(runtime.recent.at(-1).data.correction, true);
+        for (let i = 0; i < 3; i++)
+          runtime.forcedMove({ position: [0, 64, 0], at: Date.now() });
+      }
       assert.equal(runtime.paused, true);
       assert.equal(runtime.state().pauseReason, "forced_move");
       assert.equal(a.abort.signal.aborted, true);
@@ -456,6 +463,7 @@ test("goto uses the same physical radius for integer and optimized path nodes", 
   runtime.movements = () => {};
   runtime.bot = {
     entity: { position: { x: 0.5, y: 64, z: 0.5 } },
+    inventory: { slots: Array(46).fill(null) },
     game: { dimension: "overworld" },
     quit() {},
     clearControlStates() {},
@@ -513,7 +521,21 @@ test("navigation failures preserve concrete cause, partial progress and listener
       game: { dimension: "overworld" },
       inventory: { slots: Array(46).fill(null) },
       blockAt(p) {
-        return { name: "air", stateId: 0, position: p };
+        return p.y === 63
+          ? {
+              name: "stone",
+              stateId: 1,
+              position: p,
+              boundingBox: "block",
+              shapes: [[0, 0, 0, 1, 1, 1]],
+            }
+          : {
+              name: "air",
+              stateId: 0,
+              position: p,
+              boundingBox: "empty",
+              shapes: [],
+            };
       },
       quit() {},
       clearControlStates() {},
@@ -567,5 +589,124 @@ test("navigation failures preserve concrete cause, partial progress and listener
     } finally {
       await runtime.close();
     }
+  }
+});
+
+test("small forced move without an active action still pauses", async () => {
+  const runtime = new MinecraftBody(
+    { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+    () => {},
+  );
+  runtime.paused = false;
+  runtime.connected = true;
+  runtime.onlineSince = Date.now() - 10000;
+  runtime.bot = { entity: { position: { x: 0.25, y: 64, z: 0 } }, quit() {} };
+  try {
+    runtime.forcedMove({ position: [0, 64, 0] });
+    assert.equal(runtime.paused, true);
+  } finally {
+    await runtime.close();
+  }
+});
+test("late cancel is scoped to its action and preserves pause state", async () => {
+  const sent = [];
+  const r = new MinecraftBody(
+    { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+    (t, d) => sent.push({ t, d }),
+  );
+  Object.assign(r, {
+    ready: true,
+    connectionId: "fixture",
+    epoch: 1,
+    paused: false,
+  });
+  const a = {
+    callId: "new-action",
+    abort: new AbortController(),
+    done: Promise.resolve(),
+  };
+  r.active = a;
+  try {
+    await r.control({
+      id: "late",
+      action: "cancel",
+      connectionId: "fixture",
+      controlEpoch: 1,
+      callId: "old-action",
+    });
+    assert.equal(a.abort.signal.aborted, false);
+    assert.equal(r.paused, false);
+    assert.equal(sent.at(-1).d.id, "late");
+    r.active = null;
+    await r.control({
+      id: "idle",
+      action: "cancel",
+      connectionId: "fixture",
+      controlEpoch: 1,
+      callId: "",
+    });
+    assert.equal(r.paused, false);
+    assert.equal(r.epoch, 1);
+  } finally {
+    await r.close();
+  }
+});
+
+test("navigation rechecks hands for every implicit gate click and restores activation", async () => {
+  const r = new MinecraftBody(
+    { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+    () => {},
+  );
+  Object.assign(r, {
+    ready: true,
+    connected: true,
+    paused: false,
+    epoch: 1,
+    lastLease: performance.now(),
+    policy,
+  });
+  r.movements = () => {};
+  let clicked = 0;
+  const original = async () => {
+    clicked++;
+  };
+  const b = {
+    entity: { position: { x: 0.5, y: 64, z: 0.5 } },
+    inventory: { slots: Array(46).fill(null) },
+    activateBlock: original,
+    game: { dimension: "overworld" },
+    quit() {},
+    clearControlStates() {},
+    stopDigging() {},
+    deactivateItem() {},
+    pathfinder: {
+      setGoal() {},
+      async goto() {
+        await assert.rejects(() => b.activateBlock({ name: "chest" }), {
+          code: "unsafe_navigation_interaction",
+        });
+        b.inventory.slots[45] = { name: "lava_bucket" };
+        await assert.rejects(
+          () => b.activateBlock({ name: "oak_fence_gate" }),
+          { code: "empty_hands_required" },
+        );
+        b.inventory.slots[45] = null;
+        await b.activateBlock({ name: "oak_fence_gate" });
+      },
+    },
+  };
+  r.bot = b;
+  const a = {
+    tool: "body_goto",
+    epoch: 1,
+    abort: new AbortController(),
+    spec: { target: [0, 64, 0] },
+  };
+  try {
+    await r.perform(a, { range: 1 });
+    assert.equal(clicked, 1);
+    assert.equal(b.activateBlock, original);
+  } finally {
+    await r.close();
   }
 });

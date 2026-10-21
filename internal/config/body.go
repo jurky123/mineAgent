@@ -13,23 +13,25 @@ import (
 
 // Body is optional. Enabling it never grants Minecraft names control rights.
 type Body struct {
-	Enabled           bool         `json:"enabled"`
-	Mode              string       `json:"mode"`
-	ID                string       `json:"id"`
-	Name              string       `json:"name"`
-	Token             string       `json:"token"`
-	ExpectedMcVersion string       `json:"expectedMcVersion"`
-	MaxSteps          int          `json:"maxSteps"`      // 0: continue until the model finishes or the task is cancelled.
-	RunTimeoutSec     int          `json:"runTimeoutSec"` // 0: no task deadline; individual calls still have timeouts.
-	WorldMappings     []BodyWorld  `json:"worldMappings"`
-	Zones             BodyZones    `json:"zones"`
-	DenyBlocks        []string     `json:"denyBlocks"`
-	DenyItems         []string     `json:"denyItems"`
-	HighRiskItems     []string     `json:"highRiskItems"`
-	LoopGuardCommands []string     `json:"loopGuardCommands"`
-	Limits            BodyLimits   `json:"limits"`
-	Approval          BodyApproval `json:"approval"`
-	Profile           BodyProfile  `json:"profile"`
+	Enabled             bool         `json:"enabled"`
+	Mode                string       `json:"mode"`
+	ID                  string       `json:"id"`
+	Name                string       `json:"name"`
+	Token               string       `json:"token"`
+	ExpectedMcVersion   string       `json:"expectedMcVersion"`
+	MaxSteps            int          `json:"maxSteps"` // 0: continue until the model finishes or the task is cancelled.
+	MaxConsecutiveReads int          `json:"maxConsecutiveReads"`
+	ReasoningEffort     string       `json:"reasoningEffort"`
+	RunTimeoutSec       int          `json:"runTimeoutSec"` // 0: no task deadline; individual calls still have timeouts.
+	WorldMappings       []BodyWorld  `json:"worldMappings"`
+	Zones               BodyZones    `json:"zones"`
+	DenyBlocks          []string     `json:"denyBlocks"`
+	DenyItems           []string     `json:"denyItems"`
+	HighRiskItems       []string     `json:"highRiskItems"`
+	LoopGuardCommands   []string     `json:"loopGuardCommands"`
+	Limits              BodyLimits   `json:"limits"`
+	Approval            BodyApproval `json:"approval"`
+	Profile             BodyProfile  `json:"profile"`
 }
 type BodyWorld struct {
 	Dimension string `json:"dimension"`
@@ -67,12 +69,15 @@ type BodyProfile struct {
 }
 
 func DefaultBody() Body {
-	return Body{Mode: "off", ID: "main", Name: "MineAgentBot", ExpectedMcVersion: "26.2",
+	return Body{Mode: "off", ID: "main", Name: "MineAgentBot", ExpectedMcVersion: "26.2", MaxSteps: 12, MaxConsecutiveReads: 3, ReasoningEffort: "medium",
 		Zones: BodyZones{Mode: "allowlist"}, Limits: BodyLimits{60, 30, 6, 3, 5}, Approval: BodyApproval{"portal", 120, 5000, 60}}
 }
 func (b Body) Validate(mainToken, listen string) error {
 	if !b.Enabled {
 		return nil
+	}
+	if b.MaxConsecutiveReads < 1 || b.MaxConsecutiveReads > 120 || b.ReasoningEffort != "low" && b.ReasoningEffort != "medium" && b.ReasoningEffort != "high" {
+		return fmt.Errorf("body 只读预算必须为 1–120，reasoningEffort 必须为 low/medium/high")
 	}
 	if b.Mode != "off" && b.Mode != "observe" && b.Mode != "assist" {
 		return fmt.Errorf("body.mode 必须为 off/observe/assist")

@@ -1,8 +1,9 @@
 import mineflayer from "mineflayer";
 import pathfinder from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
+import { surface, terrain } from "./terrain.js";
 import {
   risk,
   checkSpec,
@@ -62,9 +63,11 @@ export class MinecraftBody {
     this.active = null;
     this.prepared = new Map();
     this.results = new Map();
+    this.observations = new Map();
     this.usedGrants = new Set();
     this.recent = [];
     this.lastNavigation = null;
+    this.corrections = [];
     this.limits = new Map();
     this.lastReconnect = 5000;
     this.safetyTimer = setInterval(() => {
@@ -142,6 +145,7 @@ export class MinecraftBody {
       auth: "offline",
       version: mc.version,
       respawn: false,
+      viewDistance: mc.viewDistance ?? 4,
     });
     this.bot = bot;
     bot.loadPlugin(pathfinder.pathfinder);
@@ -231,12 +235,24 @@ export class MinecraftBody {
     const from =
       before && Date.now() - before.at < 2000 ? before.position : null;
     const tool = this.active?.tool || "";
-    this.pause("forced_move");
+    const moved = vector(from) && vector(to) ? distance(from, to) : null;
+    const now = Date.now();
+    this.corrections = this.corrections.filter((t) => now - t < 2000);
+    const correction =
+      !!this.active &&
+      moved !== null &&
+      moved <= 0.75 &&
+      this.corrections.length < 3;
+    if (correction) {
+      this.corrections.push(now);
+      this.prepared.clear();
+    } else this.pause("forced_move");
     this.event("forced_move", {
       from,
       to,
-      distance: vector(from) && vector(to) ? distance(from, to) : null,
+      distance: moved,
       tool,
+      correction,
     });
   }
   movements() {
@@ -246,13 +262,13 @@ export class MinecraftBody {
     m.canDig = false;
     m.allow1by1towers = false;
     m.scafoldingBlocks = [];
-    m.canOpenDoors = false;
+    m.canOpenDoors = true;
     m.allowParkour = false;
-    m.allowSprinting = false;
+    m.allowSprinting = true;
     m.maxDropDown = 3;
     bot.pathfinder.setMovements(m);
-    bot.pathfinder.searchRadius = 32;
-    bot.pathfinder.thinkTimeout = 3000;
+    bot.pathfinder.searchRadius = 64;
+    bot.pathfinder.thinkTimeout = 5000;
     bot.pathfinder.tickTimeout = 10;
     bot.pathfinder.enablePathShortcut = false;
   }
@@ -310,6 +326,33 @@ export class MinecraftBody {
     clearTimeout(this.reconnectTimer);
   }
   async control(p) {
+    if (p.action === "cancel") {
+      if (
+        !this.ready ||
+        p.connectionId !== this.connectionId ||
+        p.controlEpoch !== this.epoch
+      )
+        return;
+      const old = this.active;
+      if (!old || old.callId === p.callId) {
+        this.cancel("action_canceled");
+        if (old)
+          await Promise.race([
+            old.done,
+            new Promise((r) => setTimeout(r, 1500)),
+          ]);
+        if (old && this.active === old) return; // no ACK until cleanup is confirmed
+      }
+      this.publishState();
+      this.send("body.control_ack", {
+        id: p.id,
+        connectionId: this.connectionId,
+        controlEpoch: this.epoch,
+        policyRevision: this.revision,
+        paused: this.paused,
+      });
+      return;
+    }
     if (
       !this.ready ||
       p.connectionId !== this.connectionId ||
@@ -436,7 +479,7 @@ export class MinecraftBody {
     if (!w.worldId) fail("world_unknown");
     if (args.player) {
       const e = b.players[args.player]?.entity;
-      if (!e) fail("target_not_loaded");
+      if (!e) fail("player_not_visible");
       [args.x, args.y, args.z] = pos(e.position);
       delete args.player;
     }
@@ -446,6 +489,38 @@ export class MinecraftBody {
       if (!e) fail("target_not_loaded");
       [args.x, args.y, args.z] = pos(e.position);
       delete args.entityId;
+    }
+    if (
+      tool === "body_goto" &&
+      Number.isFinite(args.x) &&
+      Number.isFinite(args.z)
+    ) {
+      const s = surface(b, args.x, args.z);
+      if (!s?.standable) {
+        const e = Object.assign(
+          Error(
+            "目标列附近没有已加载的安全站立面，请改用 terrain.standablePoints",
+          ),
+          { code: "no_standable_surface", data: { x: args.x, z: args.z } },
+        );
+        throw e;
+      }
+      if (args.y === undefined) args.y = s.feetY;
+      else if (Math.abs(args.y - s.feetY) > 2) {
+        throw Object.assign(
+          Error("目标高度与地面不符；省略 y 或使用 suggestedY"),
+          {
+            code:
+              args.y > s.feetY ? "target_above_ground" : "target_below_ground",
+            data: {
+              surfaceY: s.surfaceY,
+              suggestedY: s.feetY,
+              x: args.x,
+              z: args.z,
+            },
+          },
+        );
+      }
     }
     const spec = {
       id: randomUUID(),
@@ -589,6 +664,7 @@ export class MinecraftBody {
         ok: false,
         code: e.code || "failed",
         error: clean(e.message),
+        data: e.data,
       });
     }
   }
@@ -760,6 +836,30 @@ export class MinecraftBody {
         this.perform(a, this.args(p.args)),
         abort,
       ]);
+      if (
+        readTools.has(p.tool) &&
+        typeof p.runId === "string" &&
+        p.runId.length <= 128
+      ) {
+        const key = p.runId + ":" + p.tool + ":" + JSON.stringify(p.args);
+        const data = structuredClone(result.data);
+        if (data.state) {
+          delete data.state.seq;
+          delete data.state.updatedAt;
+          delete data.state.task;
+        }
+        const fingerprint = createHash("sha256")
+          .update(JSON.stringify(data))
+          .digest("hex");
+        if (this.observations.get(key) === fingerprint)
+          result.data = {
+            unchanged: true,
+            summary: "与本任务上次观察相同，使用已有结果推进",
+          };
+        this.observations.set(key, fingerprint);
+        if (this.observations.size > 64)
+          this.observations.delete(this.observations.keys().next().value);
+      }
       this.ensure(a);
       result.ok = true;
       result.outcome = ["body_say", "body_command"].includes(p.tool)
@@ -846,6 +946,7 @@ export class MinecraftBody {
       const range = Math.max(4, Math.min(16, args.range || 8));
       return {
         state: this.state(),
+        terrain: terrain(b),
         entities: Object.values(b.entities)
           .filter(
             (e) =>
@@ -898,13 +999,22 @@ export class MinecraftBody {
         count: Math.min(16, args.count || 8),
       });
       return {
-        blocks: found.map((p) => ({
-          position: pos(p),
-          name: b.blockAt(p)?.name,
-        })),
+        blocks: found
+          .map((p) => ({
+            position: pos(p),
+            name: b.blockAt(p)?.name,
+            distance: Math.round(p.distanceTo(b.entity.position) * 100) / 100,
+            surfaceY: surface(b, p.x, p.z)?.surfaceY ?? null,
+            standable: !!surface(b, p.x, p.z)?.standable,
+          }))
+          .sort((a, b) => a.distance - b.distance),
       };
     }
     if (t === "body_goto") {
+      // The pinned pathfinder can click wooden gates. Never do so with an implicit
+      // dangerous held item, nor an unchecked offhand item.
+      if (b.inventory.slots[45]) fail("empty_offhand_required");
+      if (b.heldItem) await this.step(a, () => b.unequip("hand"));
       this.movements();
       a.origin = pos(b.entity.position);
       a.submitted = true;
@@ -927,9 +1037,22 @@ export class MinecraftBody {
         };
       };
       b.on?.("path_update", pathUpdate);
+      const activateBlock = b.activateBlock;
+      // Recheck every implicit click, including inventory changes mid-route.
+      b.activateBlock = async (block, ...rest) => {
+        this.ensure(a);
+        if (
+          !block?.name?.endsWith("_fence_gate") ||
+          block.name.includes("iron")
+        )
+          fail("unsafe_navigation_interaction");
+        if (b.heldItem || b.inventory.slots[45]) fail("empty_hands_required");
+        return activateBlock.call(b, block, ...rest);
+      };
       try {
         await this.step(a, () => b.pathfinder.goto(goal));
       } finally {
+        b.activateBlock = activateBlock;
         b.removeListener?.("path_update", pathUpdate);
       }
       const final = pos(b.entity.position);

@@ -1,14 +1,15 @@
 package com.mineagent.paper;
 
+import com.google.gson.JsonObject;
+
+import io.papermc.paper.event.player.AsyncChatEvent;
+
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-
-import com.google.gson.JsonObject;
-
-import io.papermc.paper.event.player.AsyncChatEvent;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 
 public final class ChatListener implements Listener {
 
@@ -30,6 +31,16 @@ public final class ChatListener implements Listener {
         data.addProperty("player", player.getName());
         data.addProperty("uuid", player.getUniqueId().toString());
         data.addProperty("message", message);
-        backend.send(Protocol.CHAT_MESSAGE, data);
+        plugin.getServer()
+                .getScheduler()
+                .runTask(
+                        plugin,
+                        () -> {
+                            if (!player.isOnline()
+                                    || plugin.getServer().getPlayer(player.getUniqueId()) != player
+                                    || !backend.isConnected()) return;
+                            data.addProperty("session", plugin.ui().bodyChatSession(player));
+                            backend.send(Protocol.CHAT_MESSAGE, data);
+                        });
     }
 }

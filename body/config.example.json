@@ -11,6 +11,7 @@
     "targetVersion": "26.2",
     "username": "MineAgentBot",
     "auth": "offline",
-    "viaProxy": true
+    "viaProxy": true,
+    "viewDistance": 4
   }
 }

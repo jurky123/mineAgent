@@ -34,6 +34,13 @@ export function validateConfig(input, env = process.env) {
   if (!mineflayer.testedVersions.includes(mc.version))
     throw Error("unsupported Minecraft client version");
   if (!mc.targetVersion) throw Error("explicit targetVersion required");
+  mc.viewDistance ??= 4;
+  if (
+    !Number.isInteger(mc.viewDistance) ||
+    mc.viewDistance < 2 ||
+    mc.viewDistance > 8
+  )
+    throw Error("Minecraft viewDistance must be an integer from 2 to 8");
   return {
     backend: { url: u.href, bodyId: b.bodyId || "main", token },
     minecraft: mc,

@@ -241,7 +241,7 @@ func (b *Bridge) perform(ctx context.Context, peer tools.Sender, v *binding, r R
 	switch r.Action {
 	case "stop", "pause", "resume", "disconnect":
 		var cancelRun context.CancelFunc
-		if r.Action != "resume" {
+		if r.Action == "stop" || r.Action == "disconnect" {
 			b.mu.Lock()
 			cancelRun = v.cancel
 			b.mu.Unlock()
@@ -307,7 +307,27 @@ func (b *Bridge) respond(peer tools.Sender, r Request, data map[string]any, code
 	_ = peer.SendProtocol(ResponseType, map[string]any{"requestId": r.ID, "uuid": r.UUID, "session": r.Session, "data": data, "error": code})
 }
 
-func (b *Bridge) submit(ctx context.Context, peer tools.Sender, v *binding, p *body.Principal, text string) error {
+// Chat accepts only the nonce of an existing verified game delegation. A name,
+// UUID, OP bit or stale nonce alone can never select the full body tool set.
+func (b *Bridge) Chat(ctx context.Context, peer tools.Sender, chat protocol.ChatMessage, query string) bool {
+	b.mu.Lock()
+	v := b.bindings[chat.UUID]
+	matched := v != nil && chat.Session != "" && v.nonce == chat.Session && v.player == chat.Player && b.peer == peer
+	b.mu.Unlock()
+	if !matched {
+		return false
+	}
+	p, err := b.principal(ctx, peer, v)
+	if err != nil {
+		return false
+	}
+	if err = b.submit(ctx, peer, v, p, query, true); err != nil {
+		_ = peer.SendProtocol(protocol.TypeAgentMessage, protocol.AgentMessage{Target: chat.Player, Text: "身体任务暂不可用：" + body.ErrorCode(err)})
+	}
+	return true
+}
+
+func (b *Bridge) submit(ctx context.Context, peer tools.Sender, v *binding, p *body.Principal, text string, chatReply ...bool) error {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > 512 || strings.ContainsAny(text, "\r\n\x00") {
 		return errors.New("invalid_task")
@@ -345,13 +365,17 @@ func (b *Bridge) submit(ctx context.Context, peer tools.Sender, v *binding, p *b
 		done()
 		return errors.New("storage_unavailable")
 	}
-	sess.Register(&replyChannel{b: b, peer: peer, v: v, generation: generation})
+	sess.Register(&replyChannel{b: b, peer: peer, v: v, generation: generation, chat: len(chatReply) > 0 && chatReply[0]})
 	msg, err := sess.Ingest(ctx, storage.Message{Channel: "bodyui", AuthorKind: "player", AuthorID: uuid, AuthorName: admin, Text: text, Target: nonce})
 	if err != nil {
 		done()
 		return errors.New("storage_unavailable")
 	}
-	ok := b.ag.Submit(agent.Request{Context: runCtx, Done: done, Session: sess, SessionKey: key, Player: "web:" + admin, RequesterID: uuid, Query: text, TriggerMessageID: msg.ID, ReplyTarget: nonce, BodyPrincipal: p, Tools: b.core.Tools(), MaxIterations: b.steps, SystemInstruction: body.Instruction + "\n仅使用身体工具执行当前游戏管理员明确提出的任务，不能调用其他通道或修改服务器配置。"})
+	instruction := body.Instruction + "\n仅使用身体工具执行当前游戏管理员明确提出的任务，不能调用其他通道或修改服务器配置。"
+	if len(chatReply) > 0 && chatReply[0] {
+		instruction += "\n这是MC私聊回复：最多80字两行，只答当前问题。"
+	}
+	ok := b.ag.Submit(agent.Request{Context: runCtx, Done: done, Session: sess, SessionKey: key, Player: "web:" + admin, RequesterID: uuid, Query: text, TriggerMessageID: msg.ID, ReplyTarget: nonce, BodyPrincipal: p, Tools: b.core.Tools(), MaxIterations: b.steps, SystemInstruction: instruction})
 	if !ok {
 		done()
 		return errors.New("agent_unavailable")
@@ -380,6 +404,7 @@ type replyChannel struct {
 	peer       tools.Sender
 	v          *binding
 	generation uint64
+	chat       bool
 }
 
 func (c *replyChannel) Name() string { return "bodyui" }
@@ -388,6 +413,9 @@ func (c *replyChannel) Send(ctx context.Context, msg storage.Message) error {
 		return errors.New("controller_expired")
 	}
 	c.b.record(c.peer, c.v, msg.Text, c.generation)
+	if c.chat {
+		return c.peer.SendProtocol(protocol.TypeAgentMessage, protocol.AgentMessage{Text: msg.Text, Target: c.v.player})
+	}
 	return nil
 }
 

@@ -465,6 +465,14 @@ test("goto uses the same physical radius for integer and optimized path nodes", 
     entity: { position: { x: 0.5, y: 64, z: 0.5 } },
     inventory: { slots: Array(46).fill(null) },
     game: { dimension: "overworld" },
+    blockAt(p) {
+      return {
+        name: p.y === 63 ? "stone" : "air",
+        position: p,
+        boundingBox: p.y === 63 ? "block" : "empty",
+        shapes: p.y === 63 ? [[0, 0, 0, 1, 1, 1]] : [],
+      };
+    },
     quit() {},
     clearControlStates() {},
     deactivateItem() {},
@@ -482,7 +490,7 @@ test("goto uses the same physical radius for integer and optimized path nodes", 
     tool: "body_goto",
     epoch: 1,
     abort: new AbortController(),
-    spec: { target: [0, 64, 0] },
+    spec: { target: [0, 64, 0], args: { x: 0, y: 64, z: 0, range: 1 } },
   };
   try {
     const result = await runtime.perform(action, { range: 1 });
@@ -690,6 +698,14 @@ test("navigation rechecks hands for every implicit gate click and restores activ
     inventory: { slots: Array(46).fill(null) },
     activateBlock: original,
     game: { dimension: "overworld" },
+    blockAt(p) {
+      return {
+        name: p.y === 63 ? "stone" : "air",
+        position: p,
+        boundingBox: p.y === 63 ? "block" : "empty",
+        shapes: p.y === 63 ? [[0, 0, 0, 1, 1, 1]] : [],
+      };
+    },
     quit() {},
     clearControlStates() {},
     stopDigging() {},
@@ -715,7 +731,7 @@ test("navigation rechecks hands for every implicit gate click and restores activ
     tool: "body_goto",
     epoch: 1,
     abort: new AbortController(),
-    spec: { target: [0, 64, 0] },
+    spec: { target: [0, 64, 0], args: { x: 0, y: 64, z: 0, range: 1 } },
   };
   try {
     await r.perform(a, { range: 1 });

@@ -68,9 +68,11 @@ export function contactBackoff(bot) {
 // allowance for idle movement; unknown positions and all other packets fail.
 export function contactPrecision(bot, from, to) {
   if (
-    Math.abs(from[1] - to[1]) > 1e-6 ||
+    Math.abs(from[1] - to[1]) > (bot?.entity?.isInWater ? 0.01 : 1e-6) ||
     !bot?.blockAt ||
-    Object.values(bot.controlState || {}).some(Boolean)
+    ["forward", "back", "left", "right", "jump", "sprint", "sneak"].some(
+      (key) => !!bot.controlState?.[key],
+    )
   )
     return false;
   for (const axis of [0, 2]) {
@@ -87,6 +89,25 @@ export function contactPrecision(bot, from, to) {
   return false;
 }
 
+// Test the whole standing column's horizontal footprint, not just block names.
+// A thin ladder beside the player's box leaves real space for an ascent.
+const columnOpen = (b, p) =>
+  !!b &&
+  b.name !== "water" &&
+  !hazard.test(b.name) &&
+  (empty(b) ||
+    (!!b.position &&
+      Array.isArray(b.shapes) &&
+      b.shapes.every(
+        (s) =>
+          b.position.x + s[3] <= p.x - 0.3 ||
+          b.position.x + s[0] >= p.x + 0.3 ||
+          b.position.z + s[5] <= p.z - 0.3 ||
+          b.position.z + s[2] >= p.z + 0.3,
+      )));
+const wetOpenColumn = (b, p) =>
+  b?.getProperties?.().waterlogged === true && columnOpen(b, p);
+
 // Recovery only ascends a loaded, unobstructed water column. It never plans a
 // submerged horizontal route, moves through a roof, or changes player position.
 export function surfaceAbove(bot, maxRise = 16) {
@@ -94,12 +115,18 @@ export function surfaceAbove(bot, maxRise = 16) {
   const y0 = Math.floor(p.y);
   for (let y = y0; y <= y0 + maxRise; y++) {
     const block = bot.blockAt(new Vec3(Math.floor(p.x), y, Math.floor(p.z)));
-    if (block?.name === "water" || (y === y0 && wetBelowFeet(block, p.y)))
+    if (
+      block?.name === "water" ||
+      wetOpenColumn(block, p) ||
+      (y === y0 && wetBelowFeet(block, p.y))
+    )
       continue;
+    const head = bot.blockAt(new Vec3(Math.floor(p.x), y + 1, Math.floor(p.z)));
     if (
       y === y0 ||
-      !empty(block) ||
-      !empty(bot.blockAt(new Vec3(Math.floor(p.x), y + 1, Math.floor(p.z))))
+      !columnOpen(block, p) ||
+      !columnOpen(head, p) ||
+      head?.getProperties?.().waterlogged === true
     )
       break;
     for (const dx of [-0.3, 0.3])
@@ -110,7 +137,7 @@ export function surfaceAbove(bot, maxRise = 16) {
           );
           if (
             b?.name !== "water" &&
-            !empty(b) &&
+            !columnOpen(b, p) &&
             !(h === y0 && wetBelowFeet(b, p.y))
           )
             throw Object.assign(
@@ -167,6 +194,20 @@ export function resolveDestination(bot, args) {
             ? Math.max(...b.shapes.map((s) => s[4]))
             : 1;
           if (top <= 0 || top > 1) continue;
+          // An ascent node inside a ladder is not a standing floor at its
+          // block centre. Require actual support under the player's box.
+          if (
+            b.shapes?.length &&
+            !b.shapes.some(
+              (s) =>
+                s[4] === top &&
+                s[0] < 0.8 &&
+                s[3] > 0.2 &&
+                s[2] < 0.8 &&
+                s[5] > 0.2,
+            )
+          )
+            continue;
           feetY = y + top;
           const feet = bot.blockAt(new Vec3(x, Math.floor(feetY + 0.001), z));
           const head = bot.blockAt(new Vec3(x, Math.floor(feetY + 1), z));
@@ -216,6 +257,6 @@ export function resolveDestination(bot, args) {
   return {
     target: [args.x, args.y ?? candidates[0].point[1], args.z],
     movement: mode,
-    candidates: candidates.slice(0, 8).map((c) => c.point),
+    candidates: candidates.map((c) => c.point),
   };
 }

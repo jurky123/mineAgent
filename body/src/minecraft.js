@@ -303,6 +303,51 @@ export class MinecraftBody {
     const bot = this.bot;
     if (!bot?.entity) return;
     const m = new pathfinder.Movements(bot);
+    // Upstream rejects all liquid ascent nodes, including a real wet ladder.
+    // Adapt only that synchronous climbing edge, keeping every other native
+    // clearance/entity/dig/scaffold check and leaving the real block untouched.
+    const moveUp = m.getMoveUp;
+    m.getMoveUp = (node, out) => {
+      const block = m.getBlock(node, 0, 0, 0);
+      if (!block.climbable || !block.liquid) return moveUp.call(m, node, out);
+      const climb = Object.create(m);
+      climb.getBlock = (origin, dx, dy, dz) => {
+        const b = m.getBlock(origin, dx, dy, dz);
+        return origin === node && dx === 0 && dy === 0 && dz === 0
+          ? { ...b, liquid: false }
+          : b;
+      };
+      return moveUp.call(climb, node, out);
+    };
+    if (
+      this.pathRepairBot !== bot &&
+      typeof bot.pathfinder.getPathFromTo === "function"
+    ) {
+      const paths = bot.pathfinder.getPathFromTo;
+      bot.pathfinder.getPathFromTo = function* (...args) {
+        for (const step of paths.apply(this, args)) {
+          for (const node of step.result.path) {
+            const cell = node.hash?.split(",").map(Number);
+            if (cell?.length !== 3 || !cell.every(Number.isInteger)) continue;
+            const b = bot.blockAt(new Vec3(...cell));
+            const below = bot.blockAt(new Vec3(cell[0], cell[1] - 1, cell[2]));
+            if (
+              b?.name === "ladder" ||
+              (["air", "cave_air", "void_air"].includes(b?.name) &&
+                below?.name === "ladder")
+            ) {
+              [node.x, node.y, node.z] = [
+                cell[0] + 0.5,
+                cell[1],
+                cell[2] + 0.5,
+              ];
+            }
+          }
+          yield step;
+        }
+      };
+      this.pathRepairBot = bot;
+    }
     m.canDig = false;
     m.allow1by1towers = false;
     m.scafoldingBlocks = [];
@@ -841,6 +886,9 @@ export class MinecraftBody {
                 return done();
               if (performance.now() - started > 1000)
                 fail("contact_clearance_blocked");
+              // Position corrections can restore the old yaw before the next
+              // physics tick. Keep requesting the same real retreat heading.
+              b.lookAt(from.offset(normal.x, 1.62, normal.z), true).catch(done);
               b.setControlState("jump", false);
               b.setControlState("sprint", false);
               b.setControlState("forward", true);
@@ -1192,21 +1240,40 @@ export class MinecraftBody {
       this.movements(args.movement || "ground");
       a.origin = pos(b.entity.position);
       a.submitted = true;
-      if (args.movement === "swim") {
-        await this.backOffContact(a);
-        await this.surfaceForNavigation(a);
-      }
+      // Ground destinations may start on a wet ladder or next to a bank.
+      // Retreat from physical contact before either navigation profile.
+      await this.backOffContact(a);
+      if (b.entity.isInWater) await this.surfaceForNavigation(a);
       this.ensure(a);
       const range = args.range || 2;
       const goal = new pathfinder.goals.GoalNear(...sp.target, range);
       // Search nodes and optimized path nodes use corners and centers respectively.
       // Compare their physical standing point instead of shrinking the radius below
       // one block, which can make a sliced search's goal unreachable.
-      goal.isEnd = (node) =>
-        distance(
-          [Math.floor(node.x) + 0.5, node.y, Math.floor(node.z) + 0.5],
-          sp.target,
-        ) <= range;
+      const arrivals = new Map();
+      for (const point of resolveDestination(b, args).candidates) {
+        const key = Math.floor(point[0]) + "," + Math.floor(point[2]);
+        const heights = arrivals.get(key) || [];
+        heights.push(point[1]);
+        arrivals.set(key, heights);
+      }
+      goal.isEnd = (node) => {
+        const point = [
+          Math.floor(node.x) + 0.5,
+          node.y,
+          Math.floor(node.z) + 0.5,
+        ];
+        const heights = arrivals.get(
+          Math.floor(node.x) + "," + Math.floor(node.z),
+        );
+        const y = node.hash ? node.y : b.entity.position.y;
+        return (
+          distance(point, sp.target) <= range &&
+          !!heights?.some(
+            (h) => Math.abs(h - y) <= (args.movement === "swim" ? 1.001 : 0.51),
+          )
+        );
+      };
       const pathUpdate = (p) => {
         a.path = {
           status: p.status,

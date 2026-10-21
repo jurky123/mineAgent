@@ -324,7 +324,9 @@ test("water contact recovery backs into the same known cell and is cancellable",
         ? { position: p, shapes: [[0, 0, 0, 1, 1, 1]] }
         : { position: p, shapes: [] };
     },
-    async lookAt() {},
+    async lookAt() {
+      this.entity.yaw = 0;
+    },
     setControlState(k, v) {
       controls.push([k, v]);
       if (k === "forward") forward = v;
@@ -346,7 +348,9 @@ test("water contact recovery backs into the same known cell and is cancellable",
     const next = { abort: new AbortController() };
     runtime.active = next;
     ticks = setInterval(() => {
-      if (forward) runtime.bot.entity.position.z -= 0.08;
+      if (forward && runtime.bot.entity.yaw === 0)
+        runtime.bot.entity.position.z -= 0.08;
+      runtime.bot.entity.yaw = 1; // a server correction can overwrite the look
     }, 20);
     await runtime.backOffContact(next);
     assert.ok(next.contactRecovery.distance >= 0.22);
@@ -401,4 +405,169 @@ test("contact precision and backoff recognize torso walls, respect player height
   unknown = false;
   bot.controlState.forward = true;
   assert.equal(contactPrecision(bot, from, to), false);
+});
+
+test("precision gate reads Mineflayer non-enumerable control getters", async () => {
+  const { contactPrecision } = await import("../src/navigation.js");
+  let held = false;
+  const controlState = {};
+  Object.defineProperty(controlState, "forward", { get: () => held });
+  assert.equal(Object.keys(controlState).length, 0);
+  const bot = {
+    entity: { height: 1.8 },
+    controlState,
+    blockAt(p) {
+      return { position: p, shapes: [[0, 0, 0, 1, 1, 1]] };
+    },
+  };
+  const from = [0.5, 62.535, 9.7],
+    to = [0.5, 62.535, 9.697];
+  assert.equal(contactPrecision(bot, from, to), true);
+  held = true;
+  assert.equal(contactPrecision(bot, from, to), false);
+});
+
+test("known horizontal contact tolerates millimetre water gravity but not vertical-only or larger idle moves", async () => {
+  const { contactPrecision } = await import("../src/navigation.js");
+  const bot = {
+    entity: { height: 1.8, isInWater: true },
+    controlState: {},
+    blockAt(p) {
+      return { position: p, shapes: [[0, 0, 0, 1, 1, 1]] };
+    },
+  };
+  const from = [0.5, 61.0607543, 524.7],
+    to = [0.5, 61.0657543, 524.6948546];
+  assert.equal(contactPrecision(bot, from, to), true);
+  bot.entity.isInWater = false;
+  assert.equal(contactPrecision(bot, from, to), false);
+  bot.entity.isInWater = true;
+  assert.equal(
+    contactPrecision(bot, from, [to[0], from[1] + 0.02, to[2]]),
+    false,
+  );
+  assert.equal(
+    contactPrecision(bot, from, [from[0], from[1] + 0.005, from[2]]),
+    false,
+  );
+  assert.equal(
+    contactPrecision(bot, from, [from[0] + 0.005, to[1], to[2]]),
+    false,
+  );
+});
+
+test("wet ladder recovery uses real open column geometry and refuses a panel intersecting the player", async () => {
+  const { surfaceAbove } = await import("../src/navigation.js");
+  let blocked = false;
+  const bot = {
+    entity: { position: new Vec3(12.4, 60.7, 7.45) },
+    blockAt(p) {
+      const name = p.y <= 60 ? "water" : p.y <= 62 ? "ladder" : "air";
+      return {
+        name,
+        position: p,
+        boundingBox: name === "ladder" ? "block" : "empty",
+        shapes:
+          name === "ladder" ? [[0, 0, blocked ? 0.5 : 0.8125, 1, 1, 1]] : [],
+        getProperties: () => ({ waterlogged: name === "ladder" && p.y === 61 }),
+      };
+    },
+  };
+  assert.equal(surfaceAbove(bot), 61);
+  blocked = true;
+  assert.throws(() => surfaceAbove(bot), /surface_recovery_blocked|上浮/);
+  blocked = false;
+  bot.blockAt = () => null;
+  assert.throws(() => surfaceAbove(bot), /surface_recovery_blocked|上浮/);
+});
+
+test("wet ladder ascent keeps native head clearance, forbids scaffolding and normalizes climb points", async () => {
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  const registry = req("minecraft-data")("26.1"),
+    Block = req("prismarine-block")(registry),
+    AStar = req("mineflayer-pathfinder/lib/astar"),
+    Move = req("mineflayer-pathfinder/lib/move");
+  let ceiling = false,
+    m;
+  const source = [
+    { x: 0.5, y: 64, z: 0.90625, hash: "0,63,0" },
+    { x: 0.5, y: 64, z: 1.5, hash: "0,64,1" },
+  ];
+  const bot = {
+    registry,
+    entity: {
+      position: new Vec3(0.4, 61.5, 0.45),
+      effects: {},
+      onGround: false,
+    },
+    entities: {},
+    inventory: { items: () => [] },
+    game: { minY: -64 },
+    pathfinder: {
+      bestHarvestTool: () => null,
+      setMovements(v) {
+        m = v;
+      },
+      *getPathFromTo() {
+        yield { result: { path: source.map((n) => ({ ...n })) } };
+      },
+    },
+    blockAt(p) {
+      if (Math.abs(p.x) > 2 || Math.abs(p.z) > 2 || p.y < 58 || p.y > 66)
+        return null;
+      let name = p.y <= 62 ? "water" : "air",
+        props = {};
+      if (p.y === 58) name = "stone";
+      if (p.x === 0 && p.z === 1 && p.y >= 61 && p.y <= 63) name = "oak_planks";
+      if (p.x === 0 && p.z === 0 && p.y >= 61 && p.y <= 63) {
+        name = "ladder";
+        props = { facing: "north", waterlogged: p.y <= 62 };
+      }
+      if (ceiling && p.x === 0 && p.z === 0 && p.y === 63) name = "stone";
+      const b = Block.fromProperties(registry.blocksByName[name].id, props, 0);
+      b.position = p;
+      return b;
+    },
+  };
+  const runtime = new MinecraftBody({ minecraft: {}, backend: {} }, () => {});
+  runtime.bot = bot;
+  try {
+    runtime.movements("ground");
+    const up = [];
+    m.getMoveUp(new Move(0, 61, 0, 0, 0), up);
+    assert.ok(up.some((n) => n.y === 62));
+    assert.ok(
+      up.every((n) => n.toBreak.length === 0 && n.toPlace.length === 0),
+    );
+    const goal = {
+      heuristic: (n) => Math.abs(n.y - 64) + Math.abs(n.z - 1) + Math.abs(n.x),
+      isEnd: (n) => n.x === 0 && n.y === 64 && n.z === 1,
+    };
+    const search = new AStar(new Move(0, 61, 0, 0, 0), m, goal, 1000, 20, 8);
+    let route;
+    do {
+      route = search.compute();
+    } while (route.status === "partial");
+    assert.equal(route.status, "success");
+    const fixed = bot.pathfinder.getPathFromTo().next().value.result.path;
+    assert.deepEqual([fixed[0].x, fixed[0].y, fixed[0].z], [0.5, 63, 0.5]);
+    assert.deepEqual([fixed[1].x, fixed[1].y, fixed[1].z], [0.5, 64, 1.5]);
+    assert.deepEqual(
+      resolveDestination(bot, { x: 0.5, y: 64, z: 1.5, range: 1 }).candidates,
+      [[0.5, 64, 1.5]],
+      "the ladder panel is not a supporting floor at the search centre",
+    );
+    ceiling = true;
+    const blocked = [];
+    m.getMoveUp(new Move(0, 61, 0, 0, 0), blocked);
+    assert.equal(
+      blocked.length,
+      0,
+      "solid headroom remains forbidden without digging",
+    );
+  } finally {
+    clearInterval(runtime.safetyTimer);
+    clearInterval(runtime.stateTimer);
+  }
 });

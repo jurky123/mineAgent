@@ -820,6 +820,39 @@ MinecraftBody.prototype.movements=function(...args){
       "submitted",
       "native selection is usable at torso-only contact",
     );
+    // Production contact: a wet bottom rung and two dry rungs above it.
+    await command("fill 12 -61 8 12 -59 8 oak_planks");
+    await command(
+      "fill 12 -61 7 12 -59 7 ladder[facing=north,waterlogged=false]",
+    );
+    await command("setblock 12 -61 7 ladder[facing=north,waterlogged=true]");
+    await command(
+      "minecraft:tp MineBodyV1 12.437478939 -60.934245674 7.694854646",
+    );
+    await wait(1500);
+    assert.equal((await control("resume")).httpStatus, 200);
+    await wait(2500);
+    assert.equal(
+      (await state()).paused,
+      false,
+      "millimetre water gravity at ladder contact does not relatch pause",
+    );
+    confirmed(
+      await send("body_goto", {
+        x: 12.5,
+        y: -58,
+        z: 8.5,
+        movement: "ground",
+        range: 1,
+        timeoutSec: 20,
+      }),
+    );
+    assert.ok(
+      (await state()).state.pos[1] > -58.2,
+      "real body climbs wet entry to dry landing",
+    );
+    await command("fill 12 -61 7 12 -60 8 water");
+    await command("fill 12 -59 7 12 -58 8 air");
     await command("minecraft:tp MineBodyV1 14.5 -59.465 9.697");
     await wait(1500);
     assert.equal(

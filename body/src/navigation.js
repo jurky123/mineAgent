@@ -17,6 +17,33 @@ export const wetFootSupport = (bot) =>
     bot.entity.position.y,
   );
 
+// A swimmer can contact a bank with their torso while their feet remain below
+// its bottom edge. Require a loaded face intersecting the actual player height.
+function fullContactFace(bot, cell, feetY) {
+  const height =
+    Number.isFinite(bot.entity?.height) && bot.entity.height > 0
+      ? Math.min(1.8, bot.entity.height)
+      : 1.8;
+  const top = feetY + height;
+  for (let y = Math.floor(feetY); y < top; y++) {
+    const b = bot.blockAt(new Vec3(cell[0], y, cell[2]));
+    if (!b) return false;
+    if (
+      b.shapes?.some(
+        (s) =>
+          s[0] === 0 &&
+          s[2] === 0 &&
+          s[3] === 1 &&
+          s[5] === 1 &&
+          y + s[1] < top &&
+          y + s[4] > feetY,
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
 export function contactBackoff(bot) {
   if (!bot.entity.isInWater) return null;
   const p = bot.entity.position,
@@ -28,18 +55,7 @@ export function contactBackoff(bot) {
       if (Math.abs(at - cell[axis] - (side > 0 ? 0.7 : 0.3)) > 0.025) continue;
       const next = [...cell];
       next[axis] += side;
-      const b = bot.blockAt(new Vec3(...next));
-      if (
-        b?.shapes?.some(
-          (s) =>
-            s[0] === 0 &&
-            s[2] === 0 &&
-            s[3] === 1 &&
-            s[5] === 1 &&
-            s[1] <= p.y - cell[1] &&
-            s[4] > p.y - cell[1],
-        )
-      ) {
+      if (fullContactFace(bot, next, p.y)) {
         if (axis === 0) normal.x -= side;
         else normal.z -= side;
       }
@@ -66,20 +82,7 @@ export function contactPrecision(bot, from, to) {
     if (Math.abs(fraction - (d < 0 ? 0.7 : 0.3)) > 1e-6) continue;
     const cell = from.map(Math.floor);
     cell[axis] += d < 0 ? 1 : -1;
-    const b = bot.blockAt(new Vec3(...cell)),
-      feet = from[1] - cell[1];
-    if (
-      b?.shapes?.some(
-        (s) =>
-          s[0] === 0 &&
-          s[2] === 0 &&
-          s[3] === 1 &&
-          s[5] === 1 &&
-          s[1] <= feet &&
-          s[4] > feet,
-      )
-    )
-      return true;
+    if (fullContactFace(bot, cell, from[1])) return true;
   }
   return false;
 }

@@ -362,3 +362,43 @@ test("water contact recovery backs into the same known cell and is cancellable",
     clearInterval(runtime.stateTimer);
   }
 });
+
+test("contact precision and backoff recognize torso walls, respect player height and reject unknown/overhead faces", async () => {
+  const { contactPrecision, contactBackoff } = await import(
+    "../src/navigation.js"
+  );
+  let wallY = -60,
+    unknown = false;
+  const bot = {
+    entity: {
+      position: new Vec3(12.6897504, -60.32227904479, 10.5),
+      height: 1.8,
+      isInWater: true,
+    },
+    controlState: { forward: false },
+    blockAt(p) {
+      if (unknown) return null;
+      return {
+        position: p,
+        shapes: p.x === 13 && p.y === wallY ? [[0, 0, 0, 1, 1, 1]] : [],
+      };
+    },
+  };
+  const from = [12.7, -60.32227904479, 10.5],
+    to = bot.entity.position.toArray();
+  assert.equal(contactPrecision(bot, from, to), true);
+  assert.deepEqual(contactBackoff(bot).toArray(), [-1, 0, 0]);
+  wallY = -59;
+  assert.equal(contactPrecision(bot, from, to), true);
+  bot.entity.height = 0.6;
+  assert.equal(contactPrecision(bot, from, to), false);
+  bot.entity.height = 1.8;
+  wallY = -58;
+  assert.equal(contactPrecision(bot, from, to), false);
+  wallY = -60;
+  unknown = true;
+  assert.equal(contactPrecision(bot, from, to), false);
+  unknown = false;
+  bot.controlState.forward = true;
+  assert.equal(contactPrecision(bot, from, to), false);
+});

@@ -800,6 +800,26 @@ MinecraftBody.prototype.movements=function(...args){
         timeoutSec: 20,
       }),
     );
+    await command("minecraft:tp MineBodyV1 12.6897504 -60.32227904479 10.5");
+    await wait(1500);
+    assert.equal(
+      (await state()).paused,
+      true,
+      "external torso-contact reposition pauses",
+    );
+    assert.equal((await control("resume")).httpStatus, 200);
+    await wait(2500);
+    assert.equal(
+      (await state()).paused,
+      false,
+      "torso-only wet contact does not relatch pause",
+    );
+    assert.equal(
+      (await send("body_command", { command: "//pos1 12,-60,9" })).result
+        .outcome,
+      "submitted",
+      "native selection is usable at torso-only contact",
+    );
     await command("minecraft:tp MineBodyV1 14.5 -59.465 9.697");
     await wait(1500);
     assert.equal(

@@ -18,14 +18,19 @@ type qqTask struct {
 	cancel                context.CancelFunc
 	done                  chan struct{}
 	owner, target, status string
+	sessionKey            string
 	started               bool
 	at                    time.Time
 	once                  sync.Once
 }
 
-func (c *Channel) newTask(key, owner, target string) *qqTask {
+func (c *Channel) newTask(key, owner, target string, conversation ...string) *qqTask {
 	ctx, cancel := context.WithCancel(context.Background())
-	task := &qqTask{ctx: ctx, cancel: cancel, done: make(chan struct{}), owner: owner, target: target, status: "已排队", at: time.Now()}
+	sessionKey := key
+	if len(conversation) > 0 {
+		sessionKey = conversation[0]
+	}
+	task := &qqTask{sessionKey: sessionKey, ctx: ctx, cancel: cancel, done: make(chan struct{}), owner: owner, target: target, status: "已排队", at: time.Now()}
 	c.mu.Lock()
 	if c.tasks == nil {
 		c.tasks = map[string][]*qqTask{}
@@ -87,6 +92,9 @@ func (c *Channel) taskCommand(key, owner string, admin bool, command string) str
 		if command == "stop" {
 			t.cancel()
 			c.finishTask(key, t)
+			if c.ag != nil {
+				c.ag.CancelPending(t.sessionKey)
+			}
 			n++
 			continue
 		}

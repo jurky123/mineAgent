@@ -55,11 +55,12 @@ type Channel struct {
 	qqTools     []tool.BaseTool
 	inputClient *http.Client
 
-	mu       sync.Mutex
-	sessions map[string]*session.Session
-	seen     map[string]time.Time
-	tasks    map[string][]*qqTask
-	inputs   map[string]cachedInput
+	routingMu sync.Mutex
+	mu        sync.Mutex
+	sessions  map[string]*session.Session
+	seen      map[string]time.Time
+	tasks     map[string][]*qqTask
+	inputs    map[string]cachedInput
 }
 
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
@@ -141,6 +142,13 @@ func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 	}
 	if strings.HasPrefix(target, storage.KindMarkdown) {
 		return c.sendMarkdown(ctx, strings.TrimPrefix(target, storage.KindMarkdown), msg.Text)
+	}
+	if msg.AuthorKind == "agent" {
+		if scope, id, err := c.store.QQConversationScope(ctx, msg.SessionID); err == nil {
+			if active, err := c.store.ActiveQQConversation(ctx, scope, time.Now().UnixMilli()); err == nil && active.Conv != id {
+				msg.Text = "[对话 " + id + "]\n" + msg.Text
+			}
+		}
 	}
 	target = strings.TrimPrefix(target, "emoji:")
 	return c.sendText(ctx, target, msg.Text)
@@ -268,6 +276,20 @@ func (c *Channel) onMessage(m InboundMessage) {
 		return
 	}
 
+	c.routingMu.Lock()
+	defer c.routingMu.Unlock()
+	scope := sessionKey
+	active, err := c.store.ActiveQQConversation(ctx, scope, time.Now().UnixMilli())
+	if err != nil {
+		c.log.Error("qq active conversation", "err", err)
+		return
+	}
+	sessionKey = active.SessionID
+	if cmd, arg := tools.MatchConversationCommand(text); cmd != "" {
+		c.conversationCommand(ctx, scope, target, cmd, arg, active)
+		return
+	}
+
 	sess, err := c.session(sessionKey)
 	if err != nil {
 		c.log.Error("qq session", "err", err)
@@ -285,7 +307,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		if command == "/stop" || command == "停止任务" || command == "停止" || command == "取消任务" {
 			action = "stop"
 		}
-		_ = sess.Reply(ctx, c.taskCommand(sessionKey, qqID, isAdmin, action), target)
+		_ = sess.Notice(ctx, c.taskCommand(scope, qqID, isAdmin, action), target)
 		return
 	}
 
@@ -308,10 +330,10 @@ func (c *Channel) onMessage(m InboundMessage) {
 			reply += "\n可以直接发送附件，或引用消息后提问；支持图片、文档、视频关键帧及平台提供的引用/聊天记录。引用缺失时请转发原文、导出文件或截图。"
 		}
 		c.log.Info("qq syscmd", "session", sessionKey, "cmd", cmd, "arg", arg)
-		_ = sess.Reply(ctx, reply, target)
+		_ = sess.Notice(ctx, reply, target)
 		return
 	}
-	doc := c.resolveInput(m, sessionKey)
+	doc := c.resolveInput(m, scope)
 	text = doc.summary()
 
 	// 昵称留痕（platform=qq）：只用于日志展示，与绑定隔离。
@@ -356,7 +378,12 @@ func (c *Channel) onMessage(m InboundMessage) {
 		"union", m.UnionOpenID != "", "boundMC", mcName,
 		"queryChars", len([]rune(text)), "attachments", len(doc.Attachments), "messageId", stored.ID)
 
-	task := c.newTask(sessionKey, qqID, target)
+	task := c.newTask(scope, qqID, target, sessionKey)
+	title := []rune(strings.SplitN(text, "\n", 2)[0])
+	if len(title) > 32 {
+		title = title[:32]
+	}
+	_ = c.store.TitleQQConversation(ctx, sessionKey, string(title))
 	effort := c.cfg.ReasoningEffort
 	if effort == "" {
 		effort = "high"
@@ -389,7 +416,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 	if !c.ag.Submit(agent.Request{
 		Context:           task.ctx,
 		ManagedProgress:   true,
-		Done:              func() { bundle.cleanup(); c.finishTask(sessionKey, task) },
+		Done:              func() { bundle.cleanup(); c.finishTask(scope, task) },
 		Prepare:           prepare,
 		Started:           task.start,
 		ToolEvent:         task.event,
@@ -406,7 +433,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		Tools:             c.qqTools,
 		SystemInstruction: instruction,
 	}) {
-		c.finishTask(sessionKey, task)
+		c.finishTask(scope, task)
 		_ = sess.Reply(ctx, "任务队列已满，本次未提交，请稍后重试。", target)
 		return
 	}
@@ -508,7 +535,7 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
   非管理员调用会被直接拒绝，不要绕过。操作限制在 workspace 目录内，可被用户停止，有输出上限。
   装依赖用 $VENV_BIN/pip install（只进 workspace/.venv），下载用 curl/wget（仅公开 http(s) 到 workspace）；
   这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。写文件前先 ls/read，重要操作先 dry-run。
-- 对话管理命令（/help /status /memory /usage /bind /unbind /myid /tasks /queue /stop）由系统层直接回复，
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid /tasks /queue /stop /new /fork /resume）由系统层直接回复，
   你照着 help 文案介绍，不要自己编命令列表。`
 
 // Keep custom personalities/capability text, while correcting stale descriptions

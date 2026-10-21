@@ -18,6 +18,7 @@ import (
 	"mineagent/internal/account"
 	"mineagent/internal/config"
 	"mineagent/internal/portal"
+	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/webui"
 )
@@ -57,7 +58,7 @@ func main() {
 	cfg.Workspace.Root = filepath.Join(dir, "workspace")
 	cfg.Web.PasskeyRPID = "localhost"
 	cfg.Web.PasskeyOrigins = []string{origin}
-	ch := webui.NewChannel(log, cfg, service, nil, store, nil, nil)
+	ch := webui.NewChannel(log, cfg, service, session.NewHub(store, log), store, nil, nil)
 	server := portal.New(log, cfg, store, service, ch)
 	mux := server.Handler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

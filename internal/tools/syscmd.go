@@ -135,6 +135,20 @@ func ExecSystemCommand(s SysCtx, cmd, arg string) string {
 	}
 }
 
+// MatchConversationCommand is used only by channels supporting conversation switching.
+func MatchConversationCommand(text string) (string, string) {
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return "", ""
+	}
+	name := strings.ToLower(fields[0])
+	switch name {
+	case "/new", "/fork", "/resume":
+		return strings.TrimPrefix(name, "/"), strings.Join(fields[1:], " ")
+	}
+	return "", ""
+}
+
 func sysHelp(s SysCtx) string {
 	var b strings.Builder
 	admin := "写代码跑代码仅管理员可用"
@@ -164,7 +178,10 @@ func sysHelp(s SysCtx) string {
 	case "web":
 		b.WriteString("MineAgent 命令（网页）：\n")
 	}
-	b.WriteString("/help —— 显示这份帮助\n")
+	b.WriteString("/help —— 显示所有系统命令\n")
+	if s.Channel == "qq" || s.Channel == "web" {
+		b.WriteString("/new —— 开启空白对话，保留旧历史\n/fork —— 复制当前历史，进入独立分支\n/resume —— 列出会话；/resume <编号> 恢复；/resume page <页码> 翻页\n")
+	}
 	switch s.Channel {
 	case "qq":
 		b.WriteString("/status —— 服状态、连接状态、会话消息数\n")

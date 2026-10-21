@@ -698,7 +698,9 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 
 	if a.dsh != nil {
 		if route, ok := a.dsh.Route(req.Model, a.modelCfg.Name); ok {
+			start := time.Now()
 			a.respondDSH(rctx, req, msgs, route)
+			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "backend", "dsh", "took", time.Since(start).Round(time.Millisecond).String())
 			return
 		}
 	}

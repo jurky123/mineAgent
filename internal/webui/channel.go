@@ -434,6 +434,13 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		return convID, fmt.Errorf("消息为空")
 	}
 
+	if cmd, arg := directConversationCommand(text); cmd != "" {
+		if len(files) > 0 {
+			return convID, fmt.Errorf("会话命令不能携带附件，请移除附件后再发送；附件仍保留在草稿中")
+		}
+		return c.conversationCommand(ctx, u, conv, cmd, arg)
+	}
+
 	// 限流：同一会话两次请求至少间隔 minInterval，防手抖刷屏烧 token。
 	c.mu.Lock()
 	last := c.lastSend[sessionKey]
@@ -668,7 +675,7 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
 - workspace_* 仅管理员（web.adminUsers）可用，非管理员调用会被直接拒绝。
   装依赖用 $VENV_BIN/pip install，下载用 curl/wget（仅公开 http(s) 到 workspace），
   这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。
-- 对话管理命令（/help /status /memory /usage /bind /unbind /myid）由系统层直接回复，
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid /new /fork /resume）由系统层直接回复，
   你照着 help 文案介绍，不要自己编命令列表。`
 
 // A concise local title avoids extra model calls. Explicit renames are preserved by compare-and-set.

@@ -4,8 +4,11 @@ import { $, esc, fmtSize, bus, ICON, showError, toast } from './ui.js';
 import { S, setConv } from './state.js';
 import { api, apiPost } from './api.js';
 import { setTyping, syncAfter, dockAtBottom } from './chat.js';
-import { refresh as refreshConversations } from './conversations.js';
+import { refresh as refreshConversations, switchTo } from './conversations.js';
 import { openViewer } from './viewer.js';
+
+// These commands remain available while an answer is running.
+function directCommand(text) { return /^\/(?:help|new|fork|resume)(?:\s|$)/i.test(text.trim()); }
 
 // ---------- 输入 ----------
 export function autoGrow() {
@@ -16,7 +19,7 @@ export function autoGrow() {
 }
 
 export function updateSendBtn() {
-  const ready = !S.sending && !S.waiting && ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done && !p.err);
+  const ready = !S.sending && (!S.waiting || directCommand($('text').value)) && ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done && !p.err);
   $('send').classList.toggle('ready', !!ready);
   $('send').disabled = !ready;
   $('text').placeholder = S.waiting ? '回答结束后可发送，草稿会保留' : '给 MineAgent 发消息';
@@ -24,7 +27,7 @@ export function updateSendBtn() {
 
 // ---------- 发送 ----------
 export async function sendMsg() {
-  if (S.sending || S.waiting) { toast('回答结束后可发送，当前草稿会保留'); return; }
+  if (S.sending || (S.waiting && !directCommand($('text').value))) { toast('回答结束后可发送，当前草稿会保留'); return; }
   const text = $('text').value.trim();
   const files = S.pending.filter((p) => p.done).map((p) => p.file);
   if (!text && !files.length) return;
@@ -39,11 +42,9 @@ export async function sendMsg() {
     if (originConv !== null) payload.conv = originConv; // null = 草稿，由服务端新建
     const wasDraft = originConv === null;
     const res = await apiPost('/api/send', payload);
-    if (wasDraft && S.conv === originConv && res && res.conv) {
-      // 第一条消息诞生了新会话：回填并补拉历史（SSE 那条消息可能早于本响应到达）
-      setConv(res.conv);
+    if (res && S.conv === originConv && (wasDraft || (res.conversationCommand && res.conv !== originConv))) {
       await refreshConversations();
-      await syncAfter();
+      if (S.conv === originConv) await switchTo(res.conv);
     }
     sentPending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
     if (res?.running && S.conv === res.conv) setTyping(true, res.running.text, res.running.startedAt);
@@ -173,7 +174,11 @@ export async function addFiles(fileList) {
 
 // ---------- 斜杠命令面板 ----------
 const CMDS = [
-  { c: '/help', d: '显示帮助' },
+  { c: '/help', d: '显示所有命令' },
+  { c: '/new', d: '开启空白对话，保留旧历史' },
+  { c: '/fork', d: '复制当前历史进入新分支' },
+  { c: '/resume', d: '列出会话或恢复指定编号' },
+  { c: '/usage', d: '模型额度与用量' },
   { c: '/status', d: '服务 / 连接状态' },
   { c: '/memory', d: '记忆概况（clear 清空，summary 看摘要）' },
   { c: '/bind', d: '绑定 MC 身份', arg: '<MC名>' },

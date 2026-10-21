@@ -78,6 +78,17 @@ func (s *Session) Ingest(ctx context.Context, msg storage.Message) (storage.Mess
 	return msg, nil
 }
 
+// Notice is visible history, excluded from model context and summaries.
+func (s *Session) Notice(ctx context.Context, text, target string) error {
+	msg := storage.Message{SessionID: s.ID, Channel: "system", AuthorKind: "system", AuthorID: "system", AuthorName: "系统", Text: text, Target: target, CreatedAt: time.Now().UnixMilli()}
+	id, err := s.hub.store.AppendMessage(ctx, msg)
+	if err != nil {
+		return err
+	}
+	msg.ID = id
+	return s.sendToAll(ctx, msg)
+}
+
 func (s *Session) Reply(ctx context.Context, text, target string) error {
 	msg := storage.Message{
 		SessionID:  s.ID,

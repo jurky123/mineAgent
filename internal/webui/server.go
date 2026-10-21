@@ -898,6 +898,9 @@ func (c *Channel) handleSend(w http.ResponseWriter, r *http.Request, u *storage.
 	}
 	st, running := c.RunningState(webSessionKey(u.ID, convID))
 	response := map[string]any{"ok": true, "conv": convID}
+	if cmd, _ := directConversationCommand(req.Text); cmd != "" {
+		response["conversationCommand"] = true
+	}
 	if running {
 		response["running"] = st
 	}

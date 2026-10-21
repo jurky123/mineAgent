@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22", "dsh": "0.2.1-rc.2" },
   "main": "index.mjs",
   "scripts": { "test": "node --test server.test.mjs" },
   "peerDependencies": {

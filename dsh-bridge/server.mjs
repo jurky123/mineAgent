@@ -182,7 +182,7 @@ export async function startBridge(ctx, config, deps) {
       if (closing || poisoned) return json(res,503);
       // No browser/CORS surface; only the token-authenticated server client.
       if (req.headers.origin || !authorized(req)) return json(res,401);
-      if (req.method === 'GET' && req.url === '/v1/health') return json(res,200,{protocol:1,active:runs.size});
+      if (req.method === 'GET' && req.url === '/v1/health') return json(res,200,{protocol:1,active:runs.size,hostRunning:ctx.agents.list?.().filter(a=>a.status==='running').length ?? null,providers:ctx.llm.listProviders().map(p=>p.id)});
       if (req.method !== 'POST') return json(res,405);
       req.setTimeout(15000,()=>req.destroy());
       const input=await body(req);req.setTimeout(0);

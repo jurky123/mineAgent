@@ -146,6 +146,11 @@ func ToWire(m storage.Message) WireMessage {
 		w.Role = "agent"
 		w.Name = "MineAgent"
 	}
+	if m.AuthorKind == "system" {
+		w.Role = "agent"
+		w.Name = "系统"
+		return w
+	}
 	if strings.HasPrefix(m.Target, storage.KindFile) {
 		rest := strings.TrimPrefix(m.Target, storage.KindFile)
 		parts := strings.SplitN(rest, ":", 3)

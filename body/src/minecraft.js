@@ -4,7 +4,12 @@ import { Vec3 } from "vec3";
 import { randomUUID, createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { surface, terrain } from "./terrain.js";
-import { resolveDestination, surfaceAbove } from "./navigation.js";
+import {
+  resolveDestination,
+  surfaceAbove,
+  wetFootSupport,
+  contactPrecision,
+} from "./navigation.js";
 import {
   risk,
   checkSpec,
@@ -243,6 +248,23 @@ export class MinecraftBody {
       before && Date.now() - before.at < 2000 ? before.position : null;
     const tool = this.active?.tool || "";
     const moved = vector(from) && vector(to) ? distance(from, to) : null;
+    if (
+      !this.active &&
+      moved !== null &&
+      contactPrecision(this.bot, from, to)
+    ) {
+      this.prepared.clear();
+      this.event("forced_move", {
+        from,
+        to,
+        distance: moved,
+        tool,
+        correction: true,
+        precision: true,
+        motion: motion(this.bot),
+      });
+      return; // Never clears an already latched pause.
+    }
     const now = Date.now();
     this.corrections = this.corrections.filter((c) => now - c.at < 2000);
     const windowDistance =
@@ -305,11 +327,13 @@ export class MinecraftBody {
       if (
         mode === "swim" &&
         atStart &&
-        bot.blockAt(new Vec3(node.x, node.y, node.z))?.name === "water" &&
-        bot.blockAt(new Vec3(node.x, node.y + 1, node.z))?.name === "water" &&
-        ["air", "cave_air", "void_air"].includes(
-          bot.blockAt(new Vec3(node.x, node.y + 2, node.z))?.name,
-        )
+        (wetFootSupport(bot) ||
+          (bot.blockAt(new Vec3(node.x, node.y, node.z))?.name === "water" &&
+            bot.blockAt(new Vec3(node.x, node.y + 1, node.z))?.name ===
+              "water" &&
+            ["air", "cave_air", "void_air"].includes(
+              bot.blockAt(new Vec3(node.x, node.y + 2, node.z))?.name,
+            )))
       )
         start = { ...node, y: node.y + 1 };
       return neighbors(start).filter((next) => {

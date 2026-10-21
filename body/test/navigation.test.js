@@ -174,6 +174,47 @@ test("surface route crosses a two-deep pool and returns to shore, without diving
       "noPath",
       "normalization does not enable genuinely submerged routes",
     );
+    const poolBlocks = runtime.bot.blockAt;
+    runtime.bot.blockAt = (p) => {
+      let kind,
+        properties = {};
+      if (p.x >= 13 && p.x <= 15 && p.z === 9 && p.y === -60) {
+        kind = "oak_slab";
+        properties = { type: "bottom", waterlogged: true };
+      } else if (p.x >= 13 && p.x <= 15 && p.z === 10 && p.y === -60)
+        kind = "oak_planks";
+      else if (p.x >= 13 && p.x <= 15 && p.z === 11 && p.y === -59) {
+        kind = "oak_slab";
+        properties = { type: "bottom", waterlogged: false };
+      } else if (
+        p.x >= 12 &&
+        p.x <= 16 &&
+        p.z >= 12 &&
+        p.z <= 15 &&
+        p.y === -59
+      )
+        kind = "oak_planks";
+      if (!kind) return poolBlocks(p);
+      const b = Block.fromProperties(
+        registry.blocksByName[kind].id,
+        properties,
+        0,
+      );
+      b.position = p.floored();
+      return b;
+    };
+    runtime.bot.entity.position = new Vec3(14.5, -59.465, 9.697);
+    const { surfaceAbove, wetFootSupport } = await import(
+      "../src/navigation.js"
+    );
+    assert.equal(wetFootSupport(runtime.bot), true);
+    assert.equal(surfaceAbove(runtime.bot), -60);
+    runtime.movements("swim");
+    assert.equal(
+      route([14, -60, 9], [14, -58, 14]).status,
+      "success",
+      "wet half-step supports restart with onGround=false",
+    );
     runtime.bot.entity.position = new Vec3(4.5, 62, 0.5);
     runtime.bot.blockAt = (p) => {
       const name =

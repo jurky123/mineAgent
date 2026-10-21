@@ -790,6 +790,20 @@ MinecraftBody.prototype.movements=function(...args){
         timeoutSec: 20,
       }),
     );
+    await command("tp MineBodyV1 14.5 -59.465 9.697");
+    await wait(1500);
+    assert.equal(
+      (await state()).paused,
+      true,
+      "external fixture reposition still pauses",
+    );
+    assert.equal((await control("resume")).httpStatus, 200);
+    await wait(2500);
+    assert.equal(
+      (await state()).paused,
+      false,
+      "idle wet-step precision must not relatch pause",
+    );
     confirmed(
       await send("body_goto", {
         x: 14.5,
@@ -803,6 +817,18 @@ MinecraftBody.prototype.movements=function(...args){
     assert.ok(
       (await state()).state.pos[1] > -58.1,
       "real body stands on dock after wet half-steps",
+    );
+    // Return by the known ramp instead of asking a single goal to jump off
+    // the side of the elevated dock, dive, and cut across a pool corner.
+    confirmed(
+      await send("body_goto", {
+        x: 14.5,
+        y: -60,
+        z: 8.5,
+        movement: "swim",
+        range: 1,
+        timeoutSec: 20,
+      }),
     );
     confirmed(
       await send("body_goto", {

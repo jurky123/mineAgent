@@ -6,6 +6,53 @@ const empty = (b) =>
   !hazard.test(b.name) &&
   b.name !== "water" &&
   (b.boundingBox === "empty" || b.shapes?.length === 0);
+const wetBelowFeet = (b, feetY) =>
+  b?.getProperties?.().waterlogged === true &&
+  b.shapes?.length > 0 &&
+  b.shapes.every((s) => b.position.y + s[4] <= feetY + 0.001);
+
+export const wetFootSupport = (bot) =>
+  wetBelowFeet(
+    bot.blockAt(bot.entity.position.floored()),
+    bot.entity.position.y,
+  );
+
+// Recognize the client's 0.3/0.7 hitbox clamp versus the server's millimetre
+// collision margin. This is a stationary contact correction, not a general
+// allowance for idle movement; unknown positions and all other packets fail.
+export function contactPrecision(bot, from, to) {
+  if (
+    Math.abs(from[1] - to[1]) > 1e-6 ||
+    !bot?.blockAt ||
+    Object.values(bot.controlState || {}).some(Boolean)
+  )
+    return false;
+  for (const axis of [0, 2]) {
+    const d = to[axis] - from[axis],
+      other = 2 - axis;
+    if (!d || Math.abs(d) > 0.01 || Math.abs(to[other] - from[other]) > 1e-6)
+      continue;
+    const fraction = from[axis] - Math.floor(from[axis]);
+    if (Math.abs(fraction - (d < 0 ? 0.7 : 0.3)) > 1e-6) continue;
+    const cell = from.map(Math.floor);
+    cell[axis] += d < 0 ? 1 : -1;
+    const b = bot.blockAt(new Vec3(...cell)),
+      feet = from[1] - cell[1];
+    if (
+      b?.shapes?.some(
+        (s) =>
+          s[0] === 0 &&
+          s[2] === 0 &&
+          s[3] === 1 &&
+          s[5] === 1 &&
+          s[1] <= feet &&
+          s[4] > feet,
+      )
+    )
+      return true;
+  }
+  return false;
+}
 
 // Recovery only ascends a loaded, unobstructed water column. It never plans a
 // submerged horizontal route, moves through a roof, or changes player position.
@@ -14,7 +61,8 @@ export function surfaceAbove(bot, maxRise = 16) {
   const y0 = Math.floor(p.y);
   for (let y = y0; y <= y0 + maxRise; y++) {
     const block = bot.blockAt(new Vec3(Math.floor(p.x), y, Math.floor(p.z)));
-    if (block?.name === "water") continue;
+    if (block?.name === "water" || (y === y0 && wetBelowFeet(block, p.y)))
+      continue;
     if (
       y === y0 ||
       !empty(block) ||
@@ -27,7 +75,11 @@ export function surfaceAbove(bot, maxRise = 16) {
           const b = bot.blockAt(
             new Vec3(Math.floor(p.x + dx), h, Math.floor(p.z + dz)),
           );
-          if (b?.name !== "water" && !empty(b))
+          if (
+            b?.name !== "water" &&
+            !empty(b) &&
+            !(h === y0 && wetBelowFeet(b, p.y))
+          )
             throw Object.assign(
               Error("上浮水柱未加载或有障碍，请选择其他路线"),
               { code: "surface_recovery_blocked" },

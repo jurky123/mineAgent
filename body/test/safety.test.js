@@ -746,3 +746,55 @@ test("millimetre collision corrections fit a bounded distance budget, large or c
     }
   }
 });
+
+test("idle collision-plane precision does not relatch pause; ordinary idle moves and existing pause remain protected", () => {
+  const runtime = new MinecraftBody(
+    { minecraft: { username: "MineBodyTest" }, backend: {} },
+    () => {},
+  );
+  runtime.connected = true;
+  runtime.ready = true;
+  runtime.paused = false;
+  runtime.onlineSince = Date.now() - 10000;
+  runtime.bot = {
+    entity: { position: { x: 0.5, y: 62.535, z: 9.697 } },
+    controlState: { forward: false, jump: false },
+    blockAt(p) {
+      return { position: p, shapes: [[0, 0, 0, 1, 1, 1]] };
+    },
+    pathfinder: { setGoal() {} },
+    clearControlStates() {},
+    stopDigging() {},
+    deactivateItem() {},
+  };
+  try {
+    runtime.prepared.set("old", {});
+    for (let i = 0; i < 20; i++)
+      runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(runtime.paused, false);
+    assert.equal(runtime.prepared.size, 0);
+    assert.equal(runtime.recent.at(-1).data.precision, true);
+    runtime.paused = true;
+    runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(runtime.paused, true, "precision never auto-resumes a pause");
+    runtime.paused = false;
+    runtime.bot.blockAt = () => null;
+    runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(
+      runtime.paused,
+      true,
+      "same tiny movement with unknown contact still pauses",
+    );
+    runtime.paused = false;
+    runtime.bot.entity.position.z = 10.2;
+    runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(
+      runtime.paused,
+      true,
+      "ordinary half-block idle movement still pauses",
+    );
+  } finally {
+    clearInterval(runtime.safetyTimer);
+    clearInterval(runtime.stateTimer);
+  }
+});

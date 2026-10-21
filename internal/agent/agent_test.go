@@ -537,3 +537,49 @@ func TestAgentConfigDefaults(t *testing.T) {
 		t.Fatalf("default config agent = %+v", cfg.Agent)
 	}
 }
+
+func TestQQHistoryExcludesLegacyQueueMessages(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	const key = "qq:c2c:fixture"
+	if err := st.EnsureSession(ctx, key, 1); err != nil {
+		t.Fatal(err)
+	}
+	var trigger int64
+	for _, m := range []storage.Message{
+		{AuthorKind: "player", Target: "c2c:fixture:one", Text: "first"},
+		{AuthorKind: "agent", Target: "c2c:fixture:one", Text: "已加入任务队列，将按顺序处理。/tasks 查看，/stop 取消。"},
+		{AuthorKind: "agent", Target: "c2c:fixture:one", Text: "actual result"},
+		{AuthorKind: "player", Target: "c2c:fixture:two", Text: "second"},
+		{AuthorKind: "agent", Target: "c2c:fixture:two", Text: "已加入任务队列，将按顺序处理。/tasks 查看，/stop 取消。"},
+	} {
+		m.SessionID = key
+		m.Channel = "qq"
+		m.CreatedAt = 1
+		id, err := st.AppendMessage(ctx, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Text == "second" {
+			trigger = id
+		}
+	}
+	a := &Agent{store: st}
+	for _, limit := range []int64{trigger, 0} {
+		msgs, _, err := a.history(key, limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(msgs) != 3 || msgs[len(msgs)-1].Role != "user" || msgs[1].Content != "actual result" {
+			t.Fatalf("legacy notices entered model context: %+v", msgs)
+		}
+	}
+	rows, err := st.RecentMessages(ctx, key, 20)
+	if err != nil || len(rows) != 5 {
+		t.Fatal("visible history was changed", err)
+	}
+}

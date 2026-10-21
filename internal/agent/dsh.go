@@ -48,6 +48,9 @@ func dshMessages(msgs []*schema.Message) ([]dshbridge.Message, error) {
 		}
 		out = append(out, dshbridge.Message{Role: string(m.Role), Content: parts})
 	}
+	if len(out) == 0 || out[len(out)-1].Role != "user" {
+		return nil, fmt.Errorf("bridge history must end with the user trigger")
+	}
 	return out, nil
 }
 

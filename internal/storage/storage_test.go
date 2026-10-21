@@ -125,3 +125,41 @@ func TestIdentityAndAudit(t *testing.T) {
 		t.Fatalf("audit id = %d", id)
 	}
 }
+
+func TestQQTriggerHistoryKeepsLatePreviousReplyButNeverCurrentReply(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	const key = "qq:c2c:fixture"
+	if err := s.EnsureSession(ctx, key, 1); err != nil {
+		t.Fatal(err)
+	}
+	appendMessage := func(kind, target, text string) int64 {
+		t.Helper()
+		id, err := s.AppendMessage(ctx, Message{SessionID: key, Channel: "qq", AuthorKind: kind, Target: target, Text: text, CreatedAt: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	first := appendMessage("player", "c2c:fixture:first", "first")
+	trigger := appendMessage("player", "c2c:fixture:second", "second")
+	appendMessage("system", "c2c:fixture:second", "queue status")
+	appendMessage("agent", "c2c:fixture:second", "legacy queue status")
+	appendMessage("player", "c2c:fixture:third", "later question")
+	late := appendMessage("agent", "c2c:fixture:first", "late previous reply")
+	appendMessage("agent", "c2c:fixture:second", "current reply")
+	appendMessage("agent", "c2c:fixture:third", "future reply")
+	got, err := s.QQMessagesForTrigger(ctx, key, 0, trigger, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []int64{first, late, trigger}
+	if len(got) != len(want) {
+		t.Fatalf("history length=%d, want %d", len(got), len(want))
+	}
+	for i, m := range got {
+		if m.ID != want[i] {
+			t.Fatalf("history[%d]=%d, want %d", i, m.ID, want[i])
+		}
+	}
+}

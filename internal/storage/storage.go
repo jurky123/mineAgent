@@ -286,7 +286,8 @@ func (s *Store) MessagesBetween(ctx context.Context, sessionID string, afterID, 
 }
 
 // QQMessagesForTrigger includes late replies to earlier queued messages, ordered
-// by their inbound target. It excludes later queued users and their replies.
+// by their inbound target. It excludes system notices, later queued users,
+// and every reply to the current trigger (including legacy queue acknowledgements).
 // No schema change: QQ already binds all replies to the inbound message target.
 func (s *Store) QQMessagesForTrigger(ctx context.Context, sessionID string, afterID, triggerID int64, limit int) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx, `WITH turns AS (
@@ -295,7 +296,9 @@ func (s *Store) QQMessagesForTrigger(ctx context.Context, sessionID string, afte
 	) SELECT m.id,m.session_id,m.channel,m.author_kind,m.author_id,m.author_name,m.text,m.target,m.created_at
 	 FROM messages m LEFT JOIN turns t ON t.target=m.target
 	 WHERE m.session_id=? AND m.id>? AND COALESCE(t.turn_id,m.id)<=?
-	 ORDER BY COALESCE(t.turn_id,m.id) DESC,m.id DESC LIMIT ?`, sessionID, sessionID, afterID, triggerID, limit)
+	 AND m.author_kind IN ('player','agent')
+	 AND (m.id<=? OR (m.author_kind='agent' AND t.turn_id<?))
+	 ORDER BY COALESCE(t.turn_id,m.id) DESC,m.id DESC LIMIT ?`, sessionID, sessionID, afterID, triggerID, triggerID, triggerID, limit)
 	if err != nil {
 		return nil, err
 	}

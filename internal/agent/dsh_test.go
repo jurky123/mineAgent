@@ -168,3 +168,14 @@ func TestDSHRoutingQueueScopedInputsAndPrompt(t *testing.T) {
 		t.Fatal("bridge reply missing")
 	}
 }
+
+func TestDSHHistoryRequiresFinalUserMessage(t *testing.T) {
+	for _, messages := range [][]*schema.Message{nil, {schema.AssistantMessage("status", nil)}, {schema.UserMessage("question"), schema.AssistantMessage("queue status", nil)}} {
+		if _, err := dshMessages(messages); err == nil {
+			t.Fatal("accepted history without a final user trigger")
+		}
+	}
+	if _, err := dshMessages([]*schema.Message{schema.UserMessage("old question"), schema.AssistantMessage("answer", nil), schema.UserMessage("new question")}); err != nil {
+		t.Fatal(err)
+	}
+}

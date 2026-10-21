@@ -12,6 +12,8 @@
 
 每个任务创建独立的 DSH Agent，导入 MineAgent 按当前会话和触发消息取得的历史，保留 user/assistant 角色；图片经 DSH attachment store 转为视觉输入。任务结束释放 Agent，不续接原生 DSH Web 会话。MineAgent 的 `historyLimit` 和既有摘要读取生效，DSH preset 在当前任务内支持自动上下文压缩；DSH 的压缩结果目前不回写为 MineAgent 的跨任务摘要。DSH 本机会话/附件存储也会保存导入内容，因此两个服务属于同一受信管理边界。
 
+QQ 排队和队满提示作为 `system` 通知保存，不进入模型上下文；兼容过滤旧版保存为助手消息的同类提示。QQ 请求历史纳入前一轮晚到的实际回答，但始终以本轮触发用户消息结尾，排除本轮通知、回复和后续输入。桥接发送前也校验最后一条为用户消息，避免把不合法上下文交给 DSH。修复不修改或删除既有聊天记录。
+
 普通聊天默认思考强度 `high`，任务无额外总时限；非 MC 轮次沿用 `qqMaxIterations=0` 无限，MC 公共聊天保留 8 次模型步骤。已授权身体任务优先使用 `body.maxSteps`（默认12，显式0不限）与 `body.reasoningEffort`（默认medium），沿用每轮连续只读3次的工具层限制。DeepSeek 官方适配器只有 off/low/high/max 档：none→off、minimal→low、xhigh→max；普通聊天 medium→high，身体任务 medium→low，显式身体 high 仍为high。其他适配器直接接收所选值，不支持时明确失败。
 
 MineAgent 保留原队列；桥接客户端和 DSH 插件额外保证桥接任务一次一个。审批直接送到等待中的工具，不排入被占用的工作队列；等待审批期间该桥接任务占住 FIFO，状态、审批与停止入口不受阻。此队列只约束 MineAgent 桥接任务，用户在 DSH Web 原生发起的任务仍由 DSH 自己调度。
@@ -67,10 +69,12 @@ MineAgent 保留原队列；桥接客户端和 DSH 插件额外保证桥接任�
 
 ```sh
 node --test dsh-bridge/server.test.mjs
-go test ./internal/dshbridge ./internal/agent ./internal/tools ./internal/body ./internal/config
+go test ./internal/dshbridge ./internal/agent ./internal/qq ./internal/storage ./internal/tools ./internal/body ./internal/config
 python3 scripts/dsh-bridge-e2e.py
 ```
 
 最后一项要求 PATH 有 DSH；安装位置非标准时设 `DSH_TEST_MODULE_ROOT` 为它的 node_modules。测试复制插件到临时目录，启动独立 Web profile、随机回环端口和假模型，无真实 API key、不读取活动 DSH profile、不发送真实 QQ 消息。覆盖历史角色、high 参数、真实 PNG 输入、Go 工具回调、原生工具拒绝、停止后继续任务及轮次预算。它不验证真实提供商的额度、模型质量、QQ 上传权限或上线配置。
 
 身体兼容回归：`go test -race ./internal/agent -run TestDSHBodyMergePreservesBudgetsAndPublicScope` 验证真实 Submit/桥接/工具路径上的12步与显式无限、身体思考强度、只读预算及普通MC公开工具隔离；审批取消/拒绝/过期由 `internal/body/external_approval_test.go` 验证。
+
+QQ 排队回归 `TestDSHQueuedQQContextEndsAtTrigger` 通过临时数据库和假桥接覆盖同会话、跨会话与 `/new` 后排队，检查全局串行、上下文尾部、前轮回答和身份隔离；不连接真实 QQ/模型。

@@ -434,12 +434,12 @@ func (c *Channel) onMessage(m InboundMessage) {
 		SystemInstruction: instruction,
 	}) {
 		c.finishTask(scope, task)
-		_ = sess.Reply(ctx, "任务队列已满，本次未提交，请稍后重试。", target)
+		_ = sess.Notice(ctx, "任务队列已满，本次未提交，请稍后重试。", target)
 		return
 	}
 
 	if running+waiting > 0 {
-		_ = sess.Reply(ctx, "已加入任务队列，将按顺序处理。/tasks 查看，/stop 取消。", target)
+		_ = sess.Notice(ctx, "已加入任务队列，将按顺序处理。/tasks 查看，/stop 取消。", target)
 	}
 }
 

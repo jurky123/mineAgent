@@ -571,7 +571,7 @@ func (a *Agent) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case req := <-a.jobs:
-			// 按会话投递：同会话串行、跨会话并行（长任务不再堵住别的通道）。
+			// 同一会话始终串行；maxConcurrentRuns=1 时所有渠道共用全局 FIFO。
 			key := req.SessionKey
 			if key == "" {
 				key = a.sessionKey
@@ -583,7 +583,7 @@ func (a *Agent) Run(ctx context.Context) {
 			if !a.pool.enqueueCancelable(queueCtx, key, func() { a.respond(ctx, req) }, req.Done) {
 				a.log.Warn("agent session queue full, dropping request", "session", key, "player", req.Player)
 				if req.Context == nil || req.Context.Err() == nil {
-					_ = req.Session.Reply(ctx, "任务队列已满，本次未执行，请稍后再试。", a.target(req))
+					_ = req.Session.Notice(ctx, "任务队列已满，本次未执行，请稍后再试。", a.target(req))
 				}
 				if req.Done != nil {
 					req.Done()
@@ -1307,7 +1307,11 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 			withVision := i == lastPlayer && m.Channel == "web"
 			msgs = append(msgs, a.userMessage(m.AuthorName, m.Text, withVision))
 		case "agent":
-			msgs = append(msgs, schema.AssistantMessage(m.Text, nil))
+			// Older releases persisted queue status as assistant output. Keep it
+			// visible in history, but never teach the model to repeat it.
+			if !strings.HasPrefix(sessionKey, "qq:") || !legacyQQQueueNotice(m.Text) {
+				msgs = append(msgs, schema.AssistantMessage(m.Text, nil))
+			}
 		}
 		if m.ID > cutoff {
 			cutoff = m.ID
@@ -1317,6 +1321,16 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 		cutoff = min(cutoff, upToID)
 	}
 	return msgs, cutoff, nil
+}
+
+func legacyQQQueueNotice(text string) bool {
+	switch text {
+	case "已加入任务队列，将按顺序处理。/tasks 查看，/stop 取消。",
+		"任务队列已满，本次未提交，请稍后重试。",
+		"任务队列已满，本次未执行，请稍后再试。":
+		return true
+	}
+	return false
 }
 
 // CancelPending detaches suspended approvals; late approval outcomes cannot resume them.

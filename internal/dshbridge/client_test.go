@@ -3,6 +3,7 @@ package dshbridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -203,6 +204,32 @@ func TestDSHDisconnectCancelsAndDrainsLocalTool(t *testing.T) {
 			case <-stopped:
 			default:
 				t.Fatal("client returned before local tool quiesced")
+			}
+		})
+	}
+}
+
+func TestPublicRunErrorIsTypedSanitizedAndNeverReplayed(t *testing.T) {
+	for _, code := range []string{"UNSUPPORTED_REASONING_EFFORT", "untrusted-provider-detail"} {
+		t.Run(code, func(t *testing.T) {
+			var requests atomic.Int32
+			c := clientFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				frame, _ := json.Marshal(map[string]string{"type": "error", "code": code})
+				fmt.Fprintln(w, string(frame))
+			})
+			_, err := c.Run(context.Background(), Request{}, nil)
+			var runError *RunError
+			if !errors.As(err, &runError) {
+				t.Fatalf("missing typed error: %v", err)
+			}
+			want := code
+			if code == "untrusted-provider-detail" {
+				want = "UNKNOWN"
+			}
+			if runError.Code != want || requests.Load() != 1 || strings.Contains(err.Error(), "untrusted-provider-detail") {
+				t.Fatalf("err=%v requests=%d", err, requests.Load())
 			}
 		})
 	}

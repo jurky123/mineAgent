@@ -100,28 +100,7 @@ func (a *Agent) respondDSH(ctx context.Context, req Request, msgs []*schema.Mess
 		_ = req.Session.Reply(ctx, "助手输入或工具初始化失败，本次未执行。", a.target(req))
 		return
 	}
-	effort := req.ReasoningEffort
-	if effort == "" {
-		effort = "high"
-	}
-	if route.Provider == "deepseek-official" {
-		switch effort {
-		case "none":
-			effort = "off"
-		case "minimal":
-			effort = "low"
-		case "medium":
-			// This provider has no medium tier. Preserve the body's latency
-			// budget instead of silently promoting its default to high.
-			if req.BodyPrincipal != nil {
-				effort = "low"
-			} else {
-				effort = "high"
-			}
-		case "xhigh":
-			effort = "max"
-		}
-	}
+	effort := dshReasoningEffort(route, req.ReasoningEffort, req.BodyPrincipal != nil)
 	maxIter := req.MaxIterations
 	if maxIter == 0 {
 		maxIter = a.cfg.QQMaxIterations
@@ -182,7 +161,12 @@ func (a *Agent) respondDSH(ctx context.Context, req Request, msgs []*schema.Mess
 	}
 	if err != nil {
 		a.log.Warn("DSH bridge run failed", "err", err)
-		_ = req.Session.Reply(ctx, "DSH 调用失败，本次任务已结束。已完成的操作不会撤销；请核查结果后再重试。", a.target(req))
+		message := "DSH 调用失败，本次任务已结束。已完成的操作不会撤销；请核查结果后再重试。"
+		var runError *dshbridge.RunError
+		if errors.As(err, &runError) && runError.Code == "UNSUPPORTED_REASONING_EFFORT" {
+			message = "当前模型不支持所选思考强度，请调整后重新提交。已完成的操作不会撤销，请先核查结果。"
+		}
+		_ = req.Session.Reply(ctx, message, a.target(req))
 		return
 	}
 	if strings.TrimSpace(reply) == "" {
@@ -238,4 +222,33 @@ func (a *Agent) invokeDSHTool(ctx context.Context, req Request, t tool.Invokable
 		return "", ctx.Err()
 	}
 	return out, err
+}
+
+// Normalize only routes whose exact effort capabilities have been verified.
+// Other providers/models retain their own controls and fail explicitly if invalid.
+func dshReasoningEffort(route dshbridge.Route, effort string, bodyTask bool) string {
+	if effort == "" {
+		effort = "high"
+	}
+	official := route.Provider == "deepseek-official"
+	goFlash := route.Provider == "opencode-go" && route.Model == "deepseek-v4.1-flash"
+	if !official && !goFlash {
+		return effort
+	}
+	switch effort {
+	case "none":
+		if official {
+			return "off"
+		} // Go Flash does not offer a thinking-off tier.
+	case "minimal":
+		return "low"
+	case "medium":
+		if bodyTask {
+			return "low"
+		}
+		return "high"
+	case "xhigh":
+		return "max"
+	}
+	return effort
 }

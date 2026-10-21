@@ -24,6 +24,14 @@ import (
 
 const MaxFrame = 64 << 20
 
+// RunError carries only a validated public provider error code.
+// It does not imply that earlier tools can safely be replayed.
+type RunError struct{ Code string }
+
+func (e *RunError) Error() string {
+	return fmt.Sprintf("DSH agent failed (%s); completed actions were not rolled back", e.Code)
+}
+
 type Route struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
@@ -297,7 +305,7 @@ func (c *Client) Run(ctx context.Context, req Request, invoke func(context.Conte
 				if !safeErrorCode(code) {
 					code = "UNKNOWN"
 				}
-				return "", fmt.Errorf("DSH agent failed (%s); completed actions were not rolled back", code)
+				return "", &RunError{Code: code}
 			default:
 				return "", errors.New("unknown DSH bridge frame")
 			}

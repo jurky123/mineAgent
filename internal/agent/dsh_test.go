@@ -179,3 +179,30 @@ func TestDSHHistoryRequiresFinalUserMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDSHReasoningMatchesVerifiedModelCapabilities(t *testing.T) {
+	cases := []struct {
+		provider, model, effort string
+		body                    bool
+		want                    string
+	}{
+		{"opencode-go", "deepseek-v4.1-flash", "medium", true, "low"},
+		{"opencode-go", "deepseek-v4.1-flash", "medium", false, "high"},
+		{"opencode-go", "deepseek-v4.1-flash", "low", true, "low"},
+		{"opencode-go", "deepseek-v4.1-flash", "high", true, "high"},
+		{"opencode-go", "deepseek-v4.1-flash", "minimal", false, "low"},
+		{"opencode-go", "deepseek-v4.1-flash", "xhigh", false, "max"},
+		{"opencode-go", "deepseek-v4.1-flash", "none", false, "none"},
+		{"opencode-go", "deepseek-v4.1-flash", "", false, "high"},
+		{"opencode-go", "other-model", "medium", true, "medium"},
+		{"fixture", "deepseek-v4.1-flash", "medium", true, "medium"},
+		{"deepseek-official", "deepseek-v4.1-flash", "medium", true, "low"},
+		{"deepseek-official", "deepseek-v4.1-flash", "none", false, "off"},
+	}
+	for _, tc := range cases {
+		got := dshReasoningEffort(dshbridge.Route{Provider: tc.provider, Model: tc.model}, tc.effort, tc.body)
+		if got != tc.want {
+			t.Errorf("%+v got=%s", tc, got)
+		}
+	}
+}

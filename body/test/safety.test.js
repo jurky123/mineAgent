@@ -61,7 +61,7 @@ test("server position changes latch pause, record displacement and require expli
         assert.equal(runtime.paused, false);
         assert.equal(a.abort.signal.aborted, false);
         assert.equal(runtime.recent.at(-1).data.correction, true);
-        for (let i = 0; i < 3; i++)
+        for (let i = 0; i < (offset === 0 ? 40 : 1); i++)
           runtime.forcedMove({ position: [0, 64, 0], at: Date.now() });
       }
       assert.equal(runtime.paused, true);
@@ -708,5 +708,41 @@ test("navigation rechecks hands for every implicit gate click and restores activ
     assert.equal(b.activateBlock, original);
   } finally {
     await r.close();
+  }
+});
+
+test("millimetre collision corrections fit a bounded distance budget, large or cumulative moves still pause", () => {
+  for (const steps of [
+    [...Array(20).fill(0.003), 0.8],
+    [0.3, 0.3, 0.3],
+  ]) {
+    const runtime = new MinecraftBody(
+      { minecraft: { username: "MineBodyTest" }, backend: {} },
+      () => {},
+    );
+    runtime.connected = true;
+    runtime.ready = true;
+    runtime.paused = false;
+    runtime.onlineSince = Date.now() - 10000;
+    runtime.bot = {
+      entity: { position: { x: 0, y: 64, z: 0 } },
+      pathfinder: { setGoal() {} },
+      clearControlStates() {},
+      stopDigging() {},
+      deactivateItem() {},
+    };
+    runtime.active = { tool: "body_goto", abort: new AbortController() };
+    try {
+      for (const [i, step] of steps.entries()) {
+        runtime.bot.entity.position.x = step;
+        runtime.forcedMove({ position: [0, 64, 0], at: Date.now() });
+        assert.equal(runtime.paused, i === steps.length - 1);
+      }
+      assert.equal(runtime.active.abort.signal.aborted, true);
+      assert.ok(runtime.recent.at(-1).data.windowDistance > 0.75);
+    } finally {
+      clearInterval(runtime.safetyTimer);
+      clearInterval(runtime.stateTimer);
+    }
   }
 });

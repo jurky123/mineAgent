@@ -34,6 +34,11 @@ const freeze = (o) => {
   return o;
 };
 const clean = (x) => String(x || "").slice(0, 500);
+const motion = (b) => ({
+  onGround: !!b?.entity?.onGround,
+  inWater: !!b?.entity?.isInWater,
+  velocity: b?.entity?.velocity ? pos(b.entity.velocity) : null,
+});
 export const capabilities = [
   "observe",
   "move",
@@ -109,6 +114,7 @@ export class MinecraftBody {
     this.revision = p.policyRevision;
     this.seq = 0;
     this.results.clear();
+    this.corrections = [];
     this.usedGrants.clear();
     this.ready = true;
     this.lastLease = performance.now();
@@ -238,14 +244,19 @@ export class MinecraftBody {
     const tool = this.active?.tool || "";
     const moved = vector(from) && vector(to) ? distance(from, to) : null;
     const now = Date.now();
-    this.corrections = this.corrections.filter((t) => now - t < 2000);
+    this.corrections = this.corrections.filter((c) => now - c.at < 2000);
+    const windowDistance =
+      this.corrections.reduce((n, c) => n + c.distance, 0) + (moved || 0);
     const correction =
       !!this.active &&
+      !this.paused &&
+      !this.active.abort.signal.aborted &&
       moved !== null &&
       moved <= 0.75 &&
-      this.corrections.length < 3;
+      windowDistance <= 0.75 &&
+      this.corrections.length < 40;
     if (correction) {
-      this.corrections.push(now);
+      this.corrections.push({ at: now, distance: moved });
       this.prepared.clear();
     } else this.pause("forced_move");
     this.event("forced_move", {
@@ -254,6 +265,8 @@ export class MinecraftBody {
       distance: moved,
       tool,
       correction,
+      windowDistance,
+      motion: motion(this.bot),
     });
   }
   movements(mode = "ground") {
@@ -420,6 +433,7 @@ export class MinecraftBody {
       } else if (this.connected) {
         this.paused = false;
         this.pauseReason = "";
+        this.corrections = [];
       }
     }
     if (this.paused && p.action !== "resume") this.pauseReason = p.action;
@@ -1018,6 +1032,7 @@ export class MinecraftBody {
       const range = Math.max(4, Math.min(16, args.range || 8));
       return {
         state: this.state(),
+        motion: motion(b),
         terrain: terrain(b),
         entities: Object.values(b.entities)
           .filter(

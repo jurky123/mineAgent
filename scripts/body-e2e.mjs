@@ -769,7 +769,53 @@ MinecraftBody.prototype.movements=function(...args){
     });
     confirmed(shore);
     assert.ok(shore.result.data.surfaceRecovery.fromY < -61);
+    // Exact production shape: a waterlogged half-step leading to a dry dock.
+    // Several millimetre corrections must not defeat the normal step/jump.
+    await command("fill 13 -61 8 15 -61 8 oak_planks");
+    await command(
+      "fill 13 -60 9 15 -60 9 oak_slab[type=bottom,waterlogged=true]",
+    );
+    await command("fill 13 -60 10 15 -60 10 oak_planks");
+    await command("fill 13 -59 11 15 -59 11 oak_slab[type=bottom]");
+    await command("fill 13 -59 12 15 -59 12 oak_planks");
+    await command("fill 12 -59 13 16 -59 15 oak_planks");
+    await wait(500);
+    confirmed(
+      await send("body_goto", {
+        x: 14.5,
+        y: -60,
+        z: 8.5,
+        movement: "swim",
+        range: 1,
+        timeoutSec: 20,
+      }),
+    );
+    confirmed(
+      await send("body_goto", {
+        x: 14.5,
+        y: -58,
+        z: 14.5,
+        movement: "swim",
+        range: 1,
+        timeoutSec: 20,
+      }),
+    );
+    assert.ok(
+      (await state()).state.pos[1] > -58.1,
+      "real body stands on dock after wet half-steps",
+    );
+    confirmed(
+      await send("body_goto", {
+        x: 0,
+        y: -60,
+        z: 0,
+        movement: "swim",
+        range: 1,
+        timeoutSec: 20,
+      }),
+    );
     await command("fill 9 -61 5 19 -61 15 grass_block");
+    await command("fill 10 -60 6 18 -57 15 air");
     await command("fill 3 -60 -1 26 -59 22 air replace water");
     console.log(
       "Navigation passed: full arrival region, explicit surface swimming, ground water refusal and return to shore",

@@ -393,7 +393,11 @@ func (w *Workspace) exec(ctx context.Context, args map[string]any) (string, erro
 	defer w.execMu.Unlock()
 
 	timeout := time.Duration(w.cfg.ExecTimeoutSec) * time.Second
-	ectx, cancel := context.WithTimeout(ctx, timeout)
+	ectx, cancel := context.WithCancel(ctx)
+	if timeout > 0 {
+		cancel()
+		ectx, cancel = context.WithTimeout(ctx, timeout)
+	}
 	defer cancel()
 
 	cmd, err := newWorkspaceCommand(ectx, w.cfg.Root, cmdStr, verdict == staticReview)

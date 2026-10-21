@@ -49,6 +49,11 @@ func (g *qqToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 	}
 	requester := tools.RequesterFromContext(ctx)
 	openIDs := openIDCandidates(ctx, requester)
+	if info.Name == "qq_image" || info.Name == "qq_file" || info.Name == "qq_video" || info.Name == "qq_audio" {
+		if g.ws == nil || !strings.HasPrefix(requester, tools.QQRequesterPrefix) || !g.ws.IsAdmin("qq", openIDs...) {
+			return errorJSON("读取和发送 workspace 文件仅限 QQ 管理员"), nil
+		}
+	}
 
 	switch {
 	case strings.HasPrefix(info.Name, "workspace_"):
@@ -65,7 +70,7 @@ func (g *qqToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 		return "", err
 	}
 	// qq_markdown/qq_image 返回 __qq_send 指令：gate 执行发送。
-	if info.Name == "qq_markdown" || info.Name == "qq_image" {
+	if info.Name == "qq_markdown" || info.Name == "qq_image" || info.Name == "qq_file" || info.Name == "qq_video" || info.Name == "qq_audio" || info.Name == "qq_emoji" {
 		var cmd map[string]string
 		if json.Unmarshal([]byte(out), &cmd) == nil && cmd[tools.QQSEND_KEY] != "" {
 			target, text := cmd["target"], cmd["text"]
@@ -73,7 +78,7 @@ func (g *qqToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 				return errorJSON("发送目标为空，已取消"), nil
 			}
 			if err := g.sendQQ(ctx, target, text); err != nil {
-				return errorJSON("发送失败：" + err.Error()), nil
+				return errorJSON("发送未全部确认，请先核查已有结果：" + err.Error()), nil
 			}
 			ok, _ := json.Marshal(map[string]string{"ok": "true", "message": "已发送"})
 			return string(ok), nil
@@ -90,14 +95,21 @@ func (g *qqToolGate) InvokableRun(ctx context.Context, argsJSON string, opts ...
 //     真正的 resolve 钳制在 media.go 读文件前再做一次）。
 func (g *qqToolGate) sendQQ(ctx context.Context, target, text string) error {
 	inner := target
-	if strings.HasPrefix(target, storage.KindMarkdown) {
-		inner = strings.TrimPrefix(target, storage.KindMarkdown)
-	} else if strings.HasPrefix(target, storage.KindImage) {
-		inner = strings.TrimPrefix(target, storage.KindImage)
-	} else {
+	prefix := ""
+	for _, candidate := range []string{storage.KindMarkdown, storage.KindImage, storage.KindFile, "video:", "audio:", "emoji:"} {
+		if strings.HasPrefix(target, candidate) {
+			prefix = candidate
+			inner = strings.TrimPrefix(target, candidate)
+			break
+		}
+	}
+	if prefix == "" {
 		return errors.New("未知发送类型")
 	}
 	base, relPath := splitSendInner(inner)
+	if prefix != storage.KindMarkdown && prefix != "emoji:" && relPath == "" {
+		return errors.New("文件路径为空")
+	}
 	if base == "" {
 		return errors.New("发送目标非法，已取消")
 	}
@@ -152,10 +164,14 @@ func errorJSON(msg string) string {
 	return string(raw)
 }
 
-// openIDCandidates 从 requester(qq:<union|user|member openid> 三选一存的第一个非空）
-// 还原 openid。channel.go 只存了一个最优先的非空 id，这里能还原的就是那一个；
-// 足够做管理员判断和绑定读写（绑定时三个 id 全写，查时按优先级逐个查）。
+// openIDCandidates uses only server-supplied aliases; legacy requests fall back
+// to their authenticated requester. Model tool arguments cannot add identities.
 func openIDCandidates(ctx context.Context, requester string) []string {
+	if strings.HasPrefix(requester, tools.QQRequesterPrefix) {
+		if ids := tools.QQIdentityFromContext(ctx); len(ids) > 0 {
+			return ids
+		}
+	}
 	id := strings.TrimPrefix(requester, tools.QQRequesterPrefix)
 	if id == "" || id == requester {
 		// 不是 qq: 前缀（理论上 QQ 通道不会走到这里），requesterID 兜底。

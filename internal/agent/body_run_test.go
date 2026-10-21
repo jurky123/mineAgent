@@ -22,7 +22,9 @@ import (
 
 // Exercise the real Eino runner beyond all former 12/32/80 round ceilings and
 // beyond the outer conversation timeout, with actual tool invocations.
-func TestBodyTaskContinuesUntilModelFinishes(t *testing.T) {
+func TestBodyTaskContinuesUntilModelFinishes(t *testing.T) { testContinuousTask(t, true) }
+func TestQQTaskContinuesBeyondFormerLimits(t *testing.T)   { testContinuousTask(t, false) }
+func testContinuousTask(t *testing.T, isBody bool) {
 	const rounds = 96
 	var modelCalls, invoked atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +48,9 @@ func TestBodyTaskContinuesUntilModelFinishes(t *testing.T) {
 	cfg := config.Default()
 	cfg.Model.BaseURL, cfg.Model.APIKey, cfg.Model.Name = srv.URL, "fixture", "test-model"
 	cfg.Agent.RunTimeoutSec = 1
+	if !isBody {
+		cfg.Agent.RunTimeoutSec = 0
+	}
 	cfg.Agent.SummaryMessages, cfg.Agent.SummaryTokens = 100000, 1000000
 	cfg.Agent.ReductionTokens = 2000000
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -68,8 +73,14 @@ func TestBodyTaskContinuesUntilModelFinishes(t *testing.T) {
 	go a.Run(ctx)
 	done := make(chan struct{})
 	start := time.Now()
-	if !a.Submit(Request{Session: sess, SessionKey: "web:body-long-task", Query: msg.Text, TriggerMessageID: msg.ID,
-		BodyPrincipal: &body.Principal{UserID: 1}, Tools: []tool.BaseTool{&reviewClock{count: &invoked}}, SystemInstruction: "执行全部步骤后核验完成", Done: func() { close(done) }}) {
+	request := Request{Session: sess, SessionKey: "web:body-long-task", Query: msg.Text, TriggerMessageID: msg.ID,
+		Tools: []tool.BaseTool{&reviewClock{count: &invoked}}, SystemInstruction: "执行全部步骤后核验完成", Done: func() { close(done) }}
+	if isBody {
+		request.BodyPrincipal = &body.Principal{UserID: 1}
+	} else {
+		request.ReasoningEffort = "high"
+	}
+	if !a.Submit(request) {
 		t.Fatal("submit")
 	}
 	select {

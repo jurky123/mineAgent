@@ -70,6 +70,10 @@ func qqIdentityFromContext(ctx context.Context) []string {
 	return v
 }
 
+func QQIdentityFromContext(ctx context.Context) []string {
+	return append([]string(nil), qqIdentityFromContext(ctx)...)
+}
+
 // BindPlatform 是绑定关系专用的 platform，与昵称留痕的 "qq" 隔离。
 const BindPlatform = "qq_bind"
 

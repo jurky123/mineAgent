@@ -277,7 +277,8 @@ func TestAgentDisabledWithoutModel(t *testing.T) {
 	}
 }
 
-func TestHistoryRoles(t *testing.T) {	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
+func TestHistoryRoles(t *testing.T) {
+	st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,14 +526,14 @@ func TestBackgroundReply(t *testing.T) {
 
 func TestAgentConfigDefaults(t *testing.T) {
 	d := config.DefaultAgent()
-	if d.QQMaxIterations != 80 || d.RunTimeoutSec != 300 || d.HistoryLimit != 200 {
+	if d.QQMaxIterations != 0 || d.RunTimeoutSec != 0 || d.HistoryLimit != 200 {
 		t.Fatalf("defaults = %+v", d)
 	}
 	if d.BackgroundAfterSec != 90 {
 		t.Fatalf("defaults = %+v", d)
 	}
 	cfg := config.Default()
-	if cfg.Agent.QQMaxIterations != 80 {
+	if cfg.Agent.QQMaxIterations != 0 {
 		t.Fatalf("default config agent = %+v", cfg.Agent)
 	}
 }

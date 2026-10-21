@@ -19,7 +19,7 @@ func qqSendCtx(target, session string) context.Context {
 func TestQQMarkdownBuildsInstruction(t *testing.T) {
 	s := NewQQSend()
 	ts := s.Tools()
-	if len(ts) != 2 {
+	if len(ts) != 6 {
 		t.Fatalf("tools = %d", len(ts))
 	}
 	md := ts[0].(tool.InvokableTool)

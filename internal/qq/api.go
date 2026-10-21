@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -154,10 +155,12 @@ func (t *TokenSource) fetch(ctx context.Context) (string, int64, error) {
 // API 是 OpenAPI 的最小调用面：取网关地址 + 发 C2C/群消息。
 // 只发纯文本（msg_type=0）；markdown/富媒体以后有需要再加。
 type API struct {
-	apiBase string
-	tokens  *TokenSource
-	log     *slog.Logger
-	client  *http.Client
+	seqMu     sync.Mutex
+	sequences map[string]replySequence
+	apiBase   string
+	tokens    *TokenSource
+	log       *slog.Logger
+	client    *http.Client
 }
 
 func NewAPI(apiBase string, tokens *TokenSource, log *slog.Logger) *API {
@@ -207,13 +210,13 @@ func (a *API) GatewayURL(ctx context.Context) (string, error) {
 }
 
 type sendMessageReq struct {
-	Content   string       `json:"content,omitempty"`
-	MsgType   int          `json:"msg_type"`
-	MsgID     string       `json:"msg_id,omitempty"`
-	MsgSeq    int          `json:"msg_seq,omitempty"`
-	EventID   string       `json:"event_id,omitempty"`
-	Markdown  *mdPayload   `json:"markdown,omitempty"`
-	Media     *mediaInfo   `json:"media,omitempty"`
+	Content  string     `json:"content,omitempty"`
+	MsgType  int        `json:"msg_type"`
+	MsgID    string     `json:"msg_id,omitempty"`
+	MsgSeq   int        `json:"msg_seq,omitempty"`
+	EventID  string     `json:"event_id,omitempty"`
+	Markdown *mdPayload `json:"markdown,omitempty"`
+	Media    *mediaInfo `json:"media,omitempty"`
 }
 
 type mdPayload struct {
@@ -262,51 +265,85 @@ func (a *API) SendGroupMarkdown(ctx context.Context, groupOpenID, markdown, msgI
 // SendC2CMedia 发单聊富媒体（msg_type=7，fileInfo 来自 UploadC2C*）。
 func (a *API) SendC2CMedia(ctx context.Context, userOpenID, fileInfo, msgID string, msgSeq int) error {
 	return a.post(ctx, "/v2/users/"+userOpenID+"/messages", sendMessageReq{
-		Media: &mediaInfo{FileInfo: fileInfo}, MsgType: 7, MsgID: msgID, MsgSeq: msgSeq,
+		Content: " ", Media: &mediaInfo{FileInfo: fileInfo}, MsgType: 7, MsgID: msgID, MsgSeq: msgSeq,
 	})
 }
 
 // SendGroupMedia 发群富媒体。
 func (a *API) SendGroupMedia(ctx context.Context, groupOpenID, fileInfo, msgID string, msgSeq int) error {
 	return a.post(ctx, "/v2/groups/"+groupOpenID+"/messages", sendMessageReq{
-		Media: &mediaInfo{FileInfo: fileInfo}, MsgType: 7, MsgID: msgID, MsgSeq: msgSeq,
+		Content: " ", Media: &mediaInfo{FileInfo: fileInfo}, MsgType: 7, MsgID: msgID, MsgSeq: msgSeq,
 	})
 }
 
-func (a *API) post(ctx context.Context, path string, req sendMessageReq) error {	tok, err := a.tokens.Token(ctx)
-	if err != nil {
-		return err
+type replySequence struct {
+	at    time.Time
+	count int
+}
+
+// Every text, progress, markdown and media reply shares this allocator.
+func (a *API) nextSequence(path, msgID string) int {
+	if msgID == "" {
+		return 0
 	}
-	body, _ := json.Marshal(req)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.apiBase+path, bytes.NewReader(body))
-	if err != nil {
-		return err
+	a.seqMu.Lock()
+	defer a.seqMu.Unlock()
+	if a.sequences == nil {
+		a.sequences = map[string]replySequence{}
 	}
-	httpReq.Header.Set("Authorization", "QQBot "+tok)
-	httpReq.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := a.client.Do(httpReq)
-	if err != nil {
-		return err
+	for key, s := range a.sequences {
+		if time.Since(s.at) > 65*time.Minute {
+			delete(a.sequences, key)
+		}
 	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if err != nil {
-		return err
+	key := path + ":" + msgID
+	s := a.sequences[key]
+	if s.at.IsZero() {
+		s.at = time.Now()
 	}
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return fmt.Errorf("qq send rate limited: %s", truncate(raw, 200))
+	s.count++
+	a.sequences[key] = s
+	return s.count
+}
+
+// APIError never embeds API bodies, credentials or private destination IDs.
+type APIError struct{ Status, Code int }
+
+func (e *APIError) Error() string {
+	hint := "QQ 接口拒绝请求"
+	switch e.Code {
+	case 40034105, 40034127:
+		hint = "QQ 账号尚未开放该消息权限"
+	case 40034100, 50002:
+		hint = "QQ 消息频率或额度限制"
+	case 304103, 40034005, 40034128:
+		hint = "QQ 被动回复时间或次数已用尽"
+	case 40054005:
+		hint = "QQ 检测到重复消息，请先核查是否已送达"
+	case 40054013:
+		hint = "对方已关闭机器人主动消息"
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("qq send: http %d %s", resp.StatusCode, truncate(raw, 200))
+	return fmt.Sprintf("%s（HTTP %d，code=%d）", hint, e.Status, e.Code)
+}
+func passiveExpired(err error) bool {
+	var e *APIError
+	if !errors.As(err, &e) {
+		return false
 	}
-	var out sendMessageResp
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return fmt.Errorf("qq send decode: %w", err)
+	return e.Code == 304103 || e.Code == 40034005 || e.Code == 40034128
+}
+func (a *API) post(ctx context.Context, path string, req sendMessageReq) error {
+	if req.MsgID != "" {
+		req.MsgSeq = a.nextSequence(path, req.MsgID)
 	}
-	if out.ErrCode != 0 {
-		return fmt.Errorf("qq send failed: err_code=%d msg=%s", out.ErrCode, out.Message)
+	err := a.doJSON(ctx, http.MethodPost, path, req, &sendMessageResp{})
+	if req.MsgID != "" && passiveExpired(err) {
+		req.MsgID = ""
+		req.MsgSeq = 0
+		// Only a definite rejection is retried. Timeouts/5xx/duplicates are ambiguous.
+		return a.doJSON(ctx, http.MethodPost, path, req, &sendMessageResp{})
 	}
-	return nil
+	return err
 }
 
 func truncate(b []byte, n int) string {

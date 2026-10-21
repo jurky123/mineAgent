@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -59,14 +60,20 @@ type Request struct {
 	BodyPrincipal *body.Principal
 	MaxIterations int
 	// Context is an optional per-request cancellation signal, independent of the HTTP request.
-	Context       context.Context
-	Done          func()
-	ToolEvent     func(ToolEvent)
-	pendingEvents []ToolEvent
-	Session       *session.Session
-	SessionKey    string
-	Player        string
-	RequesterID   string
+	Context context.Context
+	Done    func()
+	Started func()
+	// ManagedProgress means the channel owns notices/streaming; no extra LLM
+	// summary or generic delayed "still working" message is needed.
+	ManagedProgress bool
+	ToolEvent       func(ToolEvent)
+	pendingEvents   []ToolEvent
+	Session         *session.Session
+	SessionKey      string
+	Player          string
+	RequesterID     string
+	// Server-provided QQ identity aliases, never taken from model arguments.
+	QQIdentities []string
 	// MCRequester 只有 QQ 通道会填：QQ 身份绑定的 MC 玩家名（可能为空=未绑定）。
 	// 传给 Gateway.Call 作为发给 MC 插件的 requester；审批/审计用的请求者
 	// 仍是 Player（qq:<openid> 形式），见 pendingRun.mcRequester。
@@ -356,8 +363,9 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	a.httpClient = &http.Client{
 		// A model may spend over 90 seconds reasoning before returning headers.
 		// The run context is authoritative; do not impose a shorter hidden cutoff.
-		Timeout: a.runTimeout(),
+		Timeout: 0, // Request context is authoritative, including explicitly unlimited tasks.
 		Transport: &headerTransport{
+			gate:      make(chan struct{}, 1),
 			base:      http.DefaultTransport,
 			userAgent: "MineAgent/" + version.Version,
 			sessionID: "mineagent-" + a.sessionKey,
@@ -465,7 +473,7 @@ func (a *Agent) Enabled() bool { return a.enabled }
 
 func (a *Agent) runTimeout() time.Duration {
 	if a.cfg.RunTimeoutSec <= 0 {
-		return 5 * time.Minute
+		return 0
 	}
 	return time.Duration(a.cfg.RunTimeoutSec) * time.Second
 }
@@ -475,9 +483,9 @@ func (a *Agent) runTimeout() time.Duration {
 func (a *Agent) requestContext(ctx context.Context, req Request) (context.Context, context.CancelFunc) {
 	var rctx context.Context
 	var cancel context.CancelFunc
-	if req.BodyPrincipal == nil {
+	if req.BodyPrincipal == nil && a.runTimeout() > 0 {
 		rctx, cancel = context.WithTimeout(ctx, a.runTimeout())
-	} else if !req.BodyPrincipal.Deadline.IsZero() {
+	} else if req.BodyPrincipal != nil && !req.BodyPrincipal.Deadline.IsZero() {
 		rctx, cancel = context.WithDeadline(ctx, req.BodyPrincipal.Deadline)
 	} else {
 		rctx, cancel = context.WithCancel(ctx)
@@ -518,6 +526,14 @@ func (a *Agent) Submit(req Request) bool {
 	}
 }
 
+// QueueStatus contains counts only; it never exposes another session's request.
+func (a *Agent) QueueStatus() (running, waiting int) {
+	a.pool.mu.Lock()
+	running, waiting = a.pool.active, len(a.pool.pending)
+	a.pool.mu.Unlock()
+	return running, waiting + len(a.jobs)
+}
+
 func (a *Agent) Run(ctx context.Context) {
 	if !a.enabled {
 		return
@@ -536,9 +552,15 @@ func (a *Agent) Run(ctx context.Context) {
 			if key == "" {
 				key = a.sessionKey
 			}
-			if !a.pool.enqueue(ctx, key, func() { a.respond(ctx, req) }) {
+			queueCtx := ctx
+			if req.Context != nil {
+				queueCtx = req.Context
+			}
+			if !a.pool.enqueueCancelable(queueCtx, key, func() { a.respond(ctx, req) }, req.Done) {
 				a.log.Warn("agent session queue full, dropping request", "session", key, "player", req.Player)
-				_ = req.Session.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", a.target(req))
+				if req.Context == nil || req.Context.Err() == nil {
+					_ = req.Session.Reply(ctx, "任务队列已满，本次未执行，请稍后再试。", a.target(req))
+				}
 				if req.Done != nil {
 					req.Done()
 				}
@@ -605,12 +627,18 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	if req.Context != nil && req.Context.Err() != nil {
 		return
 	}
+	if req.Started != nil {
+		req.Started()
+	}
 	sessionKey := req.SessionKey
 	if sessionKey == "" {
 		sessionKey = a.sessionKey
 	}
 	rctx = tools.WithRequester(rctx, req.Player)
 	rctx = tools.WithRequesterID(rctx, req.RequesterID)
+	if strings.HasPrefix(req.Player, tools.QQRequesterPrefix) {
+		rctx = tools.WithQQIdentity(rctx, req.QQIdentities)
+	}
 	if req.MCRequester != "" {
 		rctx = tools.WithMCRequester(rctx, req.MCRequester)
 	}
@@ -649,7 +677,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	// 注意 QQ 被动窗口 5 分钟：RunTimeoutSec 默认 300s 卡着窗口，后台结果
 	// 发出去时 msg_id 可能已过期，channel.Send 会自动降级成主动消息。
 	backgroundAfter := time.Duration(a.cfg.BackgroundAfterSec) * time.Second
-	if req.ReplyTarget == "" || backgroundAfter <= 0 {
+	if req.ReplyTarget == "" || backgroundAfter <= 0 || req.ManagedProgress {
 		replied := a.consume(rctx, req, sessionKey, runnerKey, cpID, iter, progress)
 		if replied {
 			a.log.Info("agent replied", "session", sessionKey, "player", req.Player, "took", time.Since(start).Round(time.Millisecond).String())
@@ -734,7 +762,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	}
 	if req.MaxIterations > 0 {
 		maxIter = req.MaxIterations
-	} else if req.BodyPrincipal != nil {
+	} else if req.BodyPrincipal != nil || maxIter <= 0 {
 		// Eino interprets zero as a finite default (20), not unlimited. Use its
 		// graph's native MaxInt ceiling; task completion/cancellation controls us.
 		maxIter = math.MaxInt
@@ -903,7 +931,7 @@ func (a *Agent) consume(ctx context.Context, req Request, sessionKey, runnerKey,
 		if msg.Role == schema.Tool && req.Progress != nil && len(started) == 0 {
 			req.Progress("工具已返回，正在整理回复…")
 		}
-		if a.cfg.ProgressSummary && req.Progress != nil && progress.needsSummary() {
+		if a.cfg.ProgressSummary && !req.ManagedProgress && req.Progress != nil && progress.needsSummary() {
 			progress.markSummarized()
 			go a.summarizeProgress(ctx, req, progress)
 		}
@@ -1022,6 +1050,9 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	defer cancel()
 	rctx = tools.WithRequester(rctx, run.player)
 	rctx = tools.WithRequesterID(rctx, run.requesterID)
+	if strings.HasPrefix(run.player, tools.QQRequesterPrefix) {
+		rctx = tools.WithQQIdentity(rctx, run.request.QQIdentities)
+	}
 	if run.mcRequester != "" {
 		rctx = tools.WithMCRequester(rctx, run.mcRequester)
 	}
@@ -1116,19 +1147,48 @@ func containsStr(list []string, s string) bool {
 }
 
 type headerTransport struct {
+	gate      chan struct{}
 	base      http.RoundTripper
 	userAgent string
 	sessionID string
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := req.Context().Err(); err != nil {
+		return nil, err
+	}
+	if t.gate != nil {
+		select {
+		case t.gate <- struct{}{}:
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
+	}
+	release := func() {
+		if t.gate != nil {
+			<-t.gate
+		}
+	}
 	r := req.Clone(req.Context())
 	r.Header.Set("User-Agent", t.userAgent)
 	if t.sessionID != "" {
 		r.Header.Set("x-opencode-session", t.sessionID)
 	}
-	return t.base.RoundTrip(r)
+	res, err := t.base.RoundTrip(r)
+	if err != nil || res == nil || res.Body == nil {
+		release()
+	} else {
+		res.Body = &serializedBody{ReadCloser: res.Body, release: sync.OnceFunc(release)}
+	}
+	return res, err
 }
+
+type serializedBody struct {
+	io.ReadCloser
+	release func()
+}
+
+func (b *serializedBody) Close() error { defer b.release(); return b.ReadCloser.Close() }
 
 // history 只读属于 sessionKey 自己的消息+摘要，会话隔离就靠它。
 // QQ 侧 AuthorKind 也是 "player"，展示时用 [QQ名] 前缀（调用方 Ingest 时拼好）。
@@ -1162,6 +1222,9 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 		limit = 200
 	}
 	recent, err := a.store.MessagesBetween(ctx, sessionKey, cutoff, maxID, limit)
+	if strings.HasPrefix(sessionKey, "qq:") && upToID > 0 {
+		recent, err = a.store.QQMessagesForTrigger(ctx, sessionKey, cutoff, upToID, limit)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1185,6 +1248,9 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 		if m.ID > cutoff {
 			cutoff = m.ID
 		}
+	}
+	if strings.HasPrefix(sessionKey, "qq:") && upToID > 0 {
+		cutoff = min(cutoff, upToID)
 	}
 	return msgs, cutoff, nil
 }

@@ -165,3 +165,34 @@ func TestPoolRejectsCanceledEnqueue(t *testing.T) {
 		t.Fatal("created a worker for canceled request")
 	}
 }
+
+func TestPoolGlobalFIFOAndCancelledQueueRelease(t *testing.T) {
+	p := newSessionPool(1, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	first := make(chan struct{})
+	release := make(chan struct{})
+	order := make(chan int, 4)
+	p.enqueue(context.Background(), "first", func() { close(first); <-release; order <- 1 })
+	<-first
+	cctx, cancel := context.WithCancel(context.Background())
+	removed := make(chan struct{})
+	p.enqueueCancelable(cctx, "cancel", func() { t.Error("cancelled task ran") }, func() { close(removed) })
+	p.enqueue(context.Background(), "different", func() { order <- 2 })
+	p.enqueue(context.Background(), "first", func() { order <- 3 })
+	cancel()
+	select {
+	case <-removed:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled task retained queue slot")
+	}
+	close(release)
+	for _, want := range []int{1, 2, 3} {
+		select {
+		case got := <-order:
+			if got != want {
+				t.Fatalf("out of order: got %d want %d", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("queue stuck")
+		}
+	}
+}

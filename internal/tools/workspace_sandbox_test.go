@@ -180,3 +180,25 @@ func TestWorkspaceExecTimeoutKillsDescendants(t *testing.T) {
 		t.Fatal("descendant survived cancellation")
 	}
 }
+
+func TestWorkspaceZeroDeadlineAllowsWorkAndStillCancels(t *testing.T) {
+	requireWorkspaceSandbox(t)
+	w := testWorkspace(t)
+	w.cfg.ExecTimeoutSec = 0
+	out, err := w.exec(context.Background(), map[string]any{"command": "sleep 0.1; echo completed"})
+	if err != nil || !strings.Contains(out, "completed") {
+		t.Fatalf("zero deadline killed command: %s / %v", out, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = w.exec(ctx, map[string]any{"command": "sleep 5; echo should-not-finish"})
+	}()
+	time.AfterFunc(100*time.Millisecond, cancel)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("unlimited command ignored user cancellation")
+	}
+}

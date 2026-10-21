@@ -39,6 +39,11 @@ type Minecraft struct {
 // QQ 接官方 Bot（q.qq.com 注册，无封号风险）。
 // 留空 appId/appSecret 即禁用 QQ 通道，不影响现有 MC 链路。
 type QQ struct {
+	// ReasoningEffort defaults to high for QQ, independently of web preferences.
+	ReasoningEffort string `json:"reasoningEffort"`
+	// StreamProgress uses the official C2C stream endpoint; groups receive sparse progress.
+	StreamProgress bool `json:"streamProgress"`
+
 	AppID  string `json:"appId"`
 	Secret string `json:"appSecret"`
 	// OpenAPI 基地址，默认 https://api.bot.qq.com；沙箱联调用得上时再改。
@@ -47,7 +52,7 @@ type QQ struct {
 	// member_openid，或 union_openid，任意一个命中即可）。留空则谁都不能用，
 	// 日志里会打印每次消息的 openid，抄进去即可。
 	AdminOpenIDs []string `json:"adminOpenIds"`
-	// 同一会话收到消息后回复的最小间隔（毫秒），防刷屏。
+	// 兼容旧配置；QQ 入站现在去重后排队，不再按此间隔静默丢消息。
 	MinIntervalMS int `json:"minIntervalMs"`
 	// 每个 QQ 用户最多同时挂起的 MC 高权限审批数，防刷审批。
 	MaxPendingPerUser int `json:"maxPendingPerUser"`
@@ -291,10 +296,9 @@ type Storage struct {
 // 全是"越大越强、越贵越慢"的权衡，默认值按 2 核/7.5G 小机器 + QQ 5 分钟
 // 被动窗口 + flash 级便宜模型标定，想更强就往上拧。
 type Agent struct {
-	// QQ 通道单轮最大工具调用迭代数（默认 80）。MC 通道保持 8（游戏聊天要短平快）。
+	// 非 MC 对话工具迭代上限；0（默认）不设上限。MC 普通聊天保持 8。
 	QQMaxIterations int `json:"qqMaxIterations"`
-	// 单轮 run 超时秒数（默认 300=5 分钟，卡着 QQ 群被动 5 分钟窗口）。
-	// 同时约束整轮运行与单次模型 HTTP 等待；到期终止，后台提示不会延长预算。
+	// 单轮任务总时限，0（默认）不设时限，主动取消与服务停止仍然有效。
 	RunTimeoutSec int `json:"runTimeoutSec"`
 	// 每次 run 喂给模型的历史消息条数（默认 200）。越大记得越多、token 越多。
 	HistoryLimit int `json:"historyLimit"`
@@ -309,8 +313,7 @@ type Agent struct {
 	// 后台任务：run 超过此秒数还没完（默认 90），先给 QQ 回一条"正在做"，
 	// 跑完再主动推结果。0=关闭后台任务（一直等到 RunTimeoutSec）。
 	BackgroundAfterSec int `json:"backgroundAfterSec"`
-	// 同时跑的任务数上限（默认 4）：同一会话严格串行，不同会话并行，
-	// 超出的会话排队。模型调用是网络 IO，4 并发对 2 核小机器足够。
+	// 同时运行的任务数，默认 1：所有会话按 FIFO 顺序执行；显式大于 1 才并行。
 	MaxConcurrentRuns int `json:"maxConcurrentRuns"`
 	// 进度总结（默认开）：长任务里用一次额外的模型请求，把"正在搜索资料…"
 	// 汇总成更具体的进度（如"正在查 PaperMC 最新版本并画图"）。失败自动忽略。
@@ -319,15 +322,15 @@ type Agent struct {
 
 func DefaultAgent() Agent {
 	return Agent{
-		QQMaxIterations:    80,
-		RunTimeoutSec:      300,
+		QQMaxIterations:    0,
+		RunTimeoutSec:      0,
 		HistoryLimit:       200,
 		SummaryTokens:      12000,
 		SummaryMessages:    80,
 		ReductionTokens:    24000,
 		ReductionKeep:      4,
 		BackgroundAfterSec: 90,
-		MaxConcurrentRuns:  4,
+		MaxConcurrentRuns:  1,
 		ProgressSummary:    true,
 	}
 }
@@ -348,7 +351,7 @@ func Default() Config {
 		LogLevel:     "info",
 		AllowedRoles: []string{"minecraft"},
 		Minecraft:    Minecraft{Trigger: "@agent", SessionID: "minecraft-main", ReplyMode: "broadcast"},
-		QQ:           QQ{APIBase: "https://api.bot.qq.com", MinIntervalMS: 1500, MaxPendingPerUser: 2},
+		QQ:           QQ{APIBase: "https://api.bot.qq.com", MinIntervalMS: 1500, MaxPendingPerUser: 2, ReasoningEffort: "high", StreamProgress: true},
 		WeCom:        DefaultWeCom(),
 		AIBot:        DefaultAIBot(),
 		WeChat:       DefaultWeChat(),
@@ -358,7 +361,7 @@ func Default() Config {
 		Workspace: Workspace{
 			Root:           "workspace",
 			MaxFileBytes:   65536,
-			ExecTimeoutSec: 15,
+			ExecTimeoutSec: 0,
 			MaxOutputBytes: 8192,
 			Review:         ExecReview{TimeoutSec: 20},
 		},
@@ -456,7 +459,7 @@ func Load(path string) (Config, error) {
 	if cfg.Workspace.MaxFileBytes <= 0 {
 		cfg.Workspace.MaxFileBytes = Default().Workspace.MaxFileBytes
 	}
-	if cfg.Workspace.ExecTimeoutSec <= 0 {
+	if cfg.Workspace.ExecTimeoutSec < 0 {
 		cfg.Workspace.ExecTimeoutSec = Default().Workspace.ExecTimeoutSec
 	}
 	if cfg.Workspace.MaxOutputBytes <= 0 {
@@ -465,11 +468,19 @@ func Load(path string) (Config, error) {
 	if cfg.Workspace.Review.TimeoutSec <= 0 {
 		cfg.Workspace.Review.TimeoutSec = Default().Workspace.Review.TimeoutSec
 	}
+	if cfg.QQ.ReasoningEffort == "" {
+		cfg.QQ.ReasoningEffort = "high"
+	}
+	switch cfg.QQ.ReasoningEffort {
+	case "none", "low", "medium", "high", "xhigh":
+	default:
+		return cfg, fmt.Errorf("qq.reasoningEffort 无效")
+	}
 	d := DefaultAgent()
-	if cfg.Agent.QQMaxIterations <= 0 {
+	if cfg.Agent.QQMaxIterations < 0 {
 		cfg.Agent.QQMaxIterations = d.QQMaxIterations
 	}
-	if cfg.Agent.RunTimeoutSec <= 0 {
+	if cfg.Agent.RunTimeoutSec < 0 {
 		cfg.Agent.RunTimeoutSec = d.RunTimeoutSec
 	}
 	if cfg.Agent.HistoryLimit <= 0 {

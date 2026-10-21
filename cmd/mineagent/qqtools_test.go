@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
+	"mineagent/internal/config"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -76,4 +79,37 @@ func TestSendQQTargetBinding(t *testing.T) {
 	}
 	_ = json.Marshal
 	_ = storage.KindMarkdown
+}
+
+func TestQQMediaToolsCannotReadWorkspaceAsOrdinaryUser(t *testing.T) {
+	ctx := tools.WithRequester(context.Background(), "qq:ordinary")
+	ctx = tools.WithQQReplyTarget(ctx, "c2c:U:M")
+	for _, base := range tools.NewQQSend().Tools() {
+		info, _ := base.Info(ctx)
+		if info.Name != "qq_file" && info.Name != "qq_image" && info.Name != "qq_video" && info.Name != "qq_audio" {
+			continue
+		}
+		g := &qqToolGate{inner: base}
+		out, err := g.InvokableRun(ctx, `{"path":"private.txt"}`)
+		if err != nil || !strings.Contains(out, "仅限 QQ 管理员") {
+			t.Fatalf("%s was not denied: %s / %v", info.Name, out, err)
+		}
+	}
+}
+
+func TestQQMediaAdminAcceptsTrustedIdentityAliases(t *testing.T) {
+	ctx := tools.WithRequester(context.Background(), "qq:union")
+	ctx = tools.WithQQIdentity(ctx, []string{"union", "configured-member"})
+	ctx = tools.WithQQReplyTarget(ctx, "c2c:U:M")
+	ws := tools.NewWorkspace(config.Workspace{}, map[string][]string{"qq": {"configured-member"}}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	gate := &qqToolGate{ws: ws, inner: tools.NewQQSend().Tools()[1]}
+	out, err := gate.InvokableRun(ctx, `{"path":"plot.png"}`)
+	if err != nil || strings.Contains(out, "仅限 QQ 管理员") || !strings.Contains(out, "未就绪") {
+		t.Fatalf("trusted alias not recognized: %s / %v", out, err)
+	}
+	ctx = tools.WithRequester(ctx, "web:configured-member")
+	out, _ = gate.InvokableRun(ctx, `{"path":"plot.png"}`)
+	if !strings.Contains(out, "仅限 QQ 管理员") {
+		t.Fatal("cross-channel identity was accepted")
+	}
 }

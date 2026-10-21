@@ -33,7 +33,7 @@ func TestModelRequestDeadlineFollowsRunBudget(t *testing.T) {
 	}{
 		{"long reasoning is not cut at ninety seconds", 180, 6 * time.Minute, 3 * time.Minute},
 		{"short caller deadline wins", 180, 10 * time.Second, 10 * time.Second},
-		{"default budget", 0, 6 * time.Minute, 5 * time.Minute},
+		{"unlimited budget respects parent", 0, 6 * time.Minute, 6 * time.Minute},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
@@ -59,7 +59,9 @@ func TestModelRequestDeadlineFollowsRunBudget(t *testing.T) {
 				observed = time.Until(deadline)
 				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
 			})
-			ctx, cancel := context.WithTimeout(context.Background(), tc.parent)
+			parent, cancelParent := context.WithTimeout(context.Background(), tc.parent)
+			defer cancelParent()
+			ctx, cancel := a.requestContext(parent, Request{})
 			defer cancel()
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.Model.BaseURL+"/chat/completions", strings.NewReader(`{}`))
 			if err != nil {
@@ -113,4 +115,32 @@ func TestModelAPIErrorHints(t *testing.T) {
 	if hint := modelFailureHint(fmt.Errorf("node: %w", context.Canceled)); !strings.Contains(hint, "停止") {
 		t.Fatalf("cancellation misreported: %s", hint)
 	}
+}
+
+func TestModelTransportSerializesUntilBodyClosedAndWaitingIsCancelable(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	tr := &headerTransport{gate: make(chan struct{}, 1), base: deadlineTransport(func(r *http.Request) (*http.Response, error) {
+		entered <- struct{}{}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+	})}
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "https://fixture.invalid", nil)
+	first, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	waiting, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := tr.RoundTrip(req.WithContext(waiting)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiting request ignored cancellation: %v", err)
+	}
+	if len(entered) != 0 {
+		t.Fatal("a second model request overlapped")
+	}
+	first.Body.Close()
+	second, err := tr.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.Body.Close()
 }

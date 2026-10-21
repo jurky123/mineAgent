@@ -16,7 +16,9 @@
     "apiBase": "https://api.bot.qq.com",
     "adminOpenIds": [],
     "minIntervalMs": 1500,
-    "maxPendingPerUser": 2
+    "maxPendingPerUser": 2,
+    "reasoningEffort": "high",
+    "streamProgress": true
   },
   "wecom": {
     "corpId": "",
@@ -98,20 +100,20 @@
     "approvalTimeoutSeconds": 180
   },
   "agent": {
-    "qqMaxIterations": 80,
-    "runTimeoutSec": 300,
+    "qqMaxIterations": 0,
+    "runTimeoutSec": 0,
     "historyLimit": 200,
     "summaryTokens": 12000,
     "summaryMessages": 80,
     "reductionTokens": 24000,
     "reductionKeep": 4,
     "backgroundAfterSec": 90,
-    "maxConcurrentRuns": 4
+    "maxConcurrentRuns": 1
   },
   "workspace": {
     "root": "workspace",
     "maxFileBytes": 65536,
-    "execTimeoutSec": 15,
+    "execTimeoutSec": 0,
     "maxOutputBytes": 8192,
     "review": {
       "baseURL": "",

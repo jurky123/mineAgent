@@ -133,7 +133,7 @@ func TestSplitImageTarget(t *testing.T) {
 	// 非法：段数不对 / 非 ROBOT / path 空或含冒号 / kind 非法。
 	for _, bad := range []string{
 		"c2c:U1:MSG1",
-		"c2c:U1:NOTROBOTxxx:p.png",
+		"c2c::MSG:p.png",
 		"dm:U1:ROBOT1.0_a:p.png",
 		"c2c:U1:ROBOT1.0_a:",
 		"c2c:U1:ROBOT1.0_a:a:b.png",

@@ -29,7 +29,7 @@ type QQSend struct{}
 func NewQQSend() *QQSend { return &QQSend{} }
 
 func (s *QQSend) Tools() []tool.BaseTool {
-	return []tool.BaseTool{
+	out := []tool.BaseTool{
 		&qqSendTool{
 			name: "qq_markdown",
 			desc: "发一条 markdown 版式消息到当前 QQ 会话（标题/加粗/列表/引用/链接都支持，不要用表格）。content 写 markdown 原文，5000字内。",
@@ -39,13 +39,25 @@ func (s *QQSend) Tools() []tool.BaseTool {
 		},
 		&qqSendTool{
 			name: "qq_image",
-			desc: "发一张 workspace 内的图片到当前 QQ 会话。先用 workspace_write/exec 把图做好（png/jpg，20MB内），再调这个发。path 写 workspace 相对路径，如 plot.png。",
+			desc: "发送 workspace 内图片或动图到当前 QQ 会话，支持 PNG/JPG/GIF/WebP/BMP，保留 GIF 动画；20MB 内。path 使用相对路径。仅管理员可读取和发送 workspace 文件。",
 			params: map[string]*schema.ParameterInfo{
 				"path":    {Type: schema.String, Desc: "workspace 内相对路径，如 plot.png", Required: true},
 				"caption": {Type: schema.String, Desc: "图片说明，可空（v1 只发图不带字）"},
 			},
 		},
 	}
+	for _, media := range []struct{ name, desc string }{
+		{"qq_file", "发送 workspace 文件（文档、代码、压缩包等，200MB 内）到当前 QQ 会话。仅管理员可用；上传失败如实说明，不声称已发送。"},
+		{"qq_video", "发送 workspace MP4 视频到当前 QQ 会话，30MB 内；仅管理员可用。"},
+		{"qq_audio", "发送 workspace 语音（SILK/MP3/WAV/OGG）到当前 QQ 会话，20MB 内；仅管理员可用。"},
+	} {
+		out = append(out, &qqSendTool{name: media.name, desc: media.desc, params: map[string]*schema.ParameterInfo{
+			"path":    {Type: schema.String, Desc: "workspace 内相对路径", Required: true},
+			"caption": {Type: schema.String, Desc: "可选说明"},
+		}})
+	}
+	out = append(out, &qqSendTool{name: "qq_emoji", desc: "向当前 QQ 会话发送一个 Unicode 表情或简短颜文字；自定义表情包/动图使用 qq_image 发送 GIF。不是频道的表情表态接口。", params: map[string]*schema.ParameterInfo{"content": {Type: schema.String, Desc: "表情，如 👍 或 (｡･ω･｡)", Required: true}}})
+	return out
 }
 
 type qqSendTool struct {
@@ -94,16 +106,24 @@ func (t *qqSendTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 			"text":     content,
 		})
 		return string(out), nil
-	case "qq_image":
+	case "qq_emoji":
+		content, _ := args["content"].(string)
+		if strings.TrimSpace(content) == "" || len([]rune(content)) > 32 {
+			return errorJSON("表情内容须为 1–32 个字符"), nil
+		}
+		out, _ := json.Marshal(map[string]string{QQSEND_KEY: t.name, "target": "emoji:" + target, "text": content})
+		return string(out), nil
+	case "qq_image", "qq_file", "qq_video", "qq_audio":
 		path, _ := args["path"].(string)
 		path = strings.TrimSpace(path)
 		if path == "" {
 			return errorJSON("path 不能为空"), nil
 		}
 		caption, _ := args["caption"].(string)
+		prefix := map[string]string{"qq_image": storage.KindImage, "qq_file": storage.KindFile, "qq_video": "video:", "qq_audio": "audio:"}[t.name]
 		out, _ := json.Marshal(map[string]string{
 			QQSEND_KEY: t.name,
-			"target":   storage.KindImage + target + ":" + path,
+			"target":   prefix + target + ":" + path,
 			"text":     caption,
 		})
 		return string(out), nil

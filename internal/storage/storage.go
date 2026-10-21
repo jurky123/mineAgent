@@ -268,6 +268,31 @@ func (s *Store) MessagesBetween(ctx context.Context, sessionID string, afterID, 
 	return msgs, nil
 }
 
+// QQMessagesForTrigger includes late replies to earlier queued messages, ordered
+// by their inbound target. It excludes later queued users and their replies.
+// No schema change: QQ already binds all replies to the inbound message target.
+func (s *Store) QQMessagesForTrigger(ctx context.Context, sessionID string, afterID, triggerID int64, limit int) ([]Message, error) {
+	rows, err := s.db.QueryContext(ctx, `WITH turns AS (
+	 SELECT target, MIN(id) AS turn_id FROM messages
+	 WHERE session_id=? AND author_kind='player' AND target<>'' GROUP BY target
+	) SELECT m.id,m.session_id,m.channel,m.author_kind,m.author_id,m.author_name,m.text,m.target,m.created_at
+	 FROM messages m LEFT JOIN turns t ON t.target=m.target
+	 WHERE m.session_id=? AND m.id>? AND COALESCE(t.turn_id,m.id)<=?
+	 ORDER BY COALESCE(t.turn_id,m.id) DESC,m.id DESC LIMIT ?`, sessionID, sessionID, afterID, triggerID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	msgs, err := scanMessages(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	return msgs, nil
+}
+
 // MessageByID 按主键取单条消息（网页通道下载附件时校验归属用）。
 func (s *Store) MessageByID(ctx context.Context, id int64) (*Message, error) {
 	var m Message

@@ -2,6 +2,7 @@ package qq
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -28,7 +29,7 @@ import (
 // 事件才会推过来（GROUP_AT_MESSAGE_CREATE），content 已去@前缀，直接触发。
 //
 // 安全：
-//   - 同一会话回复最小间隔 minIntervalMs，防刷屏/防循环。
+//   - 入站去重 + 有界 FIFO；不因消息到达太快而静默丢弃。
 //   - 去重：同一 msgID 只处理一次（平台可能重推，见消息收发概述）。
 //   - QQ 发起的 MC 高权限工具（teleport/give/run_command）跳过"本人权限预检"
 //     直接转游戏内管理员审批（privileged.go 的 qq: 前缀分支），并受
@@ -53,10 +54,8 @@ type Channel struct {
 
 	mu       sync.Mutex
 	sessions map[string]*session.Session
-	lastSend map[string]time.Time
 	seen     map[string]time.Time
-
-	minInterval time.Duration
+	tasks    map[string][]*qqTask
 }
 
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
@@ -73,9 +72,7 @@ func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *st
 		api:           api,
 		qqTools:       qqTools,
 		sessions:      make(map[string]*session.Session),
-		lastSend:      make(map[string]time.Time),
 		seen:          make(map[string]time.Time),
-		minInterval:   time.Duration(cfg.QQ.MinIntervalMS) * time.Millisecond,
 	}
 	c.gw = NewGateway(api, api.tokens, log, c.onMessage)
 	return c
@@ -114,7 +111,16 @@ func (c *Channel) Name() string { return "qq" }
 
 func (c *Channel) Start() { c.gw.Start() }
 
-func (c *Channel) Stop() { c.gw.Stop() }
+func (c *Channel) Stop() {
+	c.mu.Lock()
+	for _, tasks := range c.tasks {
+		for _, t := range tasks {
+			t.cancel()
+		}
+	}
+	c.mu.Unlock()
+	c.gw.Stop()
+}
 
 // Send 实现 session.Channel：agent 的回复经这里发回 QQ。
 // 纯文本 Target="c2c:<openid>:<msgID>" 或 "group:<groupid>:<msgID>"。
@@ -124,136 +130,95 @@ func (c *Channel) Stop() { c.gw.Stop() }
 // 那就降级成主动消息再试一次。
 func (c *Channel) Send(ctx context.Context, msg storage.Message) error {
 	target := msg.Target
-	kind := storage.KindText
+	for prefix, kind := range map[string]int{storage.KindImage: FileImage, storage.KindFile: FileFile, "video:": FileVideo, "audio:": FileAudio} {
+		if strings.HasPrefix(target, prefix) {
+			return c.sendMedia(ctx, strings.TrimPrefix(target, prefix), msg.Text, kind)
+		}
+	}
 	if strings.HasPrefix(target, storage.KindMarkdown) {
-		kind = storage.KindMarkdown
-		target = strings.TrimPrefix(target, storage.KindMarkdown)
-	} else if strings.HasPrefix(target, storage.KindImage) {
-		kind = storage.KindImage
-		target = strings.TrimPrefix(target, storage.KindImage)
+		return c.sendMarkdown(ctx, strings.TrimPrefix(target, storage.KindMarkdown), msg.Text)
 	}
-	switch kind {
-	case storage.KindMarkdown:
-		return c.sendMarkdown(ctx, target, firstLine(msg.Text, 4000))
-	case storage.KindImage:
-		return c.sendImage(ctx, target, msg.Text)
-	default:
-		return c.sendText(ctx, target, firstLine(msg.Text, 1000))
-	}
+	target = strings.TrimPrefix(target, "emoji:")
+	return c.sendText(ctx, target, msg.Text)
 }
-
 func (c *Channel) sendText(ctx context.Context, target, text string) error {
 	kind, id, msgID := splitTarget(target)
-	switch kind {
-	case "c2c":
-		if msgID != "" {
-			if err := c.api.SendC2C(ctx, id, text, msgID, 1); err == nil {
-				return nil
-			} else {
-				c.log.Warn("qq c2c passive reply failed, fallback to active", "err", err)
-			}
-		}
-		return c.api.SendC2C(ctx, id, text, "", 0)
-	case "group":
-		if msgID != "" {
-			if err := c.api.SendGroup(ctx, id, text, msgID, 1); err == nil {
-				return nil
-			} else {
-				c.log.Warn("qq group passive reply failed, fallback to active", "err", err)
-			}
-		}
-		return c.api.SendGroup(ctx, id, text, "", 0)
-	default:
-		c.log.Warn("qq send with bad target", "target", target)
-		return nil
+	if (kind != "c2c" && kind != "group") || id == "" {
+		return fmt.Errorf("QQ 发送目标无效")
 	}
+	// Preserve complete results; split at paragraph/line boundaries where possible.
+	chunks := splitText(text, 1000)
+	for i, chunk := range chunks {
+		var err error
+		if kind == "c2c" {
+			err = c.api.SendC2C(ctx, id, chunk, msgID, 0)
+		} else {
+			err = c.api.SendGroup(ctx, id, chunk, msgID, 0)
+		}
+		if err != nil {
+			return fmt.Errorf("已发 %d/%d 段；剩余内容未确认，勿重复投递：%w", i, len(chunks), err)
+		}
+	}
+	return nil
 }
-
-// sendMarkdown 发 markdown（msg_type=2）。失败不降级纯文本：
-// 版式乱了比多发一条更糟，调用方（agent 工具）收到 error 自会决定重试。
-func (c *Channel) sendMarkdown(ctx context.Context, target, markdown string) error {
-	if strings.TrimSpace(markdown) == "" {
-		return nil
+func splitText(text string, limit int) []string {
+	r := []rune(strings.TrimSpace(text))
+	var chunks []string
+	for len(r) > 0 {
+		n := min(len(r), limit)
+		if n < len(r) {
+			for i := n - 1; i > n/2; i-- {
+				if r[i] == '\n' {
+					n = i + 1
+					break
+				}
+			}
+		}
+		chunks = append(chunks, string(r[:n]))
+		r = r[n:]
 	}
+	return chunks
+}
+func (c *Channel) sendMarkdown(ctx context.Context, target, text string) error {
 	kind, id, msgID := splitTarget(target)
+	if len([]rune(text)) > 5000 {
+		return fmt.Errorf("Markdown 超过 5000 字，请分段发送")
+	}
 	switch kind {
 	case "c2c":
-		if msgID != "" {
-			if err := c.api.SendC2CMarkdown(ctx, id, markdown, msgID, 1); err == nil {
-				return nil
-			} else {
-				c.log.Warn("qq c2c markdown passive failed, fallback to active", "err", err)
-			}
-		}
-		return c.api.SendC2CMarkdown(ctx, id, markdown, "", 0)
+		return c.api.SendC2CMarkdown(ctx, id, text, msgID, 0)
 	case "group":
-		if msgID != "" {
-			if err := c.api.SendGroupMarkdown(ctx, id, markdown, msgID, 1); err == nil {
-				return nil
-			} else {
-				c.log.Warn("qq group markdown passive failed, fallback to active", "err", err)
-			}
-		}
-		return c.api.SendGroupMarkdown(ctx, id, markdown, "", 0)
-	default:
-		c.log.Warn("qq markdown with bad target", "target", target)
-		return nil
+		return c.api.SendGroupMarkdown(ctx, id, text, msgID, 0)
 	}
+	return fmt.Errorf("QQ 发送目标无效")
 }
-
-// sendImage 发 workspace 内图片。Send 调进来时 target 已剥掉 "img:" 前缀，
-// 格式 "<c2c|group>:<id>:<msgID>:<relPath>"——注意 msgID 是 ROBOT1.0_...，
-// 里面本身就带冒号，所以必须 SplitN(: , 5) 再取 [1:3] 拼回 msgID。
-// caption 放 msg.Text（v1 图片不带 caption，只发图；caption 记日志备查）。
-// 失败返回 error（agent 工具转告用户），不静默吞。
 func (c *Channel) sendImage(ctx context.Context, target, caption string) error {
-	kind, id, msgID, relPath := splitImageTarget(target)
-	if kind == "" {
-		c.log.Warn("qq image with bad target", "target", target)
-		return nil
+	return c.sendMedia(ctx, target, caption, FileImage)
+}
+func (c *Channel) sendMedia(ctx context.Context, target, caption string, fileType int) error {
+	kind, id, msgID, rel := splitImageTarget(target)
+	if kind == "" || id == "" {
+		return fmt.Errorf("QQ 媒体发送目标无效")
 	}
-	if relPath == "" {
-		c.log.Warn("qq image with empty path", "target", target)
-		return nil
-	}
-	// 上传+发送整体限 90s（分片 PUT 可能慢），ctx 是 agent 的 3min run ctx，够用。
-	upCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-	var fileInfo string
-	var err error
-	switch kind {
-	case "c2c":
-		fileInfo, err = c.api.UploadC2CLocalImage(upCtx, id, c.workspaceRoot, relPath)
-	case "group":
-		fileInfo, err = c.api.UploadGroupLocalImage(upCtx, id, c.workspaceRoot, relPath)
-	default:
-		c.log.Warn("qq image with bad kind", "target", target)
-		return nil
-	}
+	info, err := c.api.UploadLocalMedia(ctx, kind, id, c.workspaceRoot, rel, fileType)
 	if err != nil {
-		c.log.Warn("qq image upload failed", "target", target, "err", err, "caption", firstLine(caption, 100))
 		return err
 	}
-	switch kind {
-	case "c2c":
-		if msgID != "" {
-			if e := c.api.SendC2CMedia(ctx, id, fileInfo, msgID, 1); e == nil {
-				return nil
-			} else {
-				c.log.Warn("qq c2c media passive failed, fallback to active", "err", e)
-			}
-		}
-		return c.api.SendC2CMedia(ctx, id, fileInfo, "", 0)
-	default:
-		if msgID != "" {
-			if e := c.api.SendGroupMedia(ctx, id, fileInfo, msgID, 1); e == nil {
-				return nil
-			} else {
-				c.log.Warn("qq group media passive failed, fallback to active", "err", e)
-			}
-		}
-		return c.api.SendGroupMedia(ctx, id, fileInfo, "", 0)
+	// Caption is sent only after the media is confirmed, never instead of it.
+	if kind == "c2c" {
+		err = c.api.SendC2CMedia(ctx, id, info, msgID, 0)
+	} else {
+		err = c.api.SendGroupMedia(ctx, id, info, msgID, 0)
 	}
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(caption) != "" {
+		if err = c.sendText(ctx, strings.Join([]string{kind, id, msgID}, ":"), caption); err != nil {
+			return fmt.Errorf("媒体已发送，说明发送失败：%w", err)
+		}
+	}
+	return nil
 }
 
 func (c *Channel) onMessage(m InboundMessage) {
@@ -299,16 +264,6 @@ func (c *Channel) onMessage(m InboundMessage) {
 		return
 	}
 
-	// 限流：同一会话两次回复至少间隔 minInterval。
-	c.mu.Lock()
-	last := c.lastSend[sessionKey]
-	if time.Since(last) < c.minInterval {
-		c.mu.Unlock()
-		c.log.Debug("qq rate limited", "session", sessionKey)
-		return
-	}
-	c.mu.Unlock()
-
 	sess, err := c.session(sessionKey)
 	if err != nil {
 		c.log.Error("qq session", "err", err)
@@ -320,6 +275,16 @@ func (c *Channel) onMessage(m InboundMessage) {
 	qqIDs := []string{m.UnionOpenID, m.UserOpenID, m.MemberOpenID}
 	qqID := firstNonEmpty(qqIDs...)
 	isAdmin := c.isAdmin(qqIDs...)
+	command := strings.TrimSpace(strings.ToLower(text))
+	if command == "/stop" || command == "停止任务" || command == "停止" || command == "取消任务" || command == "/tasks" || command == "/queue" {
+		action := "tasks"
+		if command == "/stop" || command == "停止任务" || command == "停止" || command == "取消任务" {
+			action = "stop"
+		}
+		_ = sess.Reply(ctx, c.taskCommand(sessionKey, qqID, isAdmin, action), target)
+		return
+	}
+
 	if cmd, arg := tools.MatchSystemCommand(text); cmd != "" {
 		reply := tools.ExecSystemCommand(tools.SysCtx{
 			Ctx:       ctx,
@@ -334,11 +299,11 @@ func (c *Channel) onMessage(m InboundMessage) {
 			QQIDs:     qqIDs,
 			Requester: tools.QQRequesterPrefix + qqID,
 		}, cmd, arg)
+		if cmd == "help" {
+			reply += "\n/tasks 或 /queue 查看任务；/stop 停止你的运行和排队任务。\n支持发送文件、GIF 动图、图片、语音、视频与 Unicode 表情（按 QQ 平台权限）。"
+		}
 		c.log.Info("qq syscmd", "session", sessionKey, "cmd", cmd, "arg", arg)
 		_ = sess.Reply(ctx, reply, target)
-		c.mu.Lock()
-		c.lastSend[sessionKey] = time.Now()
-		c.mu.Unlock()
 		return
 	}
 
@@ -384,25 +349,44 @@ func (c *Channel) onMessage(m InboundMessage) {
 		"union", m.UnionOpenID != "", "boundMC", mcName,
 		"query", text, "messageId", stored.ID)
 
+	task := c.newTask(sessionKey, qqID, target)
+	effort := c.cfg.ReasoningEffort
+	if effort == "" {
+		effort = "high"
+	}
+	running, waiting := c.ag.QueueStatus()
+	go c.taskProgress(task)
+	instruction := prompts.Resolve("qq", "", qqInstruction)
+	if prompts.Global("qq").Enabled {
+		instruction += "\n\n" + qqProtocolCapabilities
+	}
 	if !c.ag.Submit(agent.Request{
+		Context:           task.ctx,
+		ManagedProgress:   true,
+		Done:              func() { c.finishTask(sessionKey, task) },
+		Started:           task.start,
+		ToolEvent:         task.event,
+		ReasoningEffort:   effort,
 		Session:           sess,
 		SessionKey:        sessionKey,
 		Player:            tools.QQRequesterPrefix + qqID,
 		RequesterID:       qqID,
+		QQIdentities:      append([]string(nil), qqIDs...),
 		MCRequester:       mcName,
 		Query:             text,
 		TriggerMessageID:  stored.ID,
 		ReplyTarget:       target,
 		Tools:             c.qqTools,
-		SystemInstruction: prompts.Resolve("qq", "", qqInstruction),
+		SystemInstruction: instruction,
 	}) {
-		_ = sess.Reply(ctx, "抱歉，我现在忙不过来了，稍后再试。", target)
+		c.finishTask(sessionKey, task)
+		_ = sess.Reply(ctx, "任务队列已满，本次未提交，请稍后重试。", target)
 		return
 	}
 
-	c.mu.Lock()
-	c.lastSend[sessionKey] = time.Now()
-	c.mu.Unlock()
+	if running+waiting > 0 {
+		_ = sess.Reply(ctx, "已加入任务队列，将按顺序处理。/tasks 查看，/stop 取消。", target)
+	}
 }
 
 // Deliver 把一条消息发回指定会话（提醒等主动消息用；顺带注册本通道，
@@ -455,7 +439,7 @@ func splitImageTarget(target string) (kind, id, msgID, relPath string) {
 	if parts[0] != "c2c" && parts[0] != "group" {
 		return "", "", "", ""
 	}
-	if !strings.HasPrefix(parts[2], "ROBOT") {
+	if parts[1] == "" {
 		return "", "", "", ""
 	}
 	relPath = parts[3]
@@ -484,18 +468,22 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
 ` +
 	agent.CoreAgentPrinciples + `
 渠道规则（QQ）：
-- 默认用用户使用的语言，翻译时按目标语言输出；单条 500 字内，不要用 Markdown 表格。
-  需要版式（标题/列表/加粗）时调用 qq_markdown 发一条；需要发图时调用 qq_image。
-- 发图流程：先用 workspace_write/exec 把图做到 workspace 里（png/jpg，20MB内），
+- 默认用用户使用的语言，翻译时按目标语言输出；短问简答，复杂任务按需完整回复，长文会自动分段，不要用 Markdown 表格。
+  需要版式（标题/列表/加粗）时调用 qq_markdown 发一条；需要发图片/动图/表情包时调用 qq_image；文档/代码/压缩包用 qq_file，MP4 用 qq_video，语音用 qq_audio；简短 Unicode 表情可直接回复或调用 qq_emoji。
+- 发图流程：先用 workspace_write/exec 把图做到 workspace 里（png/jpg/gif/webp/bmp，20MB内，GIF 保留动画），
   再调 qq_image 发，path 写相对路径；上传失败会如实报错。
 - 画图直接用 PIL（已装），中文字体用 /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
-  （已装，别用黑体/DejaVu）。不要反复试探同一条失败命令，20 步内完不成就先回一条进度。
+  （已装，别用黑体/DejaVu）。遇到失败先核查原因再调整；工具轮次和任务总时长默认不设上限，持续完成用户授权的目标，不因已调用多次工具而提前交差。系统会反馈进度，不需要每一步再发一条消息。
 - MC 服务器只是功能之一：只在被问到服实时情况时才调 minecraft_* 工具，平时聊天/写代码/查资料不用碰 MC。
 - minecraft_teleport / minecraft_give / minecraft_run_command 只能应明确请求发起，
   发起后等游戏内管理员批准；请求者没绑定 MC 身份时先提醒他用「绑定 <MC名>」。
 - workspace_ls / workspace_read / workspace_write / workspace_exec 仅管理员（adminOpenIds）可用，
-  非管理员调用会被直接拒绝，不要绕过。操作限制在 workspace 目录内，有超时和输出上限。
+  非管理员调用会被直接拒绝，不要绕过。操作限制在 workspace 目录内，可被用户停止，有输出上限。
   装依赖用 $VENV_BIN/pip install（只进 workspace/.venv），下载用 curl/wget（仅公开 http(s) 到 workspace）；
   这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。写文件前先 ls/read，重要操作先 dry-run。
-- 对话管理命令（/help /status /memory /usage /bind /unbind /myid）由系统层直接回复，
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid /tasks /queue /stop）由系统层直接回复，
   你照着 help 文案介绍，不要自己编命令列表。`
+
+// Keep custom personalities/capability text, while correcting stale descriptions
+// of the actual adapter (for example the old PNG/JPG-only image tool).
+const qqProtocolCapabilities = `当前 QQ 适配器的实际能力：qq_file 发 workspace 文件，qq_image 发 PNG/JPG/GIF/WebP/BMP 并保留动图，qq_video 发 MP4，qq_audio 发语音，qq_emoji 发 Unicode 表情/颜文字。workspace 文件仍只限已配置的 QQ 管理员，只能发回当前对话，不能跨会话取文件或绕过拒绝。系统负责排队和进度，/tasks 查询、/stop 取消；任务应持续推进到完成或明确受阻，不因已调用多轮工具自行交差。复杂回答按需完整给出，系统自动分段，不需为单条字数限制删掉关键结果。QQ 官方 Bot 仍受平台权限和额度限制，不假装拥有个人号的全部社交功能。`

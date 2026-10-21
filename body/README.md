@@ -10,7 +10,7 @@
 |---|---|
 | `body_status` | 后端直接确认控制连接、握手、游戏在线、暂停、新鲜度与任务预算；不依赖游戏动作通道 |
 | `body_observe` / `body_inventory` / `body_find_blocks` | 状态、附近实体/事件、自己的背包、已加载方块 |
-| `body_goto` / `body_look_at` / `body_stop` | 有界步行、看向目标、立即停止并锁存暂停 |
+| `body_goto` / `body_look_at` / `body_stop` | 有界步行/显式水面游泳、看向目标、取消当前动作但不锁存暂停 |
 | `body_dig` / `body_place` | 单方块挖掘/放置，需要交互距离、支撑和区域许可 |
 | `body_interact` | 门、按钮、拉杆、床、重生锚；交互时清空主手，副手须空 |
 | `body_use_item` | 安全食物；审批后可尝试水桶、岩浆桶、打火石、火焰弹 |
@@ -96,7 +96,7 @@ worldedit-protection:
 
 `zones` 现在只约束挖掘/放置的目标方块，不约束身体站位、路径、观察、聊天或命令。`zones.mode=unrestricted` 明确取消这层编辑白名单限制，仍遵守 Paper 出生点保护；`allowlist` 空列表仅拒绝单方块编辑。WorldEdit 根据服务端实际写入目标保护，不使用玩家当前位置判断。
 
-`body` 的其他配置与实际默认值在 `internal/config/body.go`：任务总轮数与总时长默认不限（两个预算值均为 0），单动作最多 20 秒，grant 最长 5 秒；allowlist 空列表时没有允许的单方块编辑目标。防护、路径规则和 PvP/容器禁用为固定规则，没有通过未实现字段开启的后门。配置更改沿用现有重启加载流程，无动态编辑接口。
+`body` 的其他配置与实际默认值在 `internal/config/body.go`：任务默认12轮、总时长不限（maxSteps=12、runTimeoutSec=0），单动作最多 20 秒，grant 最长 5 秒；allowlist 空列表时没有允许的单方块编辑目标。防护、路径规则和 PvP/容器禁用为固定规则，没有通过未实现字段开启的后门。配置更改沿用现有重启加载流程，无动态编辑接口。
 
 ## 门户与只读资料
 
@@ -260,3 +260,10 @@ DSH 后端也沿用上述工具身份、审批、暂停恢复和只读预算；�
 [Navigation V2](../MINE_BODY_NAVIGATION_DESIGN.md)定义目标区域解析、分段A*、路线修复、模式切换与验收矩阵。地面优先复用锁定Pathfinder，新增受控创造飞行与水面导航；先交付目标/地面修复，再验证新增运动能力。它不代表当前已会飞、已支持任意木门或复杂跑酷，也不改变现有暂停、审批、写入保护与部署流程。
 
 网页任务思考参数兼容修订：OpenCode Go的DeepSeek V4.1 Flash不接收medium，身体默认medium在发送前映射low；普通聊天medium映射high，显式low/high保留。与官方适配器分别做端到端请求回归，其他模型不套用这一映射。不支持的档位显示明确原因，不能因参数错误自动重放已执行动作。
+
+
+## 导航首轮修订（2026-10-22）
+
+`body_goto`按整个到达半径检查落点，目标所在列是墙不再直接拒绝；省略y时在已加载的上下32格中解析附近楼面，显式y仍保留，不把悬空目标自动改到水面。支持可选`movement=ground|swim`：默认ground避开水；明确swim允许已知水面游泳和上岸，不接受深水终点、无限落水或未经检查的飞行。水面与未知地形分别返回water_only/terrain_unknown，可操作高度错误保留suggestedY。
+
+导航仍禁挖路、搭柱，最大正常下落3格，不再因为下方是水就忽略下落上限。审批、非OP、operator gate、出生点和WorldEdit写入保护不变。新参数要求Go/Node配套更新；没有新增客户端mod或自动改变游戏模式。完整Navigation V2仍是分阶段提案，本轮不宣称已完成飞行、跟随或任意地形导航。

@@ -19,6 +19,7 @@ const (
 )
 
 type BodyArgs struct {
+	Movement   string   `json:"movement,omitempty"`
 	X          *float64 `json:"x,omitempty"`
 	Y          *float64 `json:"y,omitempty"`
 	Z          *float64 `json:"z,omitempty"`

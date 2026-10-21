@@ -197,7 +197,7 @@ func (s *Service) Tools() []tool.BaseTool {
 		{"body_observe", "一次获取身体状态、7×7地形及3个可站立点、实体与事件；重复可能返回unchanged。", map[string]*schema.ParameterInfo{"range": intP("观察半径 4–16，默认 8")}},
 		{"body_inventory", "查看机器人自己的背包和手持；不读取他人的箱子。", map[string]*schema.ParameterInfo{"filter": stringP("按物品名筛选", false)}},
 		{"body_find_blocks", "查找已加载方块，返回距离、surfaceY和standable，按距离排序；不移动。", map[string]*schema.ParameterInfo{"blocks": stringP("逗号分隔方块 ID，例如 oak_log,birch_log", true), "radius": intP("半径 1–32"), "count": intP("数量 1–16")}},
-		{"body_goto", "步行到 x,z 或可见玩家，y 可省略按附近地面解析；可空手开栅栏门/冲刺；木门先body_interact，不挖路搭柱。未到达时看实际位移和错误。", coords(false)},
+		{"body_goto", "移动到x,z或可见玩家；y可省略，范围内选落点。默认ground只走陆地，明确movement=swim允许水面游泳，不潜水/跳崖。木门先交互，不挖路搭柱。", coords(false)},
 		{"body_look_at", "让自己的身体看向坐标、可见玩家或实体；三者选一。", coords(false)},
 		{"body_stop", "取消当前动作并确认停止；保持现有暂停状态，可继续下一动作。急停/暂停由管理员面板独立控制。", map[string]*schema.ParameterInfo{}},
 		{"body_dig", "挖一个指定方块，坐标需整数；先观察并靠近，禁止保护方块/建筑；危险上下文必须审批。", reason(coords(true))},
@@ -220,6 +220,7 @@ func (s *Service) Tools() []tool.BaseTool {
 			m["entityId"] = intP("观察结果中的实体 ID")
 		}
 		if d.name == "body_goto" {
+			m["movement"] = stringP("ground（默认，只走陆地）或swim（水面游泳及上岸，不潜水）", false)
 			m["range"] = intP("到达半径 1–8，默认 2")
 			m["timeoutSec"] = intP("默认 12，最多 20 秒")
 		}

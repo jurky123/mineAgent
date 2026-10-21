@@ -103,6 +103,9 @@ func parseArgs(tool, raw string) (protocol.BodyArgs, error) {
 			return a, errors.New("invalid_args")
 		}
 	}
+	if a.Movement != "" && (tool != "body_goto" || !contains([]string{"ground", "swim"}, a.Movement)) {
+		return a, errors.New("invalid_args")
+	}
 	xyz := a.X != nil && a.Y != nil && a.Z != nil
 	anyXYZ := a.X != nil || a.Y != nil || a.Z != nil
 	xz := a.X != nil && a.Z != nil

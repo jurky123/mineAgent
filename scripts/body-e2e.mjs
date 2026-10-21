@@ -632,8 +632,8 @@ try {
     `
 import { MinecraftBody } from ${JSON.stringify(pathToFileURL(path.join(repo, "body/src/minecraft.js")).href)};
 const original= MinecraftBody.prototype.movements;
-MinecraftBody.prototype.movements=function(){
- original.call(this);
+MinecraftBody.prototype.movements=function(...args){
+ original.apply(this,args);
  if(this.bot._fixtureDiagnostics)return;
  this.bot._fixtureDiagnostics=true;const recent=[];
  this.bot.on('path_reset',reason=>{recent.push({reset:reason});if(recent.length>8)recent.shift();});
@@ -732,6 +732,45 @@ MinecraftBody.prototype.movements=function(){
     assert.equal(badHeight.result.data.suggestedY, -60);
     confirmed(await send("body_goto", { x: 9, z: 0, range: 1 }));
     confirmed(await send("body_goto", { x: 0, y: -60, z: 0, range: 1 }));
+    // Explicit surface swimming: no implicit dive for ordinary ground goals.
+    // Restore the fixture afterwards: flowing water must not
+    // change the terrain used by later ground-only stop/collision tests.
+    await command("fill 3 -60 -1 26 -59 22 air replace water");
+    await command("fill 9 -60 5 19 -59 15 air");
+    await command("fill 10 -62 6 18 -62 14 stone");
+    await command("fill 10 -61 6 18 -60 14 water");
+    await wait(500);
+    const dryOnly = await send("body_goto", { x: 14, z: 10, range: 1 });
+    assert.equal(dryOnly.result.code, "water_only");
+    const swim = await send("body_goto", {
+      x: 14,
+      y: -60,
+      z: 10,
+      range: 1,
+      movement: "swim",
+      timeoutSec: 20,
+    });
+    confirmed(swim);
+    assert.ok(
+      (await state()).state.pos[0] > 12,
+      "real body reaches pool surface",
+    );
+    confirmed(
+      await send("body_goto", {
+        x: 0,
+        y: -60,
+        z: 0,
+        range: 1,
+        movement: "swim",
+        timeoutSec: 20,
+      }),
+    );
+    await command("fill 9 -61 5 19 -61 15 grass_block");
+    await command("fill 3 -60 -1 26 -59 22 air replace water");
+    console.log(
+      "Navigation passed: full arrival region, explicit surface swimming, ground water refusal and return to shore",
+    );
+
     confirmed(await send("body_look_at", { x: 2, y: -60, z: 0 }));
     confirmed(await send("body_dig", { x: 2, y: -60, z: 0 }));
     confirmed(
@@ -1262,6 +1301,9 @@ MinecraftBody.prototype.movements=function(){
       .replaceAll(paperToken, "<paper-token>")
       .replaceAll(profileToken, "<profile-token>")
       .replaceAll(token || "__never__", "<admin-token>");
+  try {
+    console.error("fixture state:\n" + redact(JSON.stringify(await state())));
+  } catch { /* Backend may already be stopped. */ }
   for (const [kind, text] of Object.entries(logs))
     console.error(kind + ":\n" + redact(text.slice(-6000)));
   throw e;

@@ -4,6 +4,7 @@ import { Vec3 } from "vec3";
 import { randomUUID, createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { surface, terrain } from "./terrain.js";
+import { resolveDestination } from "./navigation.js";
 import {
   risk,
   checkSpec,
@@ -255,7 +256,7 @@ export class MinecraftBody {
       correction,
     });
   }
-  movements() {
+  movements(mode = "ground") {
     const bot = this.bot;
     if (!bot?.entity) return;
     const m = new pathfinder.Movements(bot);
@@ -266,6 +267,43 @@ export class MinecraftBody {
     m.allowParkour = false;
     m.allowSprinting = true;
     m.maxDropDown = 3;
+    m.infiniteLiquidDropdownDistance = false;
+    // Surface-only swimming is explicit. Neither profile may dive through a
+    // submerged tunnel or ignore the normal drop limit because water is below.
+    // Step exclusions also inspect the support below the feet. Rejecting every
+    // submerged support there incorrectly cuts off perfectly safe surface water.
+    // Filter the resulting feet nodes instead, including drop-down successors.
+    const neighbors = m.getNeighbors.bind(m);
+    m.getNeighbors = (node) => {
+      // Buoyancy can leave feet a few centimetres below the surface block's
+      // integer Y. Quantizing that start down must not strand a surface swimmer.
+      // Normalize only the actual starting cell, within half a block of open
+      // surface water. This changes search nodes, never the player's position.
+      const p = bot.entity.position;
+      const atStart =
+        node.x === Math.floor(p.x) &&
+        node.z === Math.floor(p.z) &&
+        node.y === Math.floor(p.y) &&
+        p.y - node.y >= 0.5;
+      let start = node;
+      if (
+        mode === "swim" &&
+        atStart &&
+        bot.blockAt(new Vec3(node.x, node.y, node.z))?.name === "water" &&
+        bot.blockAt(new Vec3(node.x, node.y + 1, node.z))?.name === "water" &&
+        ["air", "cave_air", "void_air"].includes(
+          bot.blockAt(new Vec3(node.x, node.y + 2, node.z))?.name,
+        )
+      )
+        start = { ...node, y: node.y + 1 };
+      return neighbors(start).filter((next) => {
+        if (node.y - next.y > m.maxDropDown) return false;
+        const feet = bot.blockAt(new Vec3(next.x, next.y, next.z));
+        if (feet?.name !== "water") return true;
+        const head = bot.blockAt(new Vec3(next.x, next.y + 1, next.z));
+        return mode === "swim" && !!head && head.name !== "water";
+      });
+    };
     bot.pathfinder.setMovements(m);
     bot.pathfinder.searchRadius = 64;
     bot.pathfinder.thinkTimeout = 5000;
@@ -440,6 +478,8 @@ export class MinecraftBody {
   }
   args(a) {
     if (!a || typeof a !== "object" || Array.isArray(a)) fail("invalid_args");
+    if (a.movement !== undefined && !["ground", "swim"].includes(a.movement))
+      fail("invalid_args");
     for (const k of ["x", "y", "z"])
       if (
         a[k] !== undefined &&
@@ -495,33 +535,10 @@ export class MinecraftBody {
       Number.isFinite(args.x) &&
       Number.isFinite(args.z)
     ) {
-      const s = surface(b, args.x, args.z);
-      if (!s?.standable) {
-        const e = Object.assign(
-          Error(
-            "目标列附近没有已加载的安全站立面，请改用 terrain.standablePoints",
-          ),
-          { code: "no_standable_surface", data: { x: args.x, z: args.z } },
-        );
-        throw e;
-      }
-      if (args.y === undefined) args.y = s.feetY;
-      else if (Math.abs(args.y - s.feetY) > 2) {
-        throw Object.assign(
-          Error("目标高度与地面不符；省略 y 或使用 suggestedY"),
-          {
-            code:
-              args.y > s.feetY ? "target_above_ground" : "target_below_ground",
-            data: {
-              surfaceY: s.surfaceY,
-              suggestedY: s.feetY,
-              x: args.x,
-              z: args.z,
-            },
-          },
-        );
-      }
+      const resolved = resolveDestination(b, args);
+      args.y = resolved.target[1];
     }
+
     const spec = {
       id: randomUUID(),
       tool,
@@ -1015,7 +1032,7 @@ export class MinecraftBody {
       // dangerous held item, nor an unchecked offhand item.
       if (b.inventory.slots[45]) fail("empty_offhand_required");
       if (b.heldItem) await this.step(a, () => b.unequip("hand"));
-      this.movements();
+      this.movements(args.movement || "ground");
       a.origin = pos(b.entity.position);
       a.submitted = true;
       const range = args.range || 2;

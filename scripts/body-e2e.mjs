@@ -905,6 +905,28 @@ MinecraftBody.prototype.movements=function(){
     );
     if (moving.result) assert.equal(moving.result.ok, false);
     assert.equal((await state()).paused, true);
+    assert.equal((await control("resume")).httpStatus, 200);
+    const displaced = await send(
+      "body_goto",
+      { x: 50, y: -60, z: 10, range: 1, timeoutSec: 20 },
+      false,
+    );
+    await until(async () => {
+      if (displaced.result) throw Error(JSON.stringify(displaced.result));
+      return (await state()).state?.task?.tool === "body_goto";
+    }, "active action before large forced move");
+    const displacementStart = Date.now();
+    await command("execute as MineBodyV1 at @s run minecraft:tp @s ~3 ~ ~");
+    await until(async () => {
+      const st = await state();
+      const event = st.events.findLast(
+        (e) => e.type === "forced_move" && e.at >= displacementStart,
+      );
+      if (!event) return false;
+      assert.equal(event.data.correction, false, JSON.stringify(event));
+      return st.paused && st.state.pauseReason === "forced_move";
+    }, "real three-block forced move pauses");
+    assert.equal((await control("stop")).httpStatus, 200);
     const profile = await api(
       "/api/body/profile",
       "GET",
@@ -1198,7 +1220,11 @@ MinecraftBody.prototype.movements=function(){
   console.log(
     JSON.stringify({
       passed: true,
-      mode: uxOnly ? "real-model-ux" : "full-regression",
+      mode: uxOnly
+        ? process.env.MINEAGENT_UX_RECHECK === "1"
+          ? "real-model-ux-mc-build-recheck"
+          : "real-model-ux"
+        : "full-regression",
       tools: uxOnly ? undefined : 13,
       modelCalls: calls,
       checks: uxOnly

@@ -69,7 +69,12 @@ export async function runExperience({
       async () => await page.locator("#body-task-stop").isDisabled(),
       "previous web task idle",
     );
-    await page.locator("#body-task-new").click();
+    // This button changes local conversation state; it never navigates.
+    await page.locator("#body-task-new").click({ noWaitAfter: true });
+    await page
+      .locator("#body-run-status")
+      .getByText("新任务会话，发送前不会创建记录。", { exact: true })
+      .waitFor();
     const initialPosition = (await state()).state.pos;
     const start = Date.now(),
       metricStart = uxModelMetrics.length;
@@ -79,7 +84,7 @@ export async function runExperience({
         r.request().method() === "POST" &&
         r.url().includes("/api/body/task/send"),
     );
-    await page.locator("#body-task-send").click();
+    await page.locator("#body-task-send").click({ noWaitAfter: true });
     const sent = await (await response).json();
     assert.ok(sent.conv, "web task accepted");
     const snapshots = [];
@@ -130,6 +135,16 @@ export async function runExperience({
         "body_find_blocks",
       ].includes(n),
     ).length;
+    const finalReply = history.messages.findLast(
+      (m) => m.role === "agent",
+    )?.text;
+    if (finalReply) {
+      await page
+        .locator("#body-replies")
+        .getByText(finalReply, { exact: true })
+        .waitFor();
+      sample.visibleElapsedMs = Date.now() - start;
+    }
     report.samples.push(sample);
     await persist();
     await check(label, () => verify(sample));
@@ -153,7 +168,9 @@ export async function runExperience({
       "MC public awareness",
     );
     await check(awareness.label, () => {
-      assert.ok(awareness.reply.includes("MineBodyV1"));
+      assert.ok(/MineBodyV1|身体/.test(awareness.reply));
+      assert.ok(/在线|online/i.test(awareness.reply));
+      assert.ok(/idle|空闲|待机|挂机|没在跑动作/.test(awareness.reply));
       assert.ok(!/我没有.*身体|我不在游戏世界/.test(awareness.reply));
     });
     const denied = await mc(
@@ -177,6 +194,38 @@ export async function runExperience({
   );
   await page.goto(origin + "/ai/main");
   await page.locator("#body-task-send").waitFor();
+  const buildPlan = () =>
+    task(
+      "只给一个建造行动计划，不执行。我要在出生点512格保护区外用WorldEdit建10乘10小屋；说明如何指定选区、批量执行、验证和回滚。不得建议逐块放置250次，也不要修改保护。",
+      "build/WorldEdit plan",
+      (s) => {
+        assert.ok(
+          /WorldEdit|选区/i.test(s.reply),
+          "must provide the requested build plan",
+        );
+        assert.ok(/512|保护/.test(s.reply), "must retain spawn protection");
+        assert.ok(
+          /矩形|包围盒|不相交/.test(s.reply),
+          "must apply rectangular whole-footprint protection",
+        );
+        assert.ok(
+          !s.toolNames.includes("body_command"),
+          "plan must not execute commands",
+        );
+        assert.ok(s.movedDistance < 0.01, "plan must not move the body");
+      },
+    );
+  if (process.env.MINEAGENT_UX_RECHECK === "1") {
+    report.scope = "MC and build-plan recheck; no movement latency samples";
+    await buildPlan();
+    await persist();
+    await page.screenshot({
+      path: path.join(temp, "ux-recheck.png"),
+      fullPage: true,
+    });
+    assert.equal(report.failures.length, 0, "targeted real UX recheck failed");
+    return;
+  }
   await command("tp MineBodyV1 0 -60 0");
   await command("fill -10 -60 -10 32 -57 16 air");
   await wait(1200);
@@ -237,10 +286,7 @@ export async function runExperience({
       await control("resume");
     },
   );
-  await task(
-    "只给一个建造行动计划，不执行。我要在出生点512格保护区外用WorldEdit建10乘10小屋；说明如何指定选区、批量执行、验证和回滚。不得建议逐块放置250次，也不要修改保护。",
-    "build/WorldEdit plan",
-  );
+  await buildPlan();
   report.summary = {
     terrainP50: median(
       report.samples

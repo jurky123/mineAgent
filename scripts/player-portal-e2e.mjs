@@ -45,6 +45,7 @@ try {
   );
   await page.goto(origin + "/");
   await page.getByRole("heading", { name: "zkun 门户" }).waitFor();
+  await page.waitForLoadState("networkidle");
   assert.equal(
     await page
       .locator(
@@ -55,6 +56,7 @@ try {
   );
   await page.getByRole("link", { name: "下载与加入指南" }).click();
   await page.getByRole("heading", { name: "Minecraft", exact: true }).waitFor();
+  await page.waitForLoadState("networkidle");
   await page.getByRole("link", { name: "查看玩家列表 →" }).click();
   await page.getByRole("heading", { name: "AI 玩家", exact: true }).waitFor();
   await page.evaluate(() => localStorage.setItem("mineagent.theme", "dark"));
@@ -228,6 +230,8 @@ try {
   // after the administrator explicitly confirms the exact game connection.
   await page.goto(origin + "/body#game-code=" + gameCode);
   await page.locator("#body-game-code").waitFor();
+  // The legacy HTML contains a placeholder form before the module mounts.
+  await page.waitForFunction(() => location.hash === "");
   assert.equal(await page.locator("#body-game-code").inputValue(), gameCode);
   assert.equal(new URL(page.url()).hash, "");
   await page.getByRole("button", { name: "核对并授权", exact: true }).click();

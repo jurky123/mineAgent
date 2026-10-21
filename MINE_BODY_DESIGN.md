@@ -571,7 +571,7 @@ const RoleBody = "minecraft-body"
 {"type": "forced_move", "at": 1760000004000, "data": {"from": [101, 64, -32], "to": [100.8, 64, -32], "distance": 0.2, "tool": "body_goto"}}
 ```
 
-暂停原因保存在 `body.state.pauseReason` 并由 `body_status` 返回，避免事件环形缓冲淘汰后丢失原因。`forcedMove` 表示服务端强制位置包；协议本身不能区分位置纠正与管理员传送。记录修正前后位置、距离和当前工具用于诊断，不根据距离小或心跳恢复而自动解除保护暂停。缺少修正前位置时记录 null，不推测原因。
+暂停原因保存在 `body.state.pauseReason` 并由 `body_status` 返回，避免事件环形缓冲淘汰后丢失原因。`forcedMove` 表示服务端强制位置包；协议本身不能区分位置纠正与管理员传送。记录修正前后位置、距离和当前工具用于诊断。活动动作中的≤0.75格修正、2秒内至多3次可记correction:true而不进入暂停；大位移、无active、未知起点或连续第4次仍暂停。已进入的保护暂停不按小位移/心跳自动解除，须管理员明确恢复；缺少修正前位置时记录null。
 
 `body.policy`：
 
@@ -712,10 +712,10 @@ const RoleBody = "minecraft-body"
 | 工具 | 层 | 参数 | 返回 | 超时 | 审批 |
 |---|---|---|---|---|---|
 | `body_status` | read | 无 | 后端连接/握手、游戏在线、暂停及 pauseReason、快照新鲜度、当前及任务代次、任务预算 | 后端本地查询 | 否 |
-| `body_observe` | read | `range?`（4–16，默认 8） | 状态 + 注视 + 附近玩家/实体/物品 + 背包摘要 + 最近事件 | 3s | 否 |
+| `body_observe` | read | `range?`（4–16，默认 8） | 状态 + 7×7地形/可站立点 + 注视 + 附近玩家/实体/物品 + 背包摘要 + 最近事件 | 3s | 否 |
 | `body_inventory` | read | `filter?`（物品名/关键字） | 槽位、物品、数量、耐久、装备 | 2s | 否 |
 | `body_find_blocks` | read | `blocks`（数组/逗号串）、`radius?`（≤32）、`count?`（≤16） | 最近 N 个坐标/距离/方块名 | 5s | 否 |
-| `body_goto` | move | `x,y,z` 或 `player`；`range?`（默认 2）；`timeoutSec?`（≤20） | `reached`、位置、距离、原因 | 12s（默认） | 否（区域检查） |
+| `body_goto` | move | `x,z`必填、`y?`按已加载地表解析，或 `player`；`range?`（默认 2）；`timeoutSec?`（≤20） | `reached`、位置、距离、原因 | 12s（默认） | 否（区域检查） |
 | `body_look_at` | move | `x,y,z` 或 `player` 或 `entityId` | yaw/pitch/注视对象 | 3s | 否 |
 | `body_stop` | control | 无 | 当前动作取消 ACK；不暂停、不变更epoch；管理员急停独立保留 | ≤2s 确认目标 | 否 |
 | `body_dig` | build | `x,y,z`；`timeoutSec?`（默认 12，≤15）；`reason?` | 方块变化、工具、附近掉落物 | 15s | 高危上下文需（reason）；硬拒绝优先 |

@@ -57,6 +57,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
   let stream,
     timer,
     staleTimer,
+    lastRefresh = 0,
     refreshing = false,
     authorized = false,
     disposed = false,
@@ -342,6 +343,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
   async function refresh() {
     if (refreshing || disposed || !authorized) return;
     refreshing = true;
+    lastRefresh = Date.now();
     try {
       const data = await get("/api/body/status");
       if (!render(data)) return;
@@ -528,7 +530,9 @@ export async function mountBodyPanel(root, { agentId } = {}) {
       }
     });
     stream.onerror = unknown;
-    timer = setInterval(refresh, 5000);
+    timer = setInterval(() => {
+      if (runBusy || Date.now() - lastRefresh >= 5000) refresh();
+    }, 1000);
     staleTimer = setInterval(() => {
       if (latest && Date.now() - latest.receivedAt > 10000) unknown();
     }, 1000);

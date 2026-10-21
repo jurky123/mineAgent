@@ -789,7 +789,7 @@ test("idle collision-plane precision does not relatch pause; ordinary idle moves
     for (let i = 0; i < 20; i++)
       runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
     assert.equal(runtime.paused, false);
-    assert.deepEqual([...runtime.prepared.keys()], ["move"]);
+    assert.deepEqual([...runtime.prepared.keys()], ["move", "command"]);
     assert.equal(runtime.recent.at(-1).data.precision, true);
     runtime.paused = true;
     runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
@@ -813,5 +813,75 @@ test("idle collision-plane precision does not relatch pause; ordinary idle moves
   } finally {
     clearInterval(runtime.safetyTimer);
     clearInterval(runtime.stateTimer);
+  }
+});
+
+test("precision-retained commands still revalidate hands before native dispatch", async () => {
+  for (const changed of [false, true]) {
+    const sent = [];
+    let dispatched = 0;
+    const runtime = new MinecraftBody(
+      {
+        minecraft: {
+          username: "MineBodyTest",
+          version: "26.1",
+          targetVersion: "26.2",
+        },
+        backend: { bodyId: "main" },
+      },
+      (type, data) => sent.push({ type, data }),
+    );
+    Object.assign(runtime, {
+      policy,
+      connectionId: "fixture",
+      epoch: 1,
+      revision: 1,
+      ready: true,
+      connected: true,
+      paused: false,
+      lastLease: performance.now(),
+      onlineSince: Date.now() - 10000,
+    });
+    runtime.bot = Object.assign(new EventEmitter(), {
+      entity: { position: { x: 0.5, y: 62.535, z: 9.697 } },
+      game: { dimension: "overworld" },
+      inventory: { slots: Array(46).fill(null) },
+      controlState: { forward: false },
+      blockAt(p) {
+        return { position: p, shapes: [[0, 0, 0, 1, 1, 1]] };
+      },
+      chat() {
+        dispatched++;
+      },
+      quit() {},
+      clearControlStates() {},
+      deactivateItem() {},
+      stopDigging() {},
+      pathfinder: { setGoal() {} },
+    });
+    try {
+      const spec = runtime.describe("body_command", {
+        command: "//pos1 1,64,1",
+      });
+      runtime.prepared.set(spec.id, spec);
+      runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+      assert.equal(runtime.prepared.has(spec.id), true);
+      if (changed) runtime.bot.heldItem = { name: "stone" };
+      await runtime.call({
+        callId: "command",
+        connectionId: "fixture",
+        controlEpoch: 1,
+        policyRevision: 1,
+        tool: "body_command",
+        args: spec.args,
+        specId: spec.id,
+        timeoutMs: 1400,
+      });
+      const result = sent.findLast((x) => x.type === "body.result").data;
+      assert.equal(result.code, changed ? "stale" : "");
+      assert.equal(dispatched, changed ? 0 : 1);
+    } finally {
+      await runtime.close();
+    }
   }
 });

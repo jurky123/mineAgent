@@ -813,6 +813,12 @@ MinecraftBody.prototype.movements=function(...args){
       false,
       "idle wet-step precision must not relatch pause",
     );
+    assert.equal(
+      (await send("body_command", { command: "//pos1 12,-60,9" })).result
+        .outcome,
+      "submitted",
+      "native WorldEdit selection remains callable at wet contact",
+    );
     confirmed(
       await send("body_goto", {
         x: 14.5,

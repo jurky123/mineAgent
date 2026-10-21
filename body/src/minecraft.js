@@ -255,10 +255,11 @@ export class MinecraftBody {
       contactPrecision(this.bot, from, to)
     ) {
       // A fresh world/identity round-trip can span several precision packets.
-      // Movement still re-describes world, target, hands and position at call;
-      // never retain an edit, command, item or approval-bearing action here.
+      // Movement and commands still re-describe world, hands and position at
+      // call. Command dispatch also passes the native permission/edit guards;
+      // retain no block/item action or approval-bearing preparation here.
       for (const [id, spec] of this.prepared)
-        if (!["body_goto", "body_look_at"].includes(spec.tool))
+        if (!["body_goto", "body_look_at", "body_command"].includes(spec.tool))
           this.prepared.delete(id);
       this.event("forced_move", {
         from,

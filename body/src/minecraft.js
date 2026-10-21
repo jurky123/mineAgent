@@ -266,6 +266,9 @@ export class MinecraftBody {
     m.canOpenDoors = true;
     m.allowParkour = false;
     m.allowSprinting = true;
+    // A swimmer is intentionally using water. Penalizing each wet step makes
+    // A* hug short dry banks and repeatedly attempt awkward water/land corners.
+    if (mode === "swim") m.liquidCost = 0;
     m.maxDropDown = 3;
     m.infiniteLiquidDropdownDistance = false;
     // Surface-only swimming is explicit. Neither profile may dive through a
@@ -708,7 +711,10 @@ export class MinecraftBody {
     const b = this.bot;
     if (!b.entity.isInWater) return;
     const y = surfaceAbove(b);
-    if (b.entity.position.y >= y - 0.25) return;
+    // Lift to the upper part of the surface before horizontal steering. Starting
+    // below the shore's lip can pin the client's hitbox against a bank corner.
+    const feetY = y + 0.5;
+    if (b.entity.position.y >= feetY) return;
     const origin = pos(b.entity.position),
       started = performance.now();
     await this.step(
@@ -727,7 +733,7 @@ export class MinecraftBody {
           const tick = () => {
             try {
               this.ensure(a);
-              if (b.entity.position.y >= y - 0.25) return done();
+              if (b.entity.position.y >= feetY) return done();
               if (
                 performance.now() - started > 8000 ||
                 Math.hypot(

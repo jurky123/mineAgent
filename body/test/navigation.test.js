@@ -94,6 +94,7 @@ test("surface route crosses a two-deep pool and returns to shore, without diving
     entity: { position: new Vec3(0.5, -60, 0.5), effects: {} },
     inventory: { items: () => [] },
     blockAt(p) {
+      if (p.x < -10 || p.x > 32 || p.z < -10 || p.z > 32) return null;
       const pool = p.x >= 10 && p.x <= 18 && p.z >= 6 && p.z <= 14;
       const name =
         pool && p.y >= -61 && p.y <= -60
@@ -173,6 +174,36 @@ test("surface route crosses a two-deep pool and returns to shore, without diving
       "noPath",
       "normalization does not enable genuinely submerged routes",
     );
+    runtime.bot.entity.position = new Vec3(4.5, 62, 0.5);
+    runtime.bot.blockAt = (p) => {
+      const name =
+        p.x <= 0
+          ? p.y <= 61
+            ? "stone"
+            : "air"
+          : p.y >= 56 && p.y <= 62
+            ? "water"
+            : p.y <= 55
+              ? "stone"
+              : "air";
+      const block = Block.fromProperties(registry.blocksByName[name].id, {}, 0);
+      block.position = p.floored();
+      return block;
+    };
+    runtime.movements("swim");
+    assert.equal(movements.liquidCost, 0);
+    const openWater = route([4, 62, 0], [4, 62, 24]);
+    assert.equal(openWater.status, "success");
+    assert.ok(
+      openWater.path.every((p) => p.x > 0),
+      "swimmer keeps the direct open-water route",
+    );
+    movements.liquidCost = 1;
+    const bankBiased = route([4, 62, 0], [4, 62, 24]);
+    assert.ok(
+      bankBiased.path.some((p) => p.x <= 0),
+      "old water penalty reproduces the bank detour",
+    );
   } finally {
     clearInterval(runtime.safetyTimer);
     clearInterval(runtime.stateTimer);
@@ -228,7 +259,7 @@ test("surfacing is action scoped, cancellable, and leaves no idle input timer", 
     runtime.active = next;
     const rise = runtime.surfaceForNavigation(next);
     setTimeout(() => {
-      runtime.bot.entity.position.y = 62;
+      runtime.bot.entity.position.y = 62.6;
     }, 60);
     await rise;
     assert.equal(next.surfaceRecovery.fromY, 56);

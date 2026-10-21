@@ -52,6 +52,8 @@ export const readTools = new Set([
   "body_find_blocks",
 ]);
 export const nameOf = (s) => (s || "").replace(/^minecraft:/, "");
+export const placedBlock = (item) =>
+  nameOf(item) === "wheat_seeds" ? "wheat" : nameOf(item);
 export const fail = (code) => {
   throw Object.assign(new Error(code), { code });
 };
@@ -96,7 +98,12 @@ export function checkSpec(spec, policy) {
     (!spec.target || !inside(policy, spec.worldId, spec.target, 0))
   )
     fail("out_of_zone");
-  for (const s of [spec.block, spec.args.item, spec.support])
+  for (const s of [
+    spec.block,
+    spec.args.item,
+    spec.support,
+    ...(spec.tool === "body_place" ? [placedBlock(spec.args.item)] : []),
+  ])
     if (
       hardBlocks.has(nameOf(s)) ||
       (policy.denyBlocks || []).some((x) => nameOf(x) === nameOf(s) && !!s)

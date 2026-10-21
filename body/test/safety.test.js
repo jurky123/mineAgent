@@ -791,6 +791,33 @@ test("idle collision-plane precision does not relatch pause; ordinary idle moves
     assert.equal(runtime.paused, false);
     assert.deepEqual([...runtime.prepared.keys()], ["move", "command"]);
     assert.equal(runtime.recent.at(-1).data.precision, true);
+    runtime.active = { tool: "body_command", abort: new AbortController() };
+    for (let i = 0; i < 80; i++)
+      runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(
+      runtime.paused,
+      false,
+      "stationary command echo window is not movement input",
+    );
+    assert.equal(
+      runtime.corrections.length,
+      0,
+      "known precision packets do not consume collision budget",
+    );
+    runtime.active = null;
+
+    runtime.bot.entity.position.z = 9.6897504;
+    runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(
+      runtime.paused,
+      false,
+      "observed 1.025cm contact correction is numerical precision",
+    );
+    runtime.bot.entity.position.z = 9.67;
+    runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
+    assert.equal(runtime.paused, true, "3cm idle displacement still pauses");
+    runtime.bot.entity.position.z = 9.697;
+
     runtime.paused = true;
     runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
     assert.equal(runtime.paused, true, "precision never auto-resumes a pause");

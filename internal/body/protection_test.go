@@ -61,3 +61,23 @@ func TestSpawnProtectionConstrainsWritesButNotMovement(t *testing.T) {
 		}
 	}
 }
+
+func TestSeedPlacementCannotBypassCropDeny(t *testing.T) {
+	s, _, _, _ := setup(t)
+	target := [3]float64{1, 64, 1}
+	sp := protocol.BodySpec{Tool: "body_place", WorldID: "yard", Dimension: "minecraft:overworld", Pos: [3]float64{0, 64, 0}, Target: &target, Block: "air", Args: protocol.BodyArgs{Item: "minecraft:wheat_seeds"}}
+	if err := s.policy(sp); err != nil {
+		t.Fatal(err)
+	}
+	for _, blocked := range []string{"wheat", "minecraft:wheat", "wheat_seeds"} {
+		s.cfg.DenyBlocks = []string{blocked}
+		if err := s.policy(sp); err == nil || err.Error() != "denied_block" {
+			t.Fatalf("seed bypassed %s: %v", blocked, err)
+		}
+	}
+	s.cfg.DenyBlocks = nil
+	s.cfg.DenyItems = []string{"wheat_seeds"}
+	if err := s.policy(sp); err == nil || err.Error() != "denied_item" {
+		t.Fatal(err)
+	}
+}

@@ -21,6 +21,12 @@ var safeFoods = []string{"apple", "golden_apple", "enchanted_golden_apple", "bre
 var itemID = regexp.MustCompile(`^(minecraft:)?[a-z0-9_]+$`)
 
 func itemName(v string) string { return strings.TrimPrefix(v, "minecraft:") }
+func placedBlock(item string) string {
+	if itemName(item) == "wheat_seeds" {
+		return "wheat"
+	}
+	return itemName(item)
+}
 func contains(list []string, v string) bool {
 	v = itemName(v)
 	for _, x := range list {
@@ -245,7 +251,7 @@ func (s *Service) policy(sp protocol.BodySpec) error {
 	if (sp.Tool == "body_dig" || sp.Tool == "body_place") && (sp.Target == nil || !s.inZone(sp.WorldID, *sp.Target, 0)) {
 		return errors.New("out_of_zone")
 	}
-	if contains(hardBlocks, sp.Block) || contains(s.cfg.DenyBlocks, sp.Block) || contains(hardBlocks, sp.Args.Item) || contains(s.cfg.DenyBlocks, sp.Args.Item) {
+	if contains(hardBlocks, sp.Block) || contains(s.cfg.DenyBlocks, sp.Block) || contains(hardBlocks, sp.Args.Item) || contains(s.cfg.DenyBlocks, sp.Args.Item) || (sp.Tool == "body_place" && contains(s.cfg.DenyBlocks, placedBlock(sp.Args.Item))) {
 		return errors.New("denied_block")
 	}
 	for _, item := range []string{sp.Args.Item, sp.MainHand, sp.OffHand} {

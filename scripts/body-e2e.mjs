@@ -680,6 +680,7 @@ MinecraftBody.prototype.movements=function(...args){
     "item replace entity MineBodyV1 weapon.mainhand with minecraft:diamond_axe",
   );
   await command("give MineBodyV1 minecraft:oak_planks 16");
+  await command("give MineBodyV1 minecraft:wheat_seeds 8");
   await command("give MineBodyV1 minecraft:golden_apple 8");
   await command("give MineBodyV1 minecraft:tnt 8");
   await command("fill -10 -61 -10 32 -61 16 minecraft:grass_block");
@@ -867,6 +868,23 @@ MinecraftBody.prototype.movements=function(...args){
     confirmed(
       await send("body_place", { x: 1, y: -60, z: 1, item: "oak_planks" }),
     );
+    await command("setblock 1 -61 2 farmland[moisture=7]");
+    await command("setblock 2 -61 2 water");
+    const planted = await send("body_place", {
+      x: 1,
+      y: -60,
+      z: 2,
+      item: "wheat_seeds",
+      face: "up",
+    });
+    confirmed(planted);
+    assert.equal(planted.result.data.block, "wheat");
+    assert.equal(planted.result.data.item, "wheat_seeds");
+    // Restore the fixture cells: later spawn-protection checks require air here.
+    await command("setblock 1 -60 2 air");
+    await command("setblock 1 -61 2 grass_block");
+    await command("setblock 2 -61 2 grass_block");
+
     confirmed(await send("body_interact", { x: 3, y: -60, z: 0 }));
     confirmed(await send("body_use_item", { item: "golden_apple" }));
     assert.equal(

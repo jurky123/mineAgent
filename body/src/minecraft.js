@@ -17,6 +17,7 @@ import {
   checkGrant,
   fail,
   nameOf,
+  placedBlock,
   readTools,
   safeFoods,
   vector,
@@ -250,7 +251,7 @@ export class MinecraftBody {
     const tool = this.active?.tool || "";
     const moved = vector(from) && vector(to) ? distance(from, to) : null;
     if (
-      !this.active &&
+      (!this.active || this.active.tool === "body_command") &&
       moved !== null &&
       contactPrecision(this.bot, from, to)
     ) {
@@ -630,8 +631,13 @@ export class MinecraftBody {
       fail("invalid_args");
     if (tool === "body_place") {
       const item = this.item(args.item);
-      if (!b.registry.blocksByName[item.name]) fail("unsupported_item");
+      if (!b.registry.blocksByName[placedBlock(item.name)])
+        fail("unsupported_item");
       args.item = item.name;
+      if (item.name === "wheat_seeds") {
+        if (args.face && args.face !== "up") fail("farmland_required");
+        args.face = "up";
+      }
       spec.slot = item.slot;
       spec.count = item.count;
       if (!["air", "cave_air", "void_air"].includes(spec.block))
@@ -643,6 +649,8 @@ export class MinecraftBody {
         if (!face) fail("invalid_args");
         const ref = spec.target.map((n, i) => n - face[i]);
         const support = this.block(ref);
+        if (args.item === "wheat_seeds" && support.name !== "farmland")
+          fail("farmland_required");
         if (support.boundingBox === "empty") continue;
         spec.reference = ref;
         spec.faceVector = face;
@@ -1316,8 +1324,8 @@ export class MinecraftBody {
         b.placeBlock(this.block(sp.reference), new Vec3(...sp.faceVector)),
       );
       const block = this.block(sp.target);
-      if (block.name !== nameOf(args.item)) fail("server_rejected");
-      return { position: sp.target, block: block.name };
+      if (block.name !== placedBlock(args.item)) fail("server_rejected");
+      return { position: sp.target, item: args.item, block: block.name };
     }
     if (t === "body_interact") {
       if (b.heldItem) await this.step(a, () => b.unequip("hand"));

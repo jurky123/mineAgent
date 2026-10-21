@@ -60,7 +60,7 @@ export function contactPrecision(bot, from, to) {
   for (const axis of [0, 2]) {
     const d = to[axis] - from[axis],
       other = 2 - axis;
-    if (!d || Math.abs(d) > 0.01 || Math.abs(to[other] - from[other]) > 1e-6)
+    if (!d || Math.abs(d) > 0.025 || Math.abs(to[other] - from[other]) > 1e-6)
       continue;
     const fraction = from[axis] - Math.floor(from[axis]);
     if (Math.abs(fraction - (d < 0 ? 0.7 : 0.3)) > 1e-6) continue;

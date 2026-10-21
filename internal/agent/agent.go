@@ -520,6 +520,12 @@ func (a *Agent) requestContext(ctx context.Context, req Request) (context.Contex
 }
 
 func (a *Agent) Submit(req Request) bool {
+	if req.BodyPrincipal != nil {
+		if req.MaxIterations == 0 {
+			req.MaxIterations = req.BodyPrincipal.MaxSteps()
+		}
+		req.ReasoningEffort = req.BodyPrincipal.ReasoningEffort()
+	}
 	if !a.enabled {
 		return false
 	}
@@ -789,9 +795,12 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	}
 	if req.MaxIterations > 0 {
 		maxIter = req.MaxIterations
-	} else if req.BodyPrincipal != nil || maxIter <= 0 {
-		// Eino interprets zero as a finite default (20), not unlimited. Use its
-		// graph's native MaxInt ceiling; task completion/cancellation controls us.
+	} else if req.BodyPrincipal != nil {
+		maxIter = req.BodyPrincipal.MaxSteps()
+		if maxIter == 0 {
+			maxIter = math.MaxInt
+		}
+	} else if maxIter <= 0 {
 		maxIter = math.MaxInt
 	}
 	chatAgent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{

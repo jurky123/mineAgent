@@ -41,8 +41,8 @@ func TestBodyValidationRequiresBothIndependentAuthenticatedRoles(t *testing.T) {
 
 func TestBodySupportsUnlimitedAndExplicitRunBudgets(t *testing.T) {
 	b := DefaultBody()
-	if b.MaxSteps != 0 || b.RunTimeoutSec != 0 {
-		t.Fatal("body tasks still default to a finite budget")
+	if b.MaxSteps != 12 || b.RunTimeoutSec != 0 || b.MaxConsecutiveReads != 3 || b.ReasoningEffort != "medium" {
+		t.Fatal("body UX defaults are not bounded")
 	}
 	b.Enabled, b.Token = true, strings.Repeat("b", 32)
 	for _, budget := range []struct {

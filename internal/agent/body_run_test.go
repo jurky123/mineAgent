@@ -22,9 +22,11 @@ import (
 
 // Exercise the real Eino runner beyond all former 12/32/80 round ceilings and
 // beyond the outer conversation timeout, with actual tool invocations.
-func TestBodyTaskContinuesUntilModelFinishes(t *testing.T) { testContinuousTask(t, true) }
-func TestQQTaskContinuesBeyondFormerLimits(t *testing.T)   { testContinuousTask(t, false) }
-func testContinuousTask(t *testing.T, isBody bool) {
+func TestBodyTaskContinuesUntilModelFinishes(t *testing.T)    { testContinuousTask(t, true, 98, true) }
+func TestQQTaskContinuesBeyondFormerLimits(t *testing.T)      { testContinuousTask(t, false, 0, true) }
+func TestDefaultBodyBudgetStopsRepeatedToolLoop(t *testing.T) { testContinuousTask(t, true, 0, false) }
+func testContinuousTask(t *testing.T, isBody bool, maxIterations int, expectComplete bool) {
+	t.Helper()
 	const rounds = 96
 	var modelCalls, invoked atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +34,7 @@ func testContinuousTask(t *testing.T, isBody bool) {
 		n := modelCalls.Add(1)
 		time.Sleep(15 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
-		if n <= rounds {
+		if n <= int32(rounds) {
 			fmt.Fprintf(w, `{"id":"%d","object":"chat.completion","model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"step-%d","type":"function","function":{"name":"current_time","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`, n, n)
 		} else {
 			fmt.Fprint(w, `{"id":"done","object":"chat.completion","model":"test-model","choices":[{"index":0,"message":{"role":"assistant","content":"任务已核验完成"},"finish_reason":"stop"}]}`)
@@ -73,7 +75,7 @@ func testContinuousTask(t *testing.T, isBody bool) {
 	go a.Run(ctx)
 	done := make(chan struct{})
 	start := time.Now()
-	request := Request{Session: sess, SessionKey: "web:body-long-task", Query: msg.Text, TriggerMessageID: msg.ID,
+	request := Request{MaxIterations: maxIterations, Session: sess, SessionKey: "web:body-long-task", Query: msg.Text, TriggerMessageID: msg.ID,
 		Tools: []tool.BaseTool{&reviewClock{count: &invoked}}, SystemInstruction: "执行全部步骤后核验完成", Done: func() { close(done) }}
 	if isBody {
 		request.BodyPrincipal = &body.Principal{UserID: 1}
@@ -89,8 +91,12 @@ func testContinuousTask(t *testing.T, isBody bool) {
 		t.Fatal("task did not finish")
 	}
 	last, ok := ch.last()
-	if !ok || !strings.Contains(last.Text, "任务已核验完成") || invoked.Load() != rounds || time.Since(start) < time.Second {
-		t.Fatalf("task was prematurely limited: tools=%d reply=%q elapsed=%s", invoked.Load(), last.Text, time.Since(start))
+	if expectComplete {
+		if !ok || !strings.Contains(last.Text, "任务已核验完成") || invoked.Load() != int32(rounds) || time.Since(start) < time.Second {
+			t.Fatalf("explicit task budget failed: tools=%d reply=%q elapsed=%s", invoked.Load(), last.Text, time.Since(start))
+		}
+	} else if invoked.Load() < 1 || invoked.Load() > 12 || modelCalls.Load() > 12 || strings.Contains(last.Text, "任务已核验完成") {
+		t.Fatalf("default body loop was unbounded: tools=%d model=%d reply=%q", invoked.Load(), modelCalls.Load(), last.Text)
 	}
 }
 

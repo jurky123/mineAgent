@@ -29,6 +29,7 @@ type Principal struct {
 	Valid              func(context.Context) bool
 	mu                 sync.Mutex
 	failures           int
+	reads              int
 	lastTool, lastCode string
 	service            *Service
 	connection         string
@@ -62,6 +63,8 @@ type Service struct {
 	connection                    string
 	epoch, revision               uint64
 	resumeFromEpoch               uint64
+	pauseFromEpoch                uint64
+	activeCallID                  string
 	ready, paused, draining, busy bool
 	running                       *Principal
 	capabilities                  map[string]bool
@@ -130,9 +133,17 @@ func (s *Service) check(ctx context.Context, p *Principal, control, read bool) e
 	if p.failures >= 3 {
 		return errors.New("run_failed")
 	}
-	// A task submitted while paused may follow that exact resume, before its
-	// first write. Stops, reconnects, repeated resumes and used tasks cannot rebind.
-	if s.epoch != p.Epoch && p.awaitingResume && p.connection == s.connection && p.Epoch == s.resumeFromEpoch && s.epoch == p.Epoch+1 {
+	// Only an explicit pause or observed forced move can park the current run.
+	// Rebinding follows the exact same connection/resume; emergency stops and
+	// unknown side effects clear these markers and revoke old run authority.
+	if s.paused && s.pauseFromEpoch == p.Epoch && s.epoch == p.Epoch+1 && p.connection == s.connection {
+		p.Epoch = s.epoch
+		p.awaitingResume = true
+	}
+	if s.paused && (s.state.PauseReason == "forced_move" || s.state.PauseReason == "pause") && p.Epoch == s.epoch {
+		p.awaitingResume = true
+	}
+	if s.epoch != p.Epoch && p.connection == s.connection && (p.awaitingResume && p.Epoch == s.resumeFromEpoch && s.epoch == p.Epoch+1 || s.pauseFromEpoch == p.Epoch && s.resumeFromEpoch == p.Epoch+1 && s.epoch == p.Epoch+2) {
 		p.Epoch = s.epoch
 		p.awaitingResume = false
 	}
@@ -288,6 +299,11 @@ func (s *Service) Handle(peer tools.Sender, env *protocol.Envelope) {
 			s.received = time.Now()
 			if st.Paused {
 				s.paused = true
+				if s.running != nil && st.PauseReason == "forced_move" {
+					s.running.mu.Lock()
+					s.running.awaitingResume = true
+					s.running.mu.Unlock()
+				}
 			}
 			changed = true
 		}
@@ -339,7 +355,7 @@ func (s *Service) notify() {
 func (s *Service) Snapshot() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return map[string]any{"enabled": s.Enabled(), "mode": s.cfg.Mode, "bodyId": s.cfg.ID, "name": s.cfg.Name, "controlConnected": s.peer != nil, "ready": s.ready, "paused": s.paused, "draining": s.draining, "busy": s.busy, "controlEpoch": s.epoch, "state": s.state, "stale": s.received.IsZero() || time.Since(s.received) > 10*time.Second, "receivedAt": s.received.UnixMilli(), "pendingApprovals": len(s.waiting), "events": append([]protocol.BodyEvent{}, s.events...)}
+	return map[string]any{"enabled": s.Enabled(), "mode": s.cfg.Mode, "bodyId": s.cfg.ID, "name": s.cfg.Name, "controlConnected": s.peer != nil, "gameConnected": s.peer != nil && s.state.Connected, "stateStale": s.peer == nil || s.received.IsZero() || time.Since(s.received) > 10*time.Second, "policyRevision": s.revision, "pauseReason": s.state.PauseReason, "ready": s.ready, "paused": s.paused, "draining": s.draining, "busy": s.busy, "controlEpoch": s.epoch, "state": s.state, "stale": s.received.IsZero() || time.Since(s.received) > 10*time.Second, "receivedAt": s.received.UnixMilli(), "pendingApprovals": len(s.waiting), "events": append([]protocol.BodyEvent{}, s.events...)}
 }
 func (s *Service) audit(ctx context.Context, p *Principal, id, tool, decision, operator string, data any) error {
 	if s.store == nil {
@@ -467,7 +483,7 @@ func (s *Service) inspect(ctx context.Context, p *Principal, tool string, args p
 		return protocol.BodySpec{}, errors.New("inspect_timeout")
 	case r := <-ch:
 		if !r.OK || r.Spec == nil {
-			return protocol.BodySpec{}, fmt.Errorf("%s: %s", r.Code, r.Error)
+			return protocol.BodySpec{}, &inspectionError{r.Code, r.Data}
 		}
 		sp := *r.Spec
 		if sp.Tool != tool || sp.ConnectionID != req.ConnectionID || sp.ControlEpoch != req.ControlEpoch || sp.PolicyRevision != req.PolicyRevision || sp.ID == "" || !finitePos(sp.Pos) || sp.ExpiresAt > req.ExpiresAt || sp.ExpiresAt <= time.Now().UnixMilli() {
@@ -497,12 +513,20 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 	peer := s.peer
 	ch := make(chan protocol.BodyResult, 1)
 	s.calls[id] = ch
-	req := protocol.BodyCall{CallID: id, ConnectionID: s.connection, ControlEpoch: s.epoch, PolicyRevision: s.revision, Tool: tool, Args: args, TimeoutMS: ms, Grant: grant}
+	s.activeCallID = id
+	req := protocol.BodyCall{CallID: id, RunID: p.RunID, ConnectionID: s.connection, ControlEpoch: s.epoch, PolicyRevision: s.revision, Tool: tool, Args: args, TimeoutMS: ms, Grant: grant}
 	if sp != nil {
 		req.SpecID = sp.ID
 	}
 	s.mu.Unlock()
-	defer func() { s.mu.Lock(); delete(s.calls, id); s.mu.Unlock() }()
+	defer func() {
+		s.mu.Lock()
+		delete(s.calls, id)
+		if s.activeCallID == id {
+			s.activeCallID = ""
+		}
+		s.mu.Unlock()
+	}()
 	if !isRead(tool) {
 		if err := s.audit(ctx, p, id, tool, "dispatch", "", map[string]any{"spec": sp, "runId": p.RunID}); err != nil {
 			return s.toolFailure(id, "audit_unavailable", p)
@@ -537,6 +561,7 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 	}
 	if !isRead(tool) {
 		p.mu.Lock()
+		p.reads = 0
 		if res.OK || navigationProgress(res, sp) {
 			p.failures = 0
 		} else {
@@ -553,13 +578,10 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 }
 func (s *Service) pauseUnknown() {
 	s.mu.Lock()
-	paused := s.paused
 	s.waiting = map[string]pendingAction{}
 	s.mu.Unlock()
 	s.invalidateApprovals()
-	if paused {
-		return
-	}
+	// Unknown effects revoke run authority even if a forced move already paused us.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_, _ = s.Control(ctx, "stop", nil)

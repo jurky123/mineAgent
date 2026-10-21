@@ -22,7 +22,7 @@
 
 ## 持续任务与连接诊断
 
-身体任务默认 `body.maxSteps=0`、`body.runTimeoutSec=0`，不设置任务总轮数和总时长上限，也不叠加普通聊天的 300 秒超时。任务复用现有 Go Agent 的“观察 → 行动 → 核验”循环，模型应持续推进到完成或真实阻塞，不因步骤多要求用户反复说“继续”。可显式设置正数预算；普通 MC、QQ 等通道预算保持原样。游戏内委托仍受已验证授权的有效期限制，长任务宜在网页提交。
+身体任务默认 `body.maxSteps=12`、`body.maxConsecutiveReads=3`、`body.reasoningEffort=medium`、`body.runTimeoutSec=0`；不设置任务总时长上限，轮数有界。显式设置 `maxSteps=0` 才不限总轮数，也不叠加普通聊天的 300 秒超时。任务复用现有 Go Agent 的“观察 → 行动 → 核验”循环，模型应持续推进到完成或真实阻塞，不因步骤多要求用户反复说“继续”。可显式设置正数预算；普通 MC、QQ 等通道预算保持原样。游戏内委托仍受已验证授权的有效期限制，长任务宜在网页提交。
 
 单次动作仍有超时，准备动作/审批仍短期有效，WorldEdit 出生点保护和权限不变。动作配额耗尽时，后端等待配额恢复后继续，等待可被取消；失败预留不消耗其他类型配额。成功动作或朝目标净前进至少 0.5 格的部分寻路清零连续失败计数；连续三次无明显进展的执行失败停止；未知副作用不自动重试。
 
@@ -32,7 +32,7 @@
 
 ## 模型 API：复用 MineAgent
 
-AI 玩家直接复用 Go 后端中同一个 Agent 和现有 `model.baseURL`、`model.name`、`model.apiKey`；也沿用对应的 `MINEAGENT_MODEL_*` 环境变量覆盖。游戏内身体面板使用默认模型；网页玩家资料中的任务沿用主站账号的模型/思考强度偏好，未选择时使用默认值。无需另配 body 模型 API，也不要向 Node 执行器注入模型 API Key。
+AI 玩家直接复用 Go 后端中同一个 Agent 和现有 `model.baseURL`、`model.name`、`model.apiKey`；也沿用对应的 `MINEAGENT_MODEL_*` 环境变量覆盖。游戏内身体面板使用默认模型；网页玩家资料中的任务沿用主站账号的模型选择；身体任务的思考强度使用 body.reasoningEffort（默认 medium），避免继承网页 high 偏好。无需另配 body 模型 API，也不要向 Node 执行器注入模型 API Key。
 
 Node 只接收身体工具动作。现有模型凭据失效会同时影响主助手与 AI 玩家；应在 MineAgent 的原私有配置中更新，并通过正常部署流程重新加载，不能靠重启 Node 或另建模型调用解决。
 
@@ -222,3 +222,19 @@ Node 12 项安全/导航测试、Go 相关包竞态/静态检查与全仓回归�
 23:55 CST 发布前核查仅机器人在线 1 人，对局、模型任务、身体动作和待审批均为零；发送全服通告后经 `scripts/deploy.sh` 的对局/drain 检查部署后端 `dcf23aa`，重载 Node，未重启 Paper。旧二进制与 Node 源码保存在私有目录 `backups/cap-pause-20261020-235521/`。恢复维护前坐标和创造模式后，通过认证控制接口显式解除暂停，未恢复旧任务。
 
 正式管理员工具自检：`workspace_exec pwd` exitCode=0；审查现有 `cabin_plan.py` 后，用 `python3 -B -c` 导入并调用 `build(0,64,0)` 返回 348 个方块（仅内存计算，未覆盖施工文件）。一次附近 `body_goto` 成功、实际位移约 1.81 格，随后独立 `body_observe` 确认位置改变、创造模式且 paused=false；未挖掘、放置或执行建造命令。恢复位置时的明确传送被新诊断记录为约 23.46 格，说明 from/to/distance 采集已在正式协议链路生效。这次短距验证没有复现原位置包原因，不能据此断言所有位置纠正问题已经消失。
+
+
+## 身体体验修订（2026-10-21，候选版本，未部署）
+
+- MC `@agent` 的普通会话只注册 `body_profile`，提供启用、名字、在线、活动与暂停状态，不含坐标、背包或事件。关联已验证网页管理员后，服务端生成的当前游戏 nonce、在线权限与实时管理员会话均有效，才进入独立私密身体会话；OP 或名字不构成授权。断线、撤权、过期后降回公开能力。
+- 活动动作中 ≤0.75 格的位置修正不暂停；2秒内第4次修正、较大位移、无活动动作的位移仍暂停（登录头2秒沿用原有出生保护）。准备快照立即作废；不篡改动作起点或把修正当成进展。管理员 pause/forced_move 保留原任务，明确 resume 后继续规划；急停 stop/disconnect、失联、未知副作用与撤权仍废弃旧写入授权，不能自动重放。
+- LLM 的 `body_stop` 使用带 callId 的 cancel 控制帧，只取消当时派发的动作，ACK 后可继续，不改变暂停或 epoch。延迟取消不影响新动作。无法确认清理仍走 fail-closed 急停；挖掘/放置结果未知时也继续要求人工核查。管理员控制 API 的 stop 仍是急停。
+- observe 返回 7×7 已加载列摘要和最近3个可站立点；find_blocks 包含 distance/surfaceY/standable 并排序。goto 的坐标形式要求 x,z，y 可省略，只在身体高度上下8格已加载地形中选安全地面；显式高度偏差超过2格返回 target_above_ground/target_below_ground 与 suggestedY。它不是全世界最高点查询，也不保证选中点存在通路。
+- 寻路允许冲刺、空手开木质栅栏门（固定的寻路依赖不自动开普通木门，需 body_interact），关闭挖路、搭柱和跑酷；副手非空时拒绝自动开门导航，主手先清空，避免携带危险物品触发交互。搜索半径64、计算5秒，动作总超时不变。
+- 每任务连续只读预算默认3，执行动作后重置；相同 run/tool/args 的观察指纹相同时返回 unchanged，继续使用该任务前次数据。不会跨用户缓存完整观察；状态仍随结果返回，缓存最多64项。
+- builder 权限清单补 essentials.help/list；发布时需按清单同步现有 LuckPerms 组，源码清单变化不等于正式组已更新。批量建造继续使用原有 body_command + WorldEdit、明确区外选区与验证/undo，不增加保护绕过或任意传送。
+- 协议仍为v1，新增可选 runId/cancel.callId/inspect.data/chat.session；后端与 Node、Paper 应配套更新。旧执行器不能确认 cancel 时会安全失败，不能将其当作成功。
+
+验证记录与遗留项见本轮 BODY_UX_FOLLOWUP_2026-10-21.md。历史发布条目保留当时语义，以上修订优先。
+
+完整 body-e2e 测试会额外启动 Paper/ViaProxy/Node/浏览器，不能按 JVM 的 -Xmx 估算总峰值。脚本现在启动前要求 Linux MemAvailable 至少4GiB，不足时在创建测试进程之前拒绝；请在独立测试环境运行，没有跳过预检的开关。低成本前置检查：node --test scripts/body-test-resources.test.mjs。

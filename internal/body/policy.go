@@ -105,7 +105,8 @@ func parseArgs(tool, raw string) (protocol.BodyArgs, error) {
 	}
 	xyz := a.X != nil && a.Y != nil && a.Z != nil
 	anyXYZ := a.X != nil || a.Y != nil || a.Z != nil
-	if anyXYZ && !xyz {
+	xz := a.X != nil && a.Z != nil
+	if anyXYZ && !xyz && !(tool == "body_goto" && xz) {
 		return a, errors.New("invalid_args")
 	}
 	if a.Item != "" && !itemID.MatchString(a.Item) {
@@ -114,7 +115,7 @@ func parseArgs(tool, raw string) (protocol.BodyArgs, error) {
 	switch tool {
 	case "body_goto", "body_look_at":
 		n := 0
-		if xyz {
+		if xyz || tool == "body_goto" && xz {
 			n++
 		}
 		if a.Player != "" {

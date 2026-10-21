@@ -49,6 +49,7 @@ func TestStatusRetainsPauseReasonFromBodyState(t *testing.T) {
 
 func TestPausedTaskFollowsOnlyItsInitialResume(t *testing.T) {
 	s, peer, _, _ := setup(t)
+	s.cfg.MaxConsecutiveReads = 8 // this test isolates authority, not the read budget
 	s.mu.Lock()
 	s.paused = true
 	s.mu.Unlock()

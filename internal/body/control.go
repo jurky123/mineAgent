@@ -34,6 +34,11 @@ func (s *Service) Control(ctx context.Context, action string, p *Principal) (pro
 		return ack, nil
 	}
 	s.resumeFromEpoch = 0
+	if action == "pause" {
+		s.pauseFromEpoch = s.epoch
+	} else if action != "resume" {
+		s.pauseFromEpoch = 0
+	}
 	if action == "resume" {
 		s.resumeFromEpoch = s.epoch
 	}
@@ -77,6 +82,41 @@ func (s *Service) Control(ctx context.Context, action string, p *Principal) (pro
 		s.notify()
 		go func() { _ = s.audit(ctx, p, id, "body_control", "confirmed", "", ack) }()
 		return ack, nil
+	}
+}
+
+// CancelAction stops one currently dispatched action, without changing run
+// authority, latching pause or reviving a paused body. The target ID prevents a
+// delayed cancel from touching a different subsequent action.
+func (s *Service) CancelAction(ctx context.Context, p *Principal) (protocol.BodyAck, error) {
+	if err := s.Check(ctx, p, true); err != nil {
+		return protocol.BodyAck{}, err
+	}
+	s.mu.Lock()
+	id, peer := ID(), s.peer
+	ch := make(chan protocol.BodyAck, 1)
+	s.controls[id] = ch
+	req := protocol.BodyControl{ID: id, ConnectionID: s.connection, ControlEpoch: s.epoch, Action: "cancel", CallID: s.activeCallID}
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); delete(s.controls, id); s.mu.Unlock() }()
+	if err := s.audit(ctx, p, id, "body_stop", "requested", "", map[string]any{"action": "cancel", "callId": req.CallID}); err != nil {
+		return protocol.BodyAck{}, errors.New("audit_unavailable")
+	}
+	if peer == nil || peer.SendProtocol(protocol.TypeBodyControl, req) != nil {
+		s.pauseUnknown()
+		return protocol.BodyAck{}, errors.New("stop_unconfirmed")
+	}
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	select {
+	case ack := <-ch:
+		return ack, nil
+	case <-ctx.Done():
+		s.pauseUnknown()
+		return protocol.BodyAck{}, errors.New("stop_unconfirmed")
+	case <-timer.C:
+		s.pauseUnknown()
+		return protocol.BodyAck{}, errors.New("stop_unconfirmed")
 	}
 }
 func (s *Service) Drain(ctx context.Context, p *Principal) error {

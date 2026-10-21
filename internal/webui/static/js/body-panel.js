@@ -167,7 +167,13 @@ export async function mountBodyPanel(root, { agentId } = {}) {
         !st.receivedAt ||
         Date.now() - st.receivedAt > 10000;
     $("body-name").textContent = st.name || agentId;
-    $("body-status").dataset.state = stale ? "unknown" : !s.connected ? "offline" : st.paused ? "paused" : "online";
+    $("body-status").dataset.state = stale
+      ? "unknown"
+      : !s.connected
+        ? "offline"
+        : st.paused
+          ? "paused"
+          : "online";
     $("body-status").textContent = stale
       ? "状态未知"
       : !s.connected
@@ -184,7 +190,11 @@ export async function mountBodyPanel(root, { agentId } = {}) {
       : st.mode === "observe"
         ? "观察模式：可查询状态。"
         : st.paused
-          ? "恢复后请重新发起任务，旧任务不会继续。"
+          ? s.pauseReason === "forced_move" || s.pauseReason === "pause"
+            ? "已暂停：" + s.pauseReason + "；恢复后继续当前任务。"
+            : "已停止：" +
+              (s.pauseReason || "待确认") +
+              "；恢复后可提交新任务。"
           : "高危动作需要在下方明确审批。";
     $("body-task").textContent = stale
       ? "未知"
@@ -289,7 +299,10 @@ export async function mountBodyPanel(root, { agentId } = {}) {
         );
         list.append(row);
       }
-      if (!messages.length) list.append(h("li", "field-hint", "暂无回复，发送任务后会显示在这里。"));
+      if (!messages.length)
+        list.append(
+          h("li", "field-hint", "暂无回复，发送任务后会显示在这里。"),
+        );
     }
     if (latest) render(latest);
   }
@@ -364,6 +377,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     });
   for (const [id, action] of [
     ["body-stop", "stop"],
+    ["body-pause", "pause"],
     ["body-resume", "resume"],
     ["body-disconnect", "disconnect"],
   ])
@@ -383,7 +397,7 @@ export async function mountBodyPanel(root, { agentId } = {}) {
           const ack = result.ack;
           if (ack?.paused === true) toast("已确认暂停");
           else if (action === "resume" && ack?.paused === false)
-            toast("已确认恢复，可以发起新任务");
+            toast("已确认恢复；保留的任务将继续");
           else error(new Error("操作已提交，尚未确认最新状态。"));
           await refresh();
         } catch (e) {
@@ -437,7 +451,9 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     try {
       localStorage.removeItem(conversationKey);
     } catch {}
-    $("body-replies").replaceChildren(h("li", "field-hint", "新会话还没有任务。"));
+    $("body-replies").replaceChildren(
+      h("li", "field-hint", "新会话还没有任务。"),
+    );
     $("body-run-status").textContent = "新任务会话，发送前不会创建记录。";
     $("body-agent-chat").href = "/agent";
   };
@@ -485,7 +501,9 @@ export async function mountBodyPanel(root, { agentId } = {}) {
     deny(
       e.message === "body_not_found"
         ? errors.body_not_found
-        : needsLogin ? errors.not_operator : "暂时无法读取身体服务，请检查连接后重新检查。",
+        : needsLogin
+          ? errors.not_operator
+          : "暂时无法读取身体服务，请检查连接后重新检查。",
       needsLogin,
     );
   }
@@ -498,7 +516,7 @@ const BODY_MARKUP = `
   <section class="body-control" aria-label="身体控制">
     <div><strong id="body-status" role="status">正在连接…</strong><p id="body-hint" class="field-hint">正在读取最新状态</p></div>
     <div class="body-toolbar">
-      <div class="body-buttons" role="group" aria-label="暂停与恢复"><button class="btn danger" id="body-stop">停止并暂停</button><button class="btn primary" id="body-resume">恢复</button></div>
+      <div class="body-buttons" role="group" aria-label="暂停与恢复"><button class="btn danger" id="body-stop">停止并暂停</button><button class="btn" id="body-pause">暂停任务</button><button class="btn primary" id="body-resume">恢复并继续</button></div>
       <div class="body-buttons" role="group" aria-label="其他操作"><a class="btn" id="body-agent-chat" href="/agent">打开 Agent</a><button class="btn" id="body-disconnect">离开游戏</button></div>
     </div>
   </section>

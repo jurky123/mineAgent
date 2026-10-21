@@ -1,5 +1,5 @@
 // Full body E2E against an explicitly marked disposable Paper world and local mock model.
-// Starts/stops only its own test Paper/backend/body processes. Never reads production config.
+// Starts/stops only disposable processes. Real-model UX is separately opt-in; consumes only the configured model connection, never logs credentials.
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -11,10 +11,17 @@ import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { chromium } from "playwright";
+import { bodyTestResourcePreflight } from "./body-test-resources.mjs";
+await bodyTestResourcePreflight();
 const paperDir = process.argv[2],
   binary = process.argv[3] || "/tmp/mineagent-body-v1";
 const proxyJar = process.argv[4];
 const worldEditJar = process.env.MINEAGENT_WORLDEDIT_TEST_JAR;
+const uxModel = process.env.MINEAGENT_UX_MODEL_CONFIG
+  ? JSON.parse(await fs.readFile(process.env.MINEAGENT_UX_MODEL_CONFIG, "utf8"))
+      .model
+  : null;
+const uxModelMetrics = [];
 const require = createRequire(new URL("../body/package.json", import.meta.url));
 const mineflayer = require("mineflayer"),
   nbt = require("prismarine-nbt");
@@ -73,7 +80,7 @@ const webPort = await port(),
 const bodyToken = randomBytes(24).toString("hex"),
   paperToken = randomBytes(24).toString("hex"),
   profileToken = randomBytes(24).toString("hex");
-const logs = { paper: "", backend: "", body: "", proxy: "" },
+const logs = { paper: "", backend: "", body: "", proxy: "", portal: "" },
   children = [];
 let browser, paper, backend, body, proxy;
 const bots = [];
@@ -94,6 +101,50 @@ const model = http.createServer(async (req, res) => {
   const tool = request.messages
     ?.slice(lastUser + 1)
     .findLast((m) => m.role === "tool");
+  if (uxModel && request.messages?.[lastUser]?.content?.includes("[UX REAL]")) {
+    const start = Date.now();
+    try {
+      const upstream = await fetch(
+        uxModel.baseURL.replace(/\/$/, "") + "/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + uxModel.apiKey,
+          },
+          body: JSON.stringify({ ...request, model: uxModel.name }),
+          signal: AbortSignal.timeout(60000),
+        },
+      );
+      const data = upstream.ok
+        ? await upstream.text()
+        : JSON.stringify({
+            error: {
+              message: "isolated UX model returned HTTP " + upstream.status,
+            },
+          });
+      uxModelMetrics.push({
+        elapsedMs: Date.now() - start,
+        status: upstream.status,
+        effort: request.reasoning_effort,
+        tools: request.messages
+          .filter((m) => m.role === "assistant")
+          .flatMap((m) => (m.tool_calls || []).map((t) => t.function.name)),
+      });
+      res.writeHead(upstream.status, {
+        "Content-Type":
+          upstream.headers.get("content-type") || "application/json",
+      });
+      res.end(data);
+    } catch {
+      res.writeHead(502).end(
+        JSON.stringify({
+          error: { message: "isolated UX upstream unavailable" },
+        }),
+      );
+    }
+    return;
+  }
   let message,
     finish = "stop";
   let nextScenario;
@@ -341,6 +392,53 @@ try {
   radius: 512
 `,
     );
+  let aiProxy;
+  if (uxModel) {
+    assert.ok(
+      process.env.MINEAGENT_UX_AIPLAYER_BINARY,
+      "UX requires a temporary AI portal binary",
+    );
+    const aiPort = await port();
+    aiProxy = `http://127.0.0.1:${aiPort}`;
+    const profileFile = path.join(temp, "profile-token");
+    await fs.writeFile(profileFile, profileToken, { mode: 0o600 });
+    const portalConfig = path.join(temp, "aiplayer.json");
+    await fs.writeFile(
+      portalConfig,
+      JSON.stringify({
+        listen: `127.0.0.1:${aiPort}`,
+        origin,
+        database: path.join(temp, "aiplayer.db"),
+        agents: [{ id: "main", name: "MineBodyV1", displayName: "MineBodyV1" }],
+        profile: {
+          agentId: "main",
+          url: origin + "/api/body/profile",
+          tokenFile: profileFile,
+        },
+      }),
+      { mode: 0o600 },
+    );
+    start(
+      "portal",
+      process.env.MINEAGENT_UX_AIPLAYER_BINARY,
+      ["--config", portalConfig],
+      repo,
+    );
+    await until(
+      async () => (await fetch(aiProxy + "/ai/main")).ok,
+      "isolated AI portal",
+    );
+  }
+  if (process.env.MINEAGENT_ESSENTIALS_TEST_JAR) {
+    await fs.copyFile(
+      process.env.MINEAGENT_ESSENTIALS_TEST_JAR,
+      path.join(paperDir, "plugins/EssentialsX.jar"),
+    );
+    await fs.appendFile(
+      path.join(paperDir, "permissions.yml"),
+      "    essentials.help: true\n    essentials.list: true\n",
+    );
+  }
   const cfg = {
     listen: `127.0.0.1:${wsPort}`,
     allowedRoles: ["minecraft", "minecraft-body"],
@@ -363,6 +461,7 @@ try {
       passkeyRPID: "localhost",
       passkeyOrigins: [origin],
       minIntervalMs: 1,
+      aiPlayerProxy: aiProxy,
     },
     body: {
       enabled: true,
@@ -370,6 +469,8 @@ try {
       id: "main",
       name: "MineBodyV1",
       expectedMcVersion: "26.2",
+      maxSteps: uxModel ? 12 : 0, // explicit unlimited soak only in deterministic regression
+      maxConsecutiveReads: uxModel ? 3 : 64,
       worldMappings: [
         { worldId: "m0-world", dimension: "minecraft:overworld" },
       ],
@@ -455,7 +556,8 @@ try {
       "10",
       "java",
       "-Xms128M",
-      "-Xmx768M",
+      "-Xmx512M",
+      "-XX:MaxDirectMemorySize=64M",
       "-XX:ActiveProcessorCount=1",
       "-jar",
       "paper-26.2-124.jar",
@@ -466,7 +568,7 @@ try {
   await until(
     () => logs.paper.includes('For help, type "help"'),
     "test Paper startup",
-    60000,
+    150000,
   );
   const login = await api(
     "/api/auth/password/setup",
@@ -531,7 +633,7 @@ MinecraftBody.prototype.movements=function(){
       return st.state?.connected && st.ready;
     },
     "body handshake/spawn",
-    30000,
+    90000,
   );
   await command("difficulty peaceful");
   if (worldEditJar) await command("setworldspawn 1024 -60 0");
@@ -555,17 +657,19 @@ MinecraftBody.prototype.movements=function(){
   const health = await send("body_status", {});
   confirmed(health);
   assert.equal(health.result.data.controlConnected, true);
-  const longRead = await send("body_observe", {}, true, {
-    repeat: 40,
-    beforeIssue: async () =>
-      assert.equal((await control("resume")).httpStatus, 200),
-  });
-  confirmed(longRead);
-  assert.equal(
-    longRead.results.length,
-    40,
-    "same task continues beyond former 12/32 round limits after initial resume",
-  );
+  if (!uxModel) {
+    const longRead = await send("body_observe", {}, true, {
+      repeat: 40,
+      beforeIssue: async () =>
+        assert.equal((await control("resume")).httpStatus, 200),
+    });
+    confirmed(longRead);
+    assert.equal(
+      longRead.results.length,
+      40,
+      "same task continues beyond former 12/32 round limits after initial resume",
+    );
+  }
   // Build allowlists do not fence a player's walking position or path.
   await command("tp MineBodyV1 65 -60 0");
   await wait(1500);
@@ -578,10 +682,24 @@ MinecraftBody.prototype.movements=function(){
   await command("tp MineBodyV1 0 -60 0");
   await wait(1500);
   assert.equal((await control("resume")).httpStatus, 200);
-  confirmed(await send("body_observe", {}));
+  const terrainObservation = await send("body_observe", {});
+  confirmed(terrainObservation);
+  assert.equal(terrainObservation.result.data.terrain.columns.length, 49);
+  assert.equal(
+    terrainObservation.result.data.terrain.standablePoints.length,
+    3,
+  );
+  const repeatedObservation = await send("body_observe", {}, true, {
+    repeat: 2,
+  });
+  confirmed(repeatedObservation);
+  assert.equal(repeatedObservation.results[1].data.unchanged, true);
   confirmed(await send("body_inventory", {}));
   confirmed(await send("body_find_blocks", { blocks: "oak_log", radius: 16 }));
-  confirmed(await send("body_goto", { x: 9, y: -60, z: 0, range: 1 }));
+  const badHeight = await send("body_goto", { x: 9, y: -55, z: 0, range: 1 });
+  assert.equal(badHeight.result.code, "target_above_ground");
+  assert.equal(badHeight.result.data.suggestedY, -60);
+  confirmed(await send("body_goto", { x: 9, z: 0, range: 1 }));
   confirmed(await send("body_goto", { x: 0, y: -60, z: 0, range: 1 }));
   confirmed(await send("body_look_at", { x: 2, y: -60, z: 0 }));
   confirmed(await send("body_dig", { x: 2, y: -60, z: 0 }));
@@ -829,6 +947,22 @@ MinecraftBody.prototype.movements=function(){
   );
   let confirmPanel = await navigate(controller, bodyPanel, "恢复");
   bodyPanel = await navigate(controller, confirmPanel, "确认");
+  if (uxModel) {
+    const { runExperience } = await import("./body-ux-experience.mjs");
+    await runExperience({
+      page,
+      origin,
+      api,
+      state,
+      control,
+      command,
+      controller,
+      until,
+      wait,
+      temp,
+      uxModelMetrics,
+    });
+  }
   let taskPanel = await navigate(controller, bodyPanel, "下达任务");
   const observed = await bodyTask(controller, taskPanel, "body_observe", {});
   await until(
@@ -917,6 +1051,7 @@ MinecraftBody.prototype.movements=function(){
   assert.deepEqual(pageErrors, []);
   await browser.close();
   browser = null;
+  assert.equal((await control("resume")).httpStatus, 200);
   const selfStop = await send("body_stop", {}, false);
   await until(async () => {
     const history = await api("/api/history?conv=" + selfStop.conv);
@@ -924,8 +1059,8 @@ MinecraftBody.prototype.movements=function(){
       !history.running &&
       (selfStop.result || history.messages?.some((m) => /已停止/.test(m.text)))
     );
-  }, "body_stop ends its own task");
-  assert.equal((await state()).paused, true);
+  }, "body_stop completes without pausing its task");
+  assert.equal((await state()).paused, false);
   if (selfStop.result) confirmed(selfStop);
   if (worldEditJar) {
     // Bypass Go/Node tool checks using a real, non-OP game client with the

@@ -130,7 +130,9 @@
     "name": "MineAgentBot",
     "expectedMcVersion": "26.2",
     "token": "",
-    "maxSteps": 0,
+    "maxSteps": 12,
+    "maxConsecutiveReads": 3,
+    "reasoningEffort": "medium",
     "runTimeoutSec": 0,
     "worldMappings": [],
     "zones": {

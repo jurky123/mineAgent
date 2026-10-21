@@ -155,7 +155,7 @@ try {
     ),
     404,
   );
-  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await page.getByRole("button", { name: "恢复并继续", exact: true }).click();
   await page.locator("#body-status").filter({ hasText: "在线待机" }).waitFor();
   await page
     .getByLabel("给当前玩家的任务", { exact: true })

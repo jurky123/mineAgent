@@ -281,3 +281,33 @@ func TestRequestSequenceAndLiveNonceAreRequired(t *testing.T) {
 		t.Fatal("reconnected same-name player inherited authority")
 	}
 }
+
+func TestChatRequiresVerifiedCurrentGameDelegation(t *testing.T) {
+	f := setup(t)
+	c := protocol.ChatMessage{UUID: playerUUID, Player: "TestPlayer", Session: gameNonce}
+	if f.b.Chat(context.Background(), f.peer, c, "过来") {
+		t.Fatal("unpaired chat got private body tools")
+	}
+	f.link(t)
+	bad := c
+	bad.Session = "old-session"
+	if f.b.Chat(context.Background(), f.peer, bad, "过来") {
+		t.Fatal("old game nonce accepted")
+	}
+	bad = c
+	bad.Player = "Impostor"
+	if f.b.Chat(context.Background(), f.peer, bad, "过来") {
+		t.Fatal("name mismatch accepted")
+	}
+	if !f.b.Chat(context.Background(), f.peer, c, "观察") {
+		t.Fatal("verified chat not routed")
+	}
+	reply := <-f.peer.replies
+	if reply["target"] != "TestPlayer" {
+		t.Fatal("private error was broadcast", reply)
+	}
+	f.request(t, "status", false)
+	if f.b.Chat(context.Background(), f.peer, c, "观察") {
+		t.Fatal("permission revoked chat retained body tools")
+	}
+}

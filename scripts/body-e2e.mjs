@@ -949,6 +949,59 @@ MinecraftBody.prototype.movements=function(...args){
       (await send("body_command", { command: "help" })).result.outcome,
       "submitted",
     );
+    await command("setblock 4 -60 0 oak_fence_gate[facing=north,open=true]");
+    confirmed(await send("body_interact", { x: 4, y: -60, z: 0 }));
+    const gateClosed = "gate-closed-" + randomUUID();
+    await command(
+      `execute if block 4 -60 0 oak_fence_gate[open=false] run say ${gateClosed}`,
+    );
+    await until(
+      () => logs.paper.includes("[Server] " + gateClosed),
+      "native manual fence gate closes",
+    );
+    await command("setblock 4 -60 0 air");
+    // An enclosed corridor prevents a false pass by walking around the door.
+    await command("fill 3 -60 1 5 -58 8 stone");
+    await command("fill 4 -60 2 4 -59 7 air");
+    await command(
+      "setblock 4 -60 4 oak_door[facing=north,half=lower,open=false]",
+    );
+    await command(
+      "setblock 4 -59 4 oak_door[facing=north,half=upper,open=false]",
+    );
+    await command("minecraft:tp MineBodyV1 4.315 -60 2.5");
+    await wait(1000);
+    assert.equal((await control("resume")).httpStatus, 200);
+    const closedDoor = await send("body_goto", {
+      x: 4.5,
+      y: -60,
+      z: 6.5,
+      range: 1,
+      timeoutSec: 10,
+    });
+    assert.equal(
+      closedDoor.result.code,
+      "path_not_found",
+      "closed door is not auto-clicked or dug",
+    );
+    confirmed(await send("body_interact", { x: 4, y: -60, z: 4 }));
+    confirmed(
+      await send("body_goto", {
+        x: 4.5,
+        y: -60,
+        z: 6.5,
+        range: 1,
+        timeoutSec: 10,
+      }),
+    );
+    assert.ok(
+      (await state()).state.pos[2] > 5,
+      "real body passes the explicitly opened wood door",
+    );
+    await command("minecraft:tp MineBodyV1 0 -60 0");
+    await wait(1000);
+    assert.equal((await control("resume")).httpStatus, 200);
+    await command("fill 3 -60 1 5 -58 8 air");
     if (worldEditJar) {
       console.log(
         "WorldEdit protection: real agent -> command -> guarded extent",

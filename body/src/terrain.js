@@ -2,11 +2,57 @@ import { Vec3 } from "vec3";
 
 const unsafe =
   /(?:water|lava|fire|cactus|magma|powder_snow|sweet_berry|wither_rose)/;
+export const openDoorway = (b) =>
+  !!b?.name?.endsWith("_door") &&
+  b.getProperties?.().open === true &&
+  Array.isArray(b.shapes) &&
+  b.shapes.every(
+    (s) => s[3] <= 0.2 || s[0] >= 0.8 || s[5] <= 0.2 || s[2] >= 0.8,
+  );
+
+// An open leaf is passable along its doorway, but still blocks sideways
+// crossings. Check the real swept player box for each proposed edge.
+export function doorTransitionClear(bot, from, to) {
+  const a = [Math.floor(from.x) + 0.5, from.y, Math.floor(from.z) + 0.5];
+  const c = [Math.floor(to.x) + 0.5, to.y, Math.floor(to.z) + 0.5];
+  const min = [
+    Math.min(a[0], c[0]) - 0.3,
+    Math.min(a[1], c[1]),
+    Math.min(a[2], c[2]) - 0.3,
+  ];
+  const max = [
+    Math.max(a[0], c[0]) + 0.3,
+    Math.max(a[1], c[1]) + 1.8,
+    Math.max(a[2], c[2]) + 0.3,
+  ];
+  for (let x = Math.floor(min[0]); x <= Math.floor(max[0]); x++)
+    for (let y = Math.floor(min[1]); y <= Math.floor(max[1]); y++)
+      for (let z = Math.floor(min[2]); z <= Math.floor(max[2]); z++) {
+        const b = bot.blockAt(new Vec3(x, y, z));
+        if (!b) return false;
+        if (!b.name?.endsWith("_door")) continue;
+        if (
+          b.shapes?.some(
+            (s) =>
+              x + s[0] < max[0] - 1e-7 &&
+              x + s[3] > min[0] + 1e-7 &&
+              y + s[1] < max[1] - 1e-7 &&
+              y + s[4] > min[1] + 1e-7 &&
+              z + s[2] < max[2] - 1e-7 &&
+              z + s[5] > min[2] + 1e-7,
+          )
+        )
+          return false;
+      }
+  return true;
+}
+
 const free = (b) =>
   !!b &&
   !unsafe.test(b.name) &&
   (b.boundingBox === "empty" ||
-    (Array.isArray(b.shapes) && b.shapes.length === 0));
+    (Array.isArray(b.shapes) && b.shapes.length === 0) ||
+    openDoorway(b));
 
 // Only loaded blocks within eight vertical blocks of the body are inspected.
 // This chooses a nearby floor, not an unbounded world's highest roof.

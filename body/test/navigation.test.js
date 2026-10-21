@@ -571,3 +571,105 @@ test("wet ladder ascent keeps native head clearance, forbids scaffolding and nor
     clearInterval(runtime.stateTimer);
   }
 });
+
+test("explicitly opened door is a real centre passage; closed door cannot be clicked, dug or bypassed", async () => {
+  const { createRequire } = await import("node:module");
+  const req = createRequire(import.meta.url);
+  const registry = req("minecraft-data")("26.1"),
+    Block = req("prismarine-block")(registry),
+    AStar = req("mineflayer-pathfinder/lib/astar"),
+    Move = req("mineflayer-pathfinder/lib/move");
+  let open = false,
+    m;
+  const bot = {
+    registry,
+    entity: { position: new Vec3(0.5, 64, -0.5), effects: {}, onGround: true },
+    entities: {},
+    inventory: { items: () => [] },
+    game: { minY: -64 },
+    pathfinder: {
+      bestHarvestTool: () => null,
+      setMovements(v) {
+        m = v;
+      },
+      *getPathFromTo() {
+        yield {
+          result: { path: [{ x: 0.09375, y: 65, z: 0.5, hash: "0,64,0" }] },
+        };
+      },
+    },
+    blockAt(p) {
+      if (Math.abs(p.x) > 2 || Math.abs(p.z) > 3 || p.y < 63 || p.y > 68)
+        return null;
+      let name = p.y === 63 ? "stone" : "air",
+        props = {};
+      if (
+        p.y >= 64 &&
+        p.y <= 66 &&
+        ((Math.abs(p.x) === 1 && Math.abs(p.z) <= 2) ||
+          (Math.abs(p.z) === 2 && Math.abs(p.x) <= 1) ||
+          (p.x === 0 && p.z === 0 && p.y === 66))
+      )
+        name = "oak_planks";
+      if (p.x === 0 && p.z === 0 && (p.y === 64 || p.y === 65)) {
+        name = "oak_door";
+        props = {
+          facing: "north",
+          hinge: "left",
+          half: p.y === 64 ? "lower" : "upper",
+          open,
+        };
+      }
+      const b = Block.fromProperties(registry.blocksByName[name].id, props, 0);
+      b.position = p;
+      return b;
+    },
+  };
+  const runtime = new MinecraftBody({ minecraft: {}, backend: {} }, () => {});
+  runtime.bot = bot;
+  try {
+    runtime.movements("ground");
+    const goal = {
+      heuristic: (n) => Math.abs(n.x) + Math.abs(n.z - 1) + Math.abs(n.y - 64),
+      isEnd: (n) => n.x === 0 && n.z === 1 && n.y === 64,
+    };
+    function search() {
+      const a = new AStar(new Move(0, 64, -1, 0, 0), m, goal, 1000, 20, 8);
+      let r;
+      do {
+        r = a.compute();
+      } while (r.status === "partial");
+      return r;
+    }
+    assert.equal(search().status, "noPath");
+    open = true;
+    const route = search();
+    assert.equal(route.status, "success");
+    assert.ok(
+      route.path.every((n) => n.toBreak.length === 0 && n.toPlace.length === 0),
+    );
+    const { doorTransitionClear } = await import("../src/terrain.js");
+    assert.equal(
+      doorTransitionClear(bot, new Vec3(0, 64, -1), new Vec3(0, 64, 0)),
+      true,
+    );
+    assert.equal(
+      doorTransitionClear(bot, new Vec3(-1, 64, 0), new Vec3(0, 64, 0)),
+      false,
+      "open leaf still blocks sideways approach",
+    );
+    const path = bot.pathfinder.getPathFromTo().next().value.result.path;
+    assert.deepEqual([path[0].x, path[0].y, path[0].z], [0.5, 64, 0.5]);
+    assert.ok(
+      resolveDestination(bot, {
+        x: 0.5,
+        y: 64,
+        z: 0.5,
+        range: 1,
+      }).candidates.some((p) => p[0] === 0.5 && p[1] === 64 && p[2] === 0.5),
+    );
+  } finally {
+    clearInterval(runtime.safetyTimer);
+    clearInterval(runtime.stateTimer);
+  }
+});

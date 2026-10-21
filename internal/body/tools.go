@@ -202,7 +202,7 @@ func (s *Service) Tools() []tool.BaseTool {
 		{"body_stop", "取消当前动作并确认停止；保持现有暂停状态，可继续下一动作。急停/暂停由管理员面板独立控制。", map[string]*schema.ParameterInfo{}},
 		{"body_dig", "挖一个指定方块，坐标需整数；先观察并靠近，禁止保护方块/建筑；危险上下文必须审批。", reason(coords(true))},
 		{"body_place", "在整数空位放背包方块，需支撑与5格距离；wheat_seeds可种在耕地上，坐标是作物空位。高危动作需审批。", reason(coords(true))},
-		{"body_interact", "右键指定方块，坐标需整数；支持门/按钮/拉杆及经审批的床/重生锚。首期不开放容器或实体交易/骑乘。", reason(coords(true))},
+		{"body_interact", "右键指定方块，坐标需整数；支持门/栅栏门/按钮/拉杆及经审批的床/重生锚。首期不开放容器或实体交易/骑乘。", reason(coords(true))},
 		{"body_use_item", "使用自己背包内的安全食物或经审批的高危物品；无 item 时读取实际手持。未知行为拒绝。", reason(map[string]*schema.ParameterInfo{})},
 		{"body_say", "让机器人玩家说一句公开聊天，最多 256 字；不能用此工具发命令或触发助手。", map[string]*schema.ParameterInfo{"text": stringP("单行聊天内容", true)}},
 		{"body_command", "以机器人自身权限提交已授权命令；WorldEdit保留双斜杠。建造先明确目标选区并遵守出生点保护；回显仅表示已提交。", map[string]*schema.ParameterInfo{"command": stringP("常规命令可带或不带 /；WorldEdit 按游戏完整写法，例如 //pos1 10,64,10", true)}},

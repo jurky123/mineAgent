@@ -3,7 +3,12 @@ import pathfinder from "mineflayer-pathfinder";
 import { Vec3 } from "vec3";
 import { randomUUID, createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
-import { surface, terrain } from "./terrain.js";
+import {
+  surface,
+  terrain,
+  openDoorway,
+  doorTransitionClear,
+} from "./terrain.js";
 import {
   resolveDestination,
   surfaceAbove,
@@ -303,6 +308,22 @@ export class MinecraftBody {
     const bot = this.bot;
     if (!bot?.entity) return;
     const m = new pathfinder.Movements(bot);
+    // A manually opened leaf still has a thin shape. It is passable at the
+    // cell centre, but must never generate an implicit click or a dig.
+    const blockAtMove = m.getBlock.bind(m);
+    m.getBlock = (...args) => {
+      const block = blockAtMove(...args);
+      if (openDoorway(block) && !m.blocksToAvoid.has(block.type))
+        return {
+          ...block,
+          safe: true,
+          physical: false,
+          replaceable: false,
+          openable: false,
+          height: block.position.y,
+        };
+      return block;
+    };
     // Upstream rejects all liquid ascent nodes, including a real wet ladder.
     // Adapt only that synchronous climbing edge, keeping every other native
     // clearance/entity/dig/scaffold check and leaving the real block untouched.
@@ -333,6 +354,7 @@ export class MinecraftBody {
             const below = bot.blockAt(new Vec3(cell[0], cell[1] - 1, cell[2]));
             if (
               b?.name === "ladder" ||
+              openDoorway(b) ||
               (["air", "cave_air", "void_air"].includes(b?.name) &&
                 below?.name === "ladder")
             ) {
@@ -391,6 +413,7 @@ export class MinecraftBody {
         start = { ...node, y: node.y + 1 };
       return neighbors(start).filter((next) => {
         if (node.y - next.y > m.maxDropDown) return false;
+        if (!doorTransitionClear(bot, start, next)) return false;
         const feet = bot.blockAt(new Vec3(next.x, next.y, next.z));
         if (feet?.name !== "water") return true;
         const head = bot.blockAt(new Vec3(next.x, next.y + 1, next.z));
@@ -713,7 +736,9 @@ export class MinecraftBody {
         )
       )
         fail("containers_disabled");
-      if (!/door|button|lever|_bed$|respawn_anchor/.test(spec.block))
+      if (
+        !/door|_fence_gate$|button|lever|_bed$|respawn_anchor/.test(spec.block)
+      )
         fail("unsupported_target");
       if (spec.offHand) fail("empty_offhand_required");
     }

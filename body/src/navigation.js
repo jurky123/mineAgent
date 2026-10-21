@@ -1,4 +1,5 @@
 import { Vec3 } from "vec3";
+import { openDoorway } from "./terrain.js";
 
 const hazard = /(?:lava|fire|cactus|magma|powder_snow|sweet_berry|wither_rose)/;
 const empty = (b) =>
@@ -211,7 +212,11 @@ export function resolveDestination(bot, args) {
           feetY = y + top;
           const feet = bot.blockAt(new Vec3(x, Math.floor(feetY + 0.001), z));
           const head = bot.blockAt(new Vec3(x, Math.floor(feetY + 1), z));
-          if ((top >= 1 && !empty(feet)) || !empty(head)) continue;
+          if (
+            (top >= 1 && !empty(feet) && !openDoorway(feet)) ||
+            (!empty(head) && !openDoorway(head))
+          )
+            continue;
         }
         const point = [x + 0.5, feetY, z + 0.5];
         const score = Math.abs(feetY - near) * 4 + horizontal;

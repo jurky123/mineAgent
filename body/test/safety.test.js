@@ -928,3 +928,71 @@ test("precision-retained commands still revalidate hands before native dispatch"
     }
   }
 });
+
+test("manual fence gate interaction works while containers and occupied offhand remain denied", async () => {
+  const sent = [];
+  let name = "oak_fence_gate",
+    state = 1,
+    clicked = 0;
+  const runtime = new MinecraftBody(
+    { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+    (type, data) => sent.push({ type, data }),
+  );
+  Object.assign(runtime, {
+    ready: true,
+    connected: true,
+    paused: false,
+    connectionId: "fixture",
+    epoch: 1,
+    revision: 1,
+    lastLease: performance.now(),
+    policy,
+  });
+  runtime.bot = {
+    entity: { position: { x: 0, y: 64, z: 0 } },
+    game: { dimension: "overworld" },
+    inventory: { slots: Array(46).fill(null) },
+    blockAt(p) {
+      return { name, position: p, stateId: state, boundingBox: "block" };
+    },
+    async activateBlock() {
+      clicked++;
+      state = 2;
+    },
+    quit() {},
+    clearControlStates() {},
+    stopDigging() {},
+    deactivateItem() {},
+    pathfinder: { setGoal() {} },
+  };
+  try {
+    const args = { x: 1, y: 64, z: 1 };
+    const sp = runtime.describe("body_interact", args);
+    runtime.prepared.set(sp.id, sp);
+    await runtime.call({
+      callId: "gate",
+      connectionId: "fixture",
+      controlEpoch: 1,
+      policyRevision: 1,
+      tool: "body_interact",
+      args: sp.args,
+      specId: sp.id,
+      timeoutMs: 1000,
+    });
+    assert.equal(sent.findLast((e) => e.type === "body.result").data.ok, true);
+    assert.equal(clicked, 1);
+    runtime.bot.inventory.slots[45] = { name: "lava_bucket" };
+    assert.throws(
+      () => runtime.describe("body_interact", args),
+      /empty_offhand_required/,
+    );
+    runtime.bot.inventory.slots[45] = null;
+    name = "chest";
+    assert.throws(
+      () => runtime.describe("body_interact", args),
+      /containers_disabled/,
+    );
+  } finally {
+    await runtime.close();
+  }
+});

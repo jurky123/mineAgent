@@ -178,3 +178,64 @@ test("surface route crosses a two-deep pool and returns to shore, without diving
     clearInterval(runtime.stateTimer);
   }
 });
+
+test("recovery scans only loaded open water, rejecting roofs and excessive depth", async () => {
+  const { surfaceAbove } = await import("../src/navigation.js");
+  const water = {};
+  for (let y = 56; y <= 62; y++) water[`0,${y},0`] = "water";
+  const bot = fixture(water, 55, 56);
+  assert.equal(surfaceAbove(bot), 62);
+  water["0,60,0"] = "stone";
+  assert.throws(
+    () => surfaceAbove(bot),
+    (e) => e.code === "surface_recovery_blocked",
+  );
+  delete water["0,60,0"];
+  assert.throws(
+    () => surfaceAbove(bot, 4),
+    (e) => e.code === "surface_recovery_blocked",
+  );
+  assert.throws(
+    () => surfaceAbove({ entity: bot.entity, blockAt: () => null }),
+    (e) => e.code === "surface_recovery_blocked",
+  );
+});
+
+test("surfacing is action scoped, cancellable, and leaves no idle input timer", async () => {
+  const water = {};
+  for (let y = 56; y <= 62; y++) water[`0,${y},0`] = "water";
+  const runtime = new MinecraftBody({ minecraft: {}, backend: {} }, () => {});
+  const controls = [];
+  runtime.bot = fixture(water, 55, 56);
+  runtime.bot.entity.isInWater = true;
+  runtime.bot.setControlState = (key, value) => controls.push([key, value]);
+  runtime.ensure = (a) => {
+    if (a.abort.signal.aborted)
+      throw Object.assign(Error(a.reason), { code: a.reason });
+  };
+  try {
+    const a = { abort: new AbortController(), reason: "action_canceled" };
+    runtime.active = a;
+    const pending = runtime.surfaceForNavigation(a);
+    assert.deepEqual(controls.at(-1), ["jump", true]);
+    a.abort.abort();
+    await assert.rejects(pending, (e) => e.code === "action_canceled");
+    assert.deepEqual(controls.at(-1), ["jump", false]);
+    const count = controls.length;
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(controls.length, count);
+    const next = { abort: new AbortController() };
+    runtime.active = next;
+    const rise = runtime.surfaceForNavigation(next);
+    setTimeout(() => {
+      runtime.bot.entity.position.y = 62;
+    }, 60);
+    await rise;
+    assert.equal(next.surfaceRecovery.fromY, 56);
+    assert.equal(next.surfaceRecovery.surfaceY, 62);
+    assert.deepEqual(controls.at(-1), ["jump", false]);
+  } finally {
+    clearInterval(runtime.safetyTimer);
+    clearInterval(runtime.stateTimer);
+  }
+});

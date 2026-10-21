@@ -737,8 +737,8 @@ MinecraftBody.prototype.movements=function(...args){
     // change the terrain used by later ground-only stop/collision tests.
     await command("fill 3 -60 -1 26 -59 22 air replace water");
     await command("fill 9 -60 5 19 -59 15 air");
-    await command("fill 10 -62 6 18 -62 14 stone");
-    await command("fill 10 -61 6 18 -60 14 water");
+    await command("fill 10 -64 6 18 -64 14 stone");
+    await command("fill 10 -63 6 18 -60 14 water");
     await wait(500);
     const dryOnly = await send("body_goto", { x: 14, z: 10, range: 1 });
     assert.equal(dryOnly.result.code, "water_only");
@@ -755,16 +755,20 @@ MinecraftBody.prototype.movements=function(...args){
       (await state()).state.pos[0] > 12,
       "real body reaches pool surface",
     );
-    confirmed(
-      await send("body_goto", {
-        x: 0,
-        y: -60,
-        z: 0,
-        range: 1,
-        movement: "swim",
-        timeoutSec: 20,
-      }),
-    );
+    // Action cleanup deliberately stops all controls. A later swim must recover
+    // from real idle sinking, rather than assuming that feet stayed at surface Y.
+    await wait(6500);
+    assert.ok((await state()).state.pos[1] < -61, "idle body really sinks");
+    const shore = await send("body_goto", {
+      x: 0,
+      y: -60,
+      z: 0,
+      range: 1,
+      movement: "swim",
+      timeoutSec: 20,
+    });
+    confirmed(shore);
+    assert.ok(shore.result.data.surfaceRecovery.fromY < -61);
     await command("fill 9 -61 5 19 -61 15 grass_block");
     await command("fill 3 -60 -1 26 -59 22 air replace water");
     console.log(
@@ -1303,7 +1307,9 @@ MinecraftBody.prototype.movements=function(...args){
       .replaceAll(token || "__never__", "<admin-token>");
   try {
     console.error("fixture state:\n" + redact(JSON.stringify(await state())));
-  } catch { /* Backend may already be stopped. */ }
+  } catch {
+    /* Backend may already be stopped. */
+  }
   for (const [kind, text] of Object.entries(logs))
     console.error(kind + ":\n" + redact(text.slice(-6000)));
   throw e;

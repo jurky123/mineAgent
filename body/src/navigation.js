@@ -7,6 +7,39 @@ const empty = (b) =>
   b.name !== "water" &&
   (b.boundingBox === "empty" || b.shapes?.length === 0);
 
+// Recovery only ascends a loaded, unobstructed water column. It never plans a
+// submerged horizontal route, moves through a roof, or changes player position.
+export function surfaceAbove(bot, maxRise = 16) {
+  const p = bot.entity.position;
+  const y0 = Math.floor(p.y);
+  for (let y = y0; y <= y0 + maxRise; y++) {
+    const block = bot.blockAt(new Vec3(Math.floor(p.x), y, Math.floor(p.z)));
+    if (block?.name === "water") continue;
+    if (
+      y === y0 ||
+      !empty(block) ||
+      !empty(bot.blockAt(new Vec3(Math.floor(p.x), y + 1, Math.floor(p.z))))
+    )
+      break;
+    for (const dx of [-0.3, 0.3])
+      for (const dz of [-0.3, 0.3])
+        for (let h = y0; h <= y + 1; h++) {
+          const b = bot.blockAt(
+            new Vec3(Math.floor(p.x + dx), h, Math.floor(p.z + dz)),
+          );
+          if (b?.name !== "water" && !empty(b))
+            throw Object.assign(
+              Error("上浮水柱未加载或有障碍，请选择其他路线"),
+              { code: "surface_recovery_blocked" },
+            );
+        }
+    return y - 1;
+  }
+  throw Object.assign(Error("16格内没有已知开放水面，不能安全上浮"), {
+    code: "surface_recovery_blocked",
+  });
+}
+
 // Bounded, read-only goal resolution. Inspect every column in the arrival
 // region, rather than insisting that a wall's own column be standable.
 export function resolveDestination(bot, args) {

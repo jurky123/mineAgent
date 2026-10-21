@@ -4,7 +4,7 @@ import { Vec3 } from "vec3";
 import { randomUUID, createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { surface, terrain } from "./terrain.js";
-import { resolveDestination } from "./navigation.js";
+import { resolveDestination, surfaceAbove } from "./navigation.js";
 import {
   risk,
   checkSpec,
@@ -704,6 +704,54 @@ export class MinecraftBody {
     this.ensure(a);
     return result;
   }
+  async surfaceForNavigation(a) {
+    const b = this.bot;
+    if (!b.entity.isInWater) return;
+    const y = surfaceAbove(b);
+    if (b.entity.position.y >= y - 0.25) return;
+    const origin = pos(b.entity.position),
+      started = performance.now();
+    await this.step(
+      a,
+      () =>
+        new Promise((resolve, reject) => {
+          let timer;
+          const done = (error) => {
+            clearInterval(timer);
+            a.abort.signal.removeEventListener("abort", aborted);
+            if (this.active === a) b.setControlState("jump", false);
+            error ? reject(error) : resolve();
+          };
+          const aborted = () =>
+            done(Object.assign(Error(a.reason), { code: a.reason }));
+          const tick = () => {
+            try {
+              this.ensure(a);
+              if (b.entity.position.y >= y - 0.25) return done();
+              if (
+                performance.now() - started > 8000 ||
+                Math.hypot(
+                  b.entity.position.x - origin[0],
+                  b.entity.position.z - origin[2],
+                ) > 0.75
+              )
+                fail("surface_recovery_blocked");
+              b.setControlState("jump", true);
+            } catch (error) {
+              done(error);
+            }
+          };
+          a.abort.signal.addEventListener("abort", aborted, { once: true });
+          timer = setInterval(tick, 50);
+          tick();
+        }),
+    );
+    a.surfaceRecovery = {
+      fromY: origin[1],
+      surfaceY: y,
+      elapsedMs: Math.round(performance.now() - started),
+    };
+  }
   limit(key, n) {
     const now = performance.now();
     const recent = (this.limits.get(key) || []).filter((t) => now - t < 60000);
@@ -951,6 +999,7 @@ export class MinecraftBody {
       progressDistance: distance(start, target) - remaining,
       movedDistance: distance(start, current),
       path: a.path || null,
+      ...(a.surfaceRecovery ? { surfaceRecovery: a.surfaceRecovery } : {}),
     };
   }
   async perform(a, raw) {
@@ -1035,6 +1084,7 @@ export class MinecraftBody {
       this.movements(args.movement || "ground");
       a.origin = pos(b.entity.position);
       a.submitted = true;
+      if (args.movement === "swim") await this.surfaceForNavigation(a);
       const range = args.range || 2;
       const goal = new pathfinder.goals.GoalNear(...sp.target, range);
       // Search nodes and optimized path nodes use corners and centers respectively.

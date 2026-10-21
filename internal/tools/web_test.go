@@ -16,6 +16,8 @@ func TestIsPublicIP(t *testing.T) {
 		"169.254.169.254": false, // 云元数据
 		"100.64.0.1":      false, // CGNAT
 		"0.0.0.0":         false,
+		"0.0.0.1":         false,
+		"240.0.0.1":       false,
 		"::1":             false,
 		"fd00::1":         false,
 		"fe80::1":         false,

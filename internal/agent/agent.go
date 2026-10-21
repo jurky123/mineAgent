@@ -63,6 +63,10 @@ type Request struct {
 	Context context.Context
 	Done    func()
 	Started func()
+	// Prepare runs inside the FIFO worker, after cancellation and identity setup.
+	// Channels may attach trusted, request-scoped input tools and multimodal data.
+	// It must never execute on a gateway's WebSocket reader.
+	Prepare func(context.Context) (context.Context, *schema.Message, error)
 	// ManagedProgress means the channel owns notices/streaming; no extra LLM
 	// summary or generic delayed "still working" message is needed.
 	ManagedProgress bool
@@ -645,6 +649,17 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	rctx = tools.WithSession(rctx, sessionKey)
 	// 回执目标进 ctx：qq_markdown/qq_image 工具凭它只能发回当前会话。
 	rctx = tools.WithReplyTarget(rctx, req.ReplyTarget)
+	var prepared *schema.Message
+	if req.Prepare != nil {
+		var err error
+		rctx, prepared, err = req.Prepare(rctx)
+		if err != nil {
+			if rctx.Err() == nil {
+				_ = req.Session.Reply(rctx, "输入处理失败，请重新发送附件后重试。", req.ReplyTarget)
+			}
+			return
+		}
+	}
 
 	msgs, cutoff, err := a.history(sessionKey, req.TriggerMessageID)
 	if err != nil {
@@ -652,10 +667,18 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		_ = req.Session.Reply(rctx, "抱歉，读取聊天记录失败。", req.Player)
 		return
 	}
+	if prepared != nil {
+		for i := len(msgs) - 1; i >= 0; i-- {
+			if msgs[i].Role == schema.User {
+				msgs[i] = prepared
+				break
+			}
+		}
+	}
 	rctx = context.WithValue(rctx, historyCutoffKey{}, cutoff)
 
 	cpID := fmt.Sprintf("run-%d", time.Now().UnixNano())
-	a.log.Info("agent run", "session", sessionKey, "player", req.Player, "query", req.Query, "messages", len(msgs), "trigger", req.TriggerMessageID, "checkpoint", cpID)
+	a.log.Info("agent run", "session", sessionKey, "player", req.Player, "queryChars", len([]rune(req.Query)), "messages", len(msgs), "trigger", req.TriggerMessageID, "checkpoint", cpID)
 
 	start := time.Now()
 	runner, runnerKey, runErr := a.runnerFor(rctx, req)
@@ -1058,6 +1081,13 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 	}
 	rctx = tools.WithSession(rctx, run.sessionKey)
 	rctx = tools.WithReplyTarget(rctx, run.replyTarget)
+	if run.request.Prepare != nil {
+		var err error
+		rctx, _, err = run.request.Prepare(rctx)
+		if err != nil {
+			return
+		}
+	}
 	rctx = context.WithValue(rctx, historyCutoffKey{}, run.cutoff)
 	a.log.Info("resuming after approval",
 		"session", run.sessionKey,

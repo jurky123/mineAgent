@@ -15,6 +15,23 @@ type Store struct {
 	db *sql.DB
 }
 
+// UpdateQQInput replaces the pending attachment description with the actual
+// bounded parsing result. Scope and kind checks prevent changing other turns.
+func (s *Store) UpdateQQInput(ctx context.Context, sessionID string, id int64, text string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE messages SET text=? WHERE id=? AND session_id=? AND channel='qq' AND author_kind='player'`, text, id, sessionID)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows != 1 {
+		return fmt.Errorf("QQ input no longer exists in this session")
+	}
+	return nil
+}
+
 type Message struct {
 	ID         int64  `json:"id"`
 	SessionID  string `json:"sessionId"`

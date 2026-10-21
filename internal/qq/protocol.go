@@ -1,5 +1,7 @@
 package qq
 
+import "encoding/json"
+
 // 按官方文档 api-v2 的事件结构建模，只取我们用的子集：
 // C2C_MESSAGE_CREATE（单聊）、GROUP_AT_MESSAGE_CREATE（群@机器人）。
 // 传输 payload 通用结构见 payload.html：{id, op, d, s, t}。
@@ -74,12 +76,10 @@ type qqUser struct {
 
 // C2C 单聊事件 d（c2c_message_create.html）。
 type c2cEvent struct {
-	ID           string `json:"id"`
-	Author       qqUser `json:"author"`
-	Content      string `json:"content"`
-	Timestamp    string `json:"timestamp"`
-	MessageType  int    `json:"message_type"`
-	MessageScene *scene `json:"message_scene"`
+	messageContent
+	ID        string `json:"id"`
+	Author    qqUser `json:"author"`
+	Timestamp string `json:"timestamp"`
 }
 
 type scene struct {
@@ -89,13 +89,38 @@ type scene struct {
 
 // 群@机器人事件 d（group_at_message_create.html，content 已去@前缀）。
 type groupAtEvent struct {
-	ID           string `json:"id"`
-	Author       qqUser `json:"author"`
-	Content      string `json:"content"`
-	GroupOpenID  string `json:"group_openid"`
-	Timestamp    string `json:"timestamp"`
-	MessageType  int    `json:"message_type"`
-	MessageScene *scene `json:"message_scene"`
+	messageContent
+	ID          string `json:"id"`
+	Author      qqUser `json:"author"`
+	GroupOpenID string `json:"group_openid"`
+	Timestamp   string `json:"timestamp"`
+}
+
+// QQ type 103 carries quoted content in msg_elements. Nested elements can
+// contain attachments too; a reference ID alone does not grant history access.
+type messageContent struct {
+	Content      string            `json:"content"`
+	MessageType  int               `json:"message_type"`
+	MessageScene *scene            `json:"message_scene"`
+	MsgIdx       string            `json:"msg_idx"`
+	RefMsgIdx    string            `json:"ref_msg_idx"`
+	Attachments  []Attachment      `json:"attachments"`
+	Elements     []messageContent  `json:"msg_elements"`
+	Reference    *messageReference `json:"message_reference"`
+	Ark          json.RawMessage   `json:"ark"`
+	ArkData      json.RawMessage   `json:"ark_data"`
+	Author       *qqUser           `json:"author"`
+	Timestamp    string            `json:"timestamp"`
+}
+
+type messageReference struct {
+	MessageID string `json:"message_id"`
+}
+
+type Attachment struct {
+	URL         string `json:"url"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
 }
 
 // InboundMessage 是网关事件归一化后的内部消息，channel.go 消费它。
@@ -116,8 +141,9 @@ type InboundMessage struct {
 	UnionOpenID string
 	// Username: 昵称（C2C 可能为空）。
 	Username string
-	// Text: 纯文本内容（message_type=0 才有；非文本返回 ""，调用方跳过）。
-	Text string
+	// Text is the current sender's caption, separate from quoted material.
+	Text    string
+	content messageContent
 	// MemberRole: 群内角色 member/admin/owner。
 	MemberRole string
 }

@@ -83,6 +83,7 @@ cd paper-plugin
 ## QQ 用法
 
 - 私聊机器人直接说话就行，不用 @；群里 @机器人再说话
+- 可以直接发送图片、文件、视频，或引用原消息后提问。引用原文和附件只在 QQ 实际下发、或当前会话短期缓存命中时可读取；合并转发卡片若只有预览，请改发聊天记录导出文件、原文或截图。
 - 查服务器：`在线有谁`、`服务器卡不卡`、`有哪些世界`、`装了什么插件`
 - 绑定 MC 身份后才能申请 MC 操作：先发 `绑定 <MC玩家名>`（如 `绑定 Steve`），
   之后 `把我传送到 Alex 身边` 这类请求会转到游戏内管理员审批；
@@ -513,6 +514,13 @@ node scripts/ui-preview.mjs --base https://zkun.art --only shots
 回归：`npm run test:review`、`npm run test:community`、`npm run test:models`、`npm run test:prompts`；Go 用 `go test -p 1 ./...`，并对 agent/storage/webui/portal 运行竞态检测。部署继续使用 `scripts/deploy.sh`。真实素材、整合包发布及 Windows/PCL 端到端验证仍须实际完成后才能标为可用。
 
 ### QQ Agent 与连续任务（2026-10-21）
+
+- 入站支持 `attachments`、type 103 的嵌套 `msg_elements`，以及 `message_reference` / `message_scene.ext` 的引用编号。当前指令与引用资料分开；引用内的 `/stop` 等文本不会执行系统命令。缓存按私聊/群聊隔离，最多 256 个索引、保留 1 小时，重启即清空；内联引用内容优先，不凭引用编号抓取任意群历史。
+- 图片通过模型视觉输入发送；视频用 FFmpeg 在无网络沙箱中抽取最多 4 个均匀分布的关键帧，并附时间点，**不转录音轨，也不声称完整理解视频**。图片单张 4MB，本次视觉输入最多 8 张。PDF 提取前 100 页文字；Office/ODF 提取文字及单元格原始值，保留格式/图片/公式解析的限制；文本、代码、日志与 UTF-8/UTF-16 聊天记录支持正文预览及 `qq_read_attachment` 分页读取。压缩包仅列目录，不自动解压或执行。扫描 PDF 请发送截图。
+- 入站每次最多 6 个附件，单文件 32MB、合计 64MB；文字解析最多 2MB，超限/过期/下载失败/不支持的格式均明确标注。此为附件资源保护，与任务总轮次/总时长独立。下载在 FIFO 任务内进行，可被 `/stop` 取消；仅允许公网 HTTP(S)，校验实际连接 IP 和重定向，禁用环境代理，不携带机器人凭据，也不把附件签名 URL 写入模型输入或日志。
+- 原始文件存放在每任务独立的 0700 临时目录（文件 0600），正常完成、失败或取消后清理；文件读取工具只访问当前任务的解析结果，不接受路径，也不给普通 QQ 用户开放工作区。审批恢复继续保留本任务附件。重启不恢复附件任务；聊天历史只保留有上限的解析文字预览及状态，运行检查点仍沿用已有存储机制。
+- 文档/视频解析依赖 Linux、Bubblewrap、`setpriv`、`ffmpeg`/`ffprobe` 与 `pdftotext`（Debian/Ubuntu 包 `ffmpeg poppler-utils`）；缺少解析器或沙箱时明确失败，绝不回退到宿主执行。模型自身仍须支持图片输入。协议依据：[腾讯官方 SDK 入站字段说明](https://github.com/tencent-connect/qqbot-nodejs/blob/main/USAGE.md#53-qqbotinboundmessage)。
+- 入站验收覆盖真实 HTTP 模拟的引用图片→模型多模态→文件分页读取、无正文附件、跨会话/过期引用拒绝、引用内命令隔离、下载长度与公网限制、取消下载后 FIFO 继续执行、审批恢复复用输入及临时文件权限/清理；PDF 和视频使用真实文件及沙箱解析器验证。未向真实 QQ 用户发送验收消息，实际引用/合并转发字段仍取决于平台下发内容。
 
 - 支持 `qq_file` 发送文档/代码/压缩包等文件（200MB 内）；`qq_image` 发送 PNG/JPG/GIF/WebP/BMP（20MB 内，GIF 保留原动画）；`qq_video` 发送 MP4（30MB 内）；`qq_audio` 发送 SILK/MP3/WAV/OGG（20MB 内）。`qq_emoji` 发送 Unicode 表情/颜文字，自定义表情包使用图片工具。文件统一来自 workspace，沿用 QQ 管理员权限；只能发回当前会话，读取时拒绝符号链接逃逸。分片与校验按文件流处理，不把大文件整体装入内存。
 - QQ 默认 `qq.reasoningEffort="high"`，独立于网页账号偏好；默认提供商传 `reasoning_effort`，额外提供商沿用已有 reasoning 参数适配。不会将隐藏思考过程发给 QQ。已有自定义人设/系统提示词继续保留，额外附上当前 QQ 适配器的真实媒体能力说明，避免旧模板仍声称只能发 PNG/JPG。长回复按完整段落分成消息，不再截断到 1000 字；Markdown 单次工具最多 5000 字，完整发送。

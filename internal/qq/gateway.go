@@ -15,6 +15,7 @@ import (
 // isFatalGatewayErr 判断是否为配置类错误（重试没用）：
 //   - err_code=40023002：接口访问源 IP 不在白名单（去 q.qq.com 配 43.160.211.42）
 //   - ws 关闭码 4914（机器人已下架）/4915（机器人已封禁）
+//
 // 其他一律按可恢复处理。
 func isFatalGatewayErr(err error) bool {
 	if err == nil {
@@ -51,7 +52,7 @@ type Gateway struct {
 	sessionID string
 	seq       int64
 
-	stopCh chan struct{}
+	stopCh  chan struct{}
 	stopped chan struct{}
 }
 
@@ -290,8 +291,7 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 		if e.Author.Bot {
 			return
 		}
-		if e.MessageType != 0 || e.Content == "" {
-			g.log.Debug("qq gateway skip non-text C2C", "messageType", e.MessageType)
+		if !e.messageContent.hasInput() {
 			return
 		}
 		g.emit(InboundMessage{
@@ -300,6 +300,7 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 			UnionOpenID: e.Author.UnionOpenID,
 			Username:    e.Author.Username,
 			Text:        e.Content,
+			content:     e.messageContent,
 		})
 	case "GROUP_AT_MESSAGE_CREATE":
 		var e groupAtEvent
@@ -310,8 +311,7 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 		if e.Author.Bot {
 			return
 		}
-		if e.MessageType != 0 {
-			g.log.Debug("qq gateway skip non-text group", "messageType", e.MessageType)
+		if !e.messageContent.hasInput() {
 			return
 		}
 		g.emit(InboundMessage{
@@ -321,6 +321,7 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 			UnionOpenID:  e.Author.UnionOpenID,
 			Username:     e.Author.Username,
 			Text:         e.Content,
+			content:      e.messageContent,
 			MemberRole:   e.Author.MemberRole,
 		})
 	default:

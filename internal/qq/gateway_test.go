@@ -42,16 +42,16 @@ func TestDispatchC2C(t *testing.T) {
 	}
 }
 
-func TestDispatchC2CIgnoresBotAndNonText(t *testing.T) {
+func TestDispatchC2CIgnoresBotAndEmpty(t *testing.T) {
 	g := testGateway()
 	n := 0
 	g.onMessage = func(m InboundMessage) { n++ }
 	// 机器人自己发的回声不处理。
 	g.dispatch("C2C_MESSAGE_CREATE", "e", mustRaw(t, `{
 		"id": "x", "author": {"id": "B", "bot": true}, "content": "hi", "message_type": 0}`))
-	// 非文本（卡片/附件）v1 跳过。
+	// 无内容的未知事件跳过；卡片、引用和附件不再按类型过滤。
 	g.dispatch("C2C_MESSAGE_CREATE", "e", mustRaw(t, `{
-		"id": "x", "author": {"id": "U", "bot": false}, "content": "[卡片]", "message_type": 3}`))
+		"id": "x", "author": {"id": "U", "bot": false}, "content": "", "message_type": 999}`))
 	if n != 0 {
 		t.Fatalf("n = %d, want 0", n)
 	}

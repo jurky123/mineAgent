@@ -167,6 +167,9 @@ func isPublicIP(ip net.IP) bool {
 		return false
 	}
 	if v4 := ip.To4(); v4 != nil {
+		if v4[0] == 0 || v4[0] >= 240 {
+			return false
+		}
 		// 100.64.0.0/10 (CGNAT), 192.0.0.0/24, 198.18.0.0/15 等特殊段
 		if v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 {
 			return false
@@ -238,6 +241,22 @@ var webFetchTransport = &http.Transport{
 	ResponseHeaderTimeout: 15 * time.Second,
 	IdleConnTimeout:       90 * time.Second,
 	MaxIdleConns:          10,
+}
+
+// PublicDownloadClient uses the same DNS-pinned, proxy-free transport as
+// web_fetch. Callers must bound response size and avoid logging signed URLs.
+func PublicDownloadClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: webFetchTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 3 {
+				return fmt.Errorf("重定向过多")
+			}
+			if req.URL.User != nil || (req.URL.Scheme != "http" && req.URL.Scheme != "https") {
+				return fmt.Errorf("下载地址无效")
+			}
+			return checkPublicHost(req.Context(), req.URL.Hostname())
+		},
+	}
 }
 
 func (t *webFetchTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {

@@ -1306,7 +1306,11 @@ MinecraftBody.prototype.movements=function(...args){
       await until(() => raw.entity, "raw guard client spawn", 30000);
       await raw.waitForChunksToLoad();
       await command("gamemode creative MineBodyV1");
-      await command("tp MineBodyV1 0 -60 0");
+      await command("minecraft:tp MineBodyV1 0 -60 0");
+      await until(
+        () => raw.entity.position.distanceTo(new Vec3(0, -60, 0)) < 1,
+        "raw client at protected test site",
+      );
       await command("give MineBodyV1 oak_planks 16");
       await command("setblock 1 -60 0 stone");
       await command("setblock 2 -60 0 air");
@@ -1338,7 +1342,11 @@ MinecraftBody.prototype.movements=function(...args){
         wait(1800),
       ]);
       await actualBlock(2, -60, 0, "air");
-      await command("tp MineBodyV1 513 -60 0");
+      await command("minecraft:tp MineBodyV1 513 -60 0");
+      await until(
+        () => raw.entity.position.distanceTo(new Vec3(513, -60, 0)) < 1,
+        "raw client at outside test site",
+      );
       await command("setblock 514 -60 0 stone");
       await command("setblock 515 -60 0 air");
       await wait(1200);

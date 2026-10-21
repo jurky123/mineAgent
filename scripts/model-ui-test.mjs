@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const staticRoot = path.join(root, 'internal/webui/static');
-let selection = '', refreshes = 0, failRefresh = false;
+let selection = '', refreshes = 0, failRefresh = false, effort = 'medium', failEffort = false, effortWrites = 0;
 const models = [
   { id: 'old', label: 'Old', provider: 'default', providerLabel: 'Gateway', created: 100 },
   { id: 'new-free', label: 'New Free', provider: 'default', providerLabel: 'Gateway', created: 200, free: true, verified: true, vision: true, reasoning: true, tools: true },
@@ -26,11 +26,18 @@ const server = createServer(async (req, res) => {
         if (failRefresh) return json({ error: '模拟刷新失败' }, 503);
         if (!models.some((m) => m.id === 'fresh')) models.push({ id: 'fresh', label: 'Fresh', provider: 'openrouter', providerLabel: 'OpenRouter', created: 300, free: true, vision: true, reasoning: true });
       }
-      return json({ models, skills: [], model: selection, defaultModel: 'old', effort: 'medium' });
+      return json({ models, skills: [], model: selection, defaultModel: 'old', effort });
     }
     if (url.pathname === '/api/prefs') {
       let body = ''; for await (const chunk of req) body += chunk;
-      selection = JSON.parse(body).model; return json({ model: selection, effort: 'medium' });
+      const patch = JSON.parse(body);
+      if ('model' in patch) selection = patch.model;
+      if ('effort' in patch) {
+        effortWrites++; await new Promise(resolve => setTimeout(resolve, 250));
+        if (failEffort) return json({ error: '模拟偏好保存失败' }, 503);
+        effort = patch.effort;
+      }
+      return json({ model: selection, effort });
     }
     if (url.pathname === '/api/me' || url.pathname === '/api/auth/me') return json({ name: 'Preview', id: 1, admin: true });
     if (url.pathname === '/api/version') return json({ version: 'preview' });
@@ -126,8 +133,55 @@ try {
   assert.equal(await page.locator('#po-list .po-modelbody').count(),160);
   await page.locator('#po-filter').fill('bulk-0');
   assert.equal(await page.locator('#po-list .po-modelbody').count(),1,'search ignored an unloaded model');
+  await page.locator('#modelbtn').focus(); await page.keyboard.press('Escape');
+  await page.locator('#intelbtn').click();
+  await page.getByRole('radio', {name:'中',exact:true}).waitFor();
+  const high = page.getByRole('radio', {name:'高',exact:true});
+  await high.click();
+  assert.equal(await high.getAttribute('aria-checked'),'true','selection waited for the network');
+  assert(await page.locator('#reason').evaluate(el=>el.classList.contains('max')));
+  await page.waitForFunction(()=>!document.querySelector('#reason').hasAttribute('aria-busy'));
+  assert.equal(effort,'high');
+  await page.waitForTimeout(650);
+  assert.equal(await page.locator('.spark').count(),18);
+  assert.equal(await page.locator('.fill-aurora').evaluate(el=>getComputedStyle(el).opacity),'1');
+  assert.equal(await page.locator('.spark').first().evaluate(el=>getComputedStyle(el).animationPlayState),'running');
+  await page.screenshot({path:'/tmp/mineagent-models-ui/reasoning-high-mobile.png'});
+  const track=page.locator('#reason-track'), bounds=await track.boundingBox(), length=bounds.width-24;
+  const beforeDrag=effortWrites;
+  await page.mouse.move(bounds.x+12+length,bounds.y+bounds.height/2); await page.mouse.down();
+  await page.mouse.move(bounds.x+12+length*.45,bounds.y+bounds.height/2,{steps:4}); await page.waitForTimeout(40);
+  assert.equal(effortWrites,beforeDrag,'drag saved before release');
+  const inBetween=await page.locator('#reason-thumb').evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).m41);
+  assert(Math.abs(inBetween-(12+length*.45))<2,'thumb did not follow fractional pointer position');
+  await page.mouse.up();
+  await page.waitForFunction(()=>!document.querySelector('#reason').hasAttribute('aria-busy'));
+  assert.equal(effort,'low','drag failed to snap to the nearest effort');
+  const beforeCancel=effortWrites;
+  await page.mouse.move(bounds.x+12+length,bounds.y+bounds.height/2); await page.mouse.down();
+  await track.dispatchEvent('pointercancel',{pointerId:1,pointerType:'mouse'}); await page.mouse.up();
+  assert.equal(effortWrites,beforeCancel,'cancelled drag persisted an effort');
+  assert.equal(await page.getByRole('radio',{name:'低',exact:true}).getAttribute('aria-checked'),'true');
+  failEffort=true; await high.click();
+  await page.waitForFunction(()=>!document.querySelector('#reason').hasAttribute('aria-busy'));
+  assert.equal(effort,'low');
+  assert.equal(await page.getByRole('radio',{name:'低',exact:true}).getAttribute('aria-checked'),'true','failed save did not roll back');
+  failEffort=false;
+  await page.getByRole('radio',{name:'低',exact:true}).focus(); await page.keyboard.press('End');
+  await page.waitForFunction(()=>!document.querySelector('#reason').hasAttribute('aria-busy'));
+  assert.equal(effort,'high');
+  assert.equal(await high.evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#intelbtn').evaluate(el=>el===document.activeElement),true);
+  await page.setViewportSize({width:1280,height:960}); await page.locator('#intelbtn').click();
+  await page.waitForTimeout(650); await page.screenshot({path:'/tmp/mineagent-models-ui/reasoning-high-desktop.png'});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await page.locator('.spark').first().evaluate(el=>getComputedStyle(el).animationName),'none');
+  assert.equal(await page.locator('.reason-sparkles').evaluate(el=>getComputedStyle(el).display),'none');
+  assert.equal(await high.getAttribute('aria-checked'),'true','reduced motion changed effort');
+  await page.emulateMedia({reducedMotion:'no-preference'});
   assert.deepEqual(errors, []);
-  console.log('Model UI checks passed (sorting, free/availability filters, refresh, failure, selection, mobile, preview).');
+  console.log('Model UI checks passed (catalog, preview isolation, restored aurora/particles, fractional drag and snap, cancel, optimistic feedback, save rollback, keyboard/focus, reduced motion).');
 } finally {
   if (browser) await browser.close();
   server.closeAllConnections(); await new Promise((resolve) => server.close(resolve));

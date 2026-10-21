@@ -248,7 +248,7 @@ document.addEventListener('click', (e) => {
   closePopovers();
 }, true);   // 捕获阶段：处理器重建 DOM 前就判断好，避免"点了却被自己关掉"
 
-// ---------- Intelligence（思考强度 + 模型 合一） ----------
+// ---------- 思考强度（保留原版滑杆与最高档动效） ----------
 // Labels match the request exactly. Empty means provider/site default, not "no reasoning".
 const INTEL = [
   { v: '', name: '默认' },
@@ -448,32 +448,99 @@ export function openModelPopover(back, query = '') {
 export function openIntelPopover() {
   popoverOpener = 'intelbtn';
   const box = $('popover'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '思考强度');
-  box.replaceChildren();
-  const head = document.createElement('div'); head.className = 'intel-head'; head.textContent = '思考强度'; box.appendChild(head);
-  const options = document.createElement('div'); options.className = 'effort-options'; options.setAttribute('role', 'radiogroup'); options.setAttribute('aria-label', '思考强度');
-  const selected = (S.options && S.options.effort) || '';
-  for (const [i, item] of INTEL.entries()) {
-    const button = document.createElement('button'); button.type = 'button'; button.className = 'effort-option';
-    button.setAttribute('role', 'radio'); button.setAttribute('aria-checked', String(item.v === selected)); button.tabIndex = item.v === selected ? 0 : -1;
-    button.textContent = item.name;
-    button.onclick = async () => {
-      if (button.disabled || item.v === (S.options?.effort || '')) return;
-      options.querySelectorAll('button').forEach(b => b.disabled = true);
-      const ok = await setPrefs({ effort: item.v });
-      if (!options.isConnected) return;
-      options.querySelectorAll('button').forEach(b => b.disabled = false);
-      if (ok) { options.querySelectorAll('button').forEach(b => { const on = b === button; b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; }); toast('思考强度：' + item.name, 'ok'); }
-    };
+  const idx = intelIndex(S.options?.effort);
+  box.innerHTML = '<div class="intel-head">思考强度：<span id="reason-value">' + INTEL[idx].name + '</span></div>' +
+    '<div class="reason init" id="reason">' +
+    '<div class="reason-track" id="reason-track" aria-hidden="true">' +
+    '<div class="reason-rail"><div class="reason-fill" id="reason-fill"><div class="fill-aurora"></div></div>' +
+    '<div class="reason-sparkles" id="reason-sparkles"></div></div>' +
+    '<div class="reason-dots" id="reason-dots"></div><div class="reason-thumb" id="reason-thumb"></div></div>' +
+    '<div class="reason-labels" id="reason-labels" role="radiogroup" aria-label="思考强度">' +
+    INTEL.map((item, i) => '<button type="button" role="radio" aria-checked="' + (i === idx) + '" tabindex="' + (i === idx ? 0 : -1) + '">' + item.name + '</button>').join('') +
+    '</div></div><p class="effort-note">高强度适合复杂任务，通常需要更长时间。默认沿用站点设置；实际支持情况取决于当前模型。</p>';
+  const reason = $('reason'), track = $('reason-track'), thumb = $('reason-thumb'), fill = $('reason-fill');
+  const labels = [...$('reason-labels').children];
+  const dots = $('reason-dots'); dots.innerHTML = INTEL.map(() => '<div class="reason-dot"></div>').join('');
+  const PAD = 12, N = INTEL.length;
+  let rect, dragging = false, saving = false, rafPending = false, lastX = 0;
+  const fracFromX = clientX => {
+    const r = rect || track.getBoundingClientRect();
+    return Math.max(0, Math.min(N - 1, (clientX - r.left - PAD) / Math.max(1, r.width - PAD * 2) * (N - 1)));
+  };
+  // Keep the original continuous drag and eased snap; labels remain real keyboard controls.
+  const paint = f => {
+    const width = track.getBoundingClientRect().width;
+    const xAt = i => PAD + (width - PAD * 2) * i / (N - 1);
+    const x = xAt(f), near = Math.round(f);
+    thumb.style.transform = 'translate3d(' + x + 'px, -50%, 0)';
+    fill.style.width = Math.max(0, x - PAD) + 'px';
+    labels.forEach((button, i) => {
+      button.classList.toggle('on', i === near);
+      button.setAttribute('aria-checked', String(i === near)); button.tabIndex = i === near ? 0 : -1;
+    });
+    $('reason-value').textContent = INTEL[near].name;
+    [...dots.children].forEach((dot, i) => { dot.style.left = xAt(i) + 'px'; dot.classList.toggle('on', xAt(i) <= x + .5); });
+    reason.classList.toggle('max', near === N - 1);
+  };
+  async function applyEffort(i, keyboard = false) {
+    if (saving) return;
+    reason.classList.toggle('keyboard', keyboard);
+    paint(i);
+    if (INTEL[i].v === (S.options?.effort || '')) return;
+    saving = true; reason.setAttribute('aria-busy', 'true');
+    labels.forEach(button => button.setAttribute('aria-disabled', 'true'));
+    // Start the animation immediately. One save at a time prevents stale replies overwriting a newer selection.
+    const ok = await setPrefs({ effort: INTEL[i].v });
+    saving = false;
+    if (!reason.isConnected) return;
+    reason.removeAttribute('aria-busy'); labels.forEach(button => button.removeAttribute('aria-disabled'));
+    paint(intelIndex(S.options?.effort));
+    if (ok) toast('思考强度：' + INTEL[intelIndex(S.options?.effort)].name, 'ok');
+  }
+  // Preserve the original deterministic particle positions, sizes and calm drift.
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  let sparkles = '';
+  for (let k = 0; k < 18; k++) {
+    const size = 1.5 + rnd() * 3.5;
+    sparkles += '<span class="spark" style="left:' + (4 + rnd() * 92).toFixed(1) + '%;top:' + (18 + rnd() * 64).toFixed(1) + '%;' +
+      'width:' + size.toFixed(1) + 'px;height:' + size.toFixed(1) + 'px;--dx:' + ((rnd() - .5) * 14).toFixed(1) + 'px;' +
+      '--dy:' + ((rnd() - .5) * 10).toFixed(1) + 'px;--dur:' + (1.8 + rnd() * 1.8).toFixed(2) + 's;' +
+      '--delay:' + (-rnd() * 2).toFixed(2) + 's;opacity:' + (.4 + rnd() * .5).toFixed(2) + ';"></span>';
+  }
+  $('reason-sparkles').innerHTML = sparkles;
+  closePopovers('popover'); placePopover(box); box.classList.add('on');
+  paint(idx);
+  requestAnimationFrame(() => { if (reason.isConnected) reason.classList.remove('init'); });
+  track.addEventListener('pointerdown', e => {
+    if (saving || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    dragging = true; rect = track.getBoundingClientRect(); reason.classList.remove('keyboard'); reason.classList.add('dragging');
+    track.setPointerCapture(e.pointerId); paint(fracFromX(e.clientX));
+  });
+  track.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    lastX = e.clientX;
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => { rafPending = false; if (dragging && reason.isConnected) paint(fracFromX(lastX)); });
+  });
+  track.addEventListener('pointerup', e => {
+    if (!dragging) return;
+    dragging = false; reason.classList.remove('dragging'); applyEffort(Math.round(fracFromX(e.clientX))); rect = null;
+  });
+  const cancelDrag = () => { if (!dragging) return; dragging = false; rect = null; reason.classList.remove('dragging'); paint(intelIndex(S.options?.effort)); };
+  track.addEventListener('pointercancel', cancelDrag); track.addEventListener('lostpointercapture', cancelDrag);
+  labels.forEach((button, i) => {
+    button.onclick = e => applyEffort(i, e.detail === 0);
     button.onkeydown = e => {
       const directions = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1};
-      let next = e.key === 'Home' ? 0 : e.key === 'End' ? INTEL.length - 1 : directions[e.key] ? (i + directions[e.key] + INTEL.length) % INTEL.length : null;
-      if (next === null) return; e.preventDefault(); options.children[next].focus(); options.children[next].click();
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? N - 1 : directions[e.key] ? (i + directions[e.key] + N) % N : null;
+      if (next === null) return;
+      e.preventDefault(); if (saving) return;
+      labels[next].focus(); applyEffort(next, true);
     };
-    options.appendChild(button);
-  }
-  const note = document.createElement('p'); note.className = 'effort-note'; note.textContent = '高强度适合复杂任务，通常需要更长时间。默认沿用站点设置；实际支持情况取决于当前模型。';
-  box.append(options, note); closePopovers('popover'); placePopover(box); box.classList.add('on');
-  options.querySelector('[aria-checked=true]')?.focus();
+  });
+  labels[idx].focus();
 }
 
 async function setPrefs(patch) {

@@ -106,7 +106,84 @@
 }
 .po-filter:focus { border-color: var(--text-3); }
 
-/* Intelligence：蓝白滑杆（放在 picker 弹层里） */
+/* Intelligence：保留原版蓝白滑杆、渐变与粒子动效 */
+.reason { padding: 0 18px 14px; user-select: none; }
+.reason-track { position: relative; height: 44px; cursor: pointer; touch-action: none; }
+.reason-rail {
+  position: absolute; left: 12px; right: 12px; top: 50%; height: 24px; border-radius: 999px;
+  background: var(--reason-track); transform: translateY(-50%); overflow: hidden;
+}
+.reason-fill {
+  position: absolute; inset: 0 auto 0 0; width: 12px; border-radius: 999px;
+  background: var(--interactive); transition: width .3s cubic-bezier(.22,1,.36,1);
+}
+/* 绚丽渐变做成叠加层：用透明度淡入，避免 background 瞬间切换 */
+.fill-aurora {
+  position: absolute; inset: 0; border-radius: inherit; opacity: 0;
+  transition: opacity .5s ease .06s;
+  background: linear-gradient(90deg, #4c1d95 0%, #7c3aed 30%, #c084fc 56%, #e879f9 78%, #a21caf 100%);
+}
+.reason.max .fill-aurora { opacity: 1; }
+.reason-dots { position: absolute; inset: 0; }
+.reason-dot {
+  position: absolute; top: 50%; width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(0,0,0,.10); transform: translate(-50%,-50%); transition: background .15s;
+}
+.reason-dot.on { background: rgba(255,255,255,.62); }
+html[data-theme="dark"] .reason-dot { background: rgba(255,255,255,.16); }
+html[data-theme="dark"] .reason-dot.on { background: rgba(255,255,255,.5); }
+.reason-thumb {
+  position: absolute; top: 50%; left: 0; margin-left: -14px; width: 28px; height: 28px; border-radius: 50%;
+  transform: translate3d(12px, -50%, 0); background: #fff; cursor: grab;
+  box-shadow: 0 1px 3px rgba(0,0,0,.22), 0 0 0 .5px rgba(0,0,0,.06);
+  transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
+  will-change: transform;
+}
+.reason-thumb:hover { box-shadow: 0 2px 6px rgba(0,0,0,.28), 0 0 0 .5px rgba(0,0,0,.06); }
+.reason.dragging .reason-thumb { transition: box-shadow .3s ease; cursor: grabbing; }
+.reason.dragging .reason-fill { transition: none; }
+/* 最高强度：紫粉渐变 + 白色粒子（随时间轻动） */
+.reason-sparkles {
+  position: absolute; inset: 0; overflow: hidden; border-radius: 999px; pointer-events: none;
+  opacity: 0; transition: opacity .55s ease .08s;
+}
+.reason.max .reason-sparkles { opacity: 1; }
+.reason.max .reason-thumb {
+  box-shadow: 0 0 0 5px rgba(217,70,239,.22), 0 1px 3px rgba(0,0,0,.22);
+  transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .5s ease;
+}
+.spark {
+  position: absolute; border-radius: 50%; background: #fff; opacity: .7;
+  animation: spark var(--dur, 2.6s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes spark {
+  from { transform: translate(0, 0) scale(.65); opacity: .3; }
+  to { transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(1.1); opacity: .95; }
+}
+@media (prefers-reduced-motion: reduce) { .spark { animation: none; } }
+
+/* 打开弹层时不要从最左滑过来 */
+.reason.init .reason-thumb, .reason.init .reason-fill { transition: none !important; }
+.reason-labels { display: flex; justify-content: space-between; padding: 12px 12px 0; }
+.reason-labels button {
+  flex: 1; min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 8px; background: none; font: inherit; text-align: center; font-size: 13px; color: var(--text-3); cursor: pointer;
+  transition: color .15s; white-space: nowrap;
+}
+.reason-labels button.on { color: var(--interactive); font-weight: 600; }
+
+.reason.keyboard .reason-thumb, .reason.keyboard .reason-fill { transition: none; }
+.reason-labels button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.reason-labels button[aria-disabled=true] { cursor: progress; }
+.reason.max.dragging .reason-thumb { transition: box-shadow .3s ease; cursor: grabbing; }
+.reason .spark { animation-play-state: paused; }
+.reason.max .spark { animation-play-state: running; }
+@media (prefers-reduced-motion: reduce) {
+  .reason *, .reason.max .reason-thumb { transition: none !important; animation: none !important; }
+  .reason-sparkles { display: none; }
+}
+
+
 /* ---------- 模型列表：筛选行 / 免费开关 / 标签 ---------- */
 .po-toolrow { display: flex; gap: 6px; align-items: center; padding: 0 8px 6px; }
 .po-toolrow .po-filter { flex: 1 1 auto; width: auto; margin: 0; }
@@ -161,10 +238,6 @@
 .po-modeldetail { font-size: 12px; white-space: normal; line-height: 1.5; }
 .po-modelname { font-size: 14px; }
 .po-badge { font-size: 11px; }
-.effort-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 4px 16px 16px; }
-.effort-option { min-height: 44px; border: 1px solid var(--border-control); background: var(--surface); border-radius: 8px; color: var(--text-2); font: inherit; font-size: 14px; }
-.effort-option:hover { background: var(--surface-hover); }
-.effort-option[aria-checked=true] { border-color: var(--brand); color: var(--link); background: var(--interactive-soft); }
 .effort-note { color: var(--text-2); font-size: 12px; padding: 0 16px 16px; margin: 0; line-height: 1.7; }
 #pending .chip .doc .n { font-size: 11px; }
 @media (max-width: 600px) {

@@ -416,11 +416,11 @@ Windows 客户端源码单独保存在工作区 `textcrypt/`，通过 `POST /api
 输入框居中，发出第一条消息后输入框动画落到底部；输入框是两层结构（多行文本 +
 底部工具条）：
 - **＋ 附件**：上传文件/图片，或选 `web.skills` 里的快捷指令（点一下填充 prompt）
-- **Intelligence**（模型 + 思考强度合一）：点一下弹出 Intelligence 面板——
-  上方是蓝白滑杆（Instant / Medium / High / Extra High，映射 `reasoning_effort`
-  的 `''/low/medium/high`），下方 `Model` 进入模型列表（默认从网关 `GET /models`
-  拉，10 分钟缓存，也可用 `model.options` 限定）；每个账号各选各的，存
-  `data/webui/prefs.json`
+- **思考强度**：保留蓝白滑杆的连续拖动、松手吸附，以及最高档紫粉渐变、白色粒子与滑钮光晕。
+  `默认 / 低 / 中 / 高` 对应 `reasoning_effort` 的 `''/low/medium/high`；默认沿用站点设置。
+  刻度按钮支持键盘方向键、Home/End，保存失败恢复原档位，系统减少动态效果时关闭动效。
+  **模型**由独立按钮打开列表（默认从网关 `GET /models` 拉，10 分钟缓存，也可用
+  `model.options` 限定）；每个账号各选各的，存 `data/webui/prefs.json`
   模型列表默认隐藏未配置密钥、探测失败、明确不支持工具/文本输出或已下线的条目；可打开「显示不可用」查看原因。
   支持搜索、最新/免费/名称排序、「只看免费」及手动刷新。最新排序采用提供商 `created` 日期；
   未提供日期的模型排在有日期的后面并按名称排序，不推测发布日期。

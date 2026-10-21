@@ -21,6 +21,7 @@ import (
 
 	"mineagent/internal/body"
 	"mineagent/internal/config"
+	"mineagent/internal/dshbridge"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -318,6 +319,7 @@ type Agent struct {
 	// workspaceRoot 读用户上传的图片附件用（网页端上传落在 workspace 里）。
 	workspaceRoot string
 	skillsDir     string
+	dsh           *dshbridge.Client
 
 	mcRunner  *adk.Runner
 	approvals *tools.Approvals
@@ -360,6 +362,16 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 	}
 	if a.sessionKey == "" {
 		a.sessionKey = "minecraft-main"
+	}
+	if cfg.Agent.Backend != "" && cfg.Agent.Backend != "eino" && cfg.Agent.Backend != "dsh" {
+		return nil, fmt.Errorf("unknown agent backend")
+	}
+	if cfg.Agent.Backend == "dsh" {
+		var err error
+		a.dsh, err = dshbridge.New(cfg.Agent.DSH)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if cfg.Model.BaseURL == "" || cfg.Model.Name == "" {
 		log.Warn("model not configured, agent disabled", "hint", "set model.baseURL/model.name/apiKey in config.json or MINEAGENT_MODEL_* env")
@@ -684,6 +696,12 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	cpID := fmt.Sprintf("run-%d", time.Now().UnixNano())
 	a.log.Info("agent run", "session", sessionKey, "player", req.Player, "queryChars", len([]rune(req.Query)), "messages", len(msgs), "trigger", req.TriggerMessageID, "checkpoint", cpID)
 
+	if a.dsh != nil {
+		if route, ok := a.dsh.Route(req.Model, a.modelCfg.Name); ok {
+			a.respondDSH(rctx, req, msgs, route)
+			return
+		}
+	}
 	start := time.Now()
 	runner, runnerKey, runErr := a.runnerFor(rctx, req)
 	if runErr != nil {

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"mineagent/internal/protocol"
 	"mineagent/internal/tools"
@@ -28,7 +27,7 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 	s := t.service
 	p := FromContext(ctx)
 	id := ID()
-	resumed, hasData, decision := compose.GetResumeContext[*tools.ApprovalDecision](ctx)
+	resumed, hasData, decision := tools.ApprovalResumeContext(ctx)
 	if resumed && hasData && decision != nil {
 		defer func() { s.mu.Lock(); delete(s.waiting, decision.ApprovalID); s.mu.Unlock() }()
 	}
@@ -111,7 +110,7 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 			if s.approvals == nil {
 				return fail("approval_unavailable")
 			}
-			info, err := s.approvals.Create(tools.ApprovalInfo{Source: "body", TimeoutMS: int64(s.cfg.Approval.TimeoutSec) * 1000, Tool: t.name, Requester: fmt.Sprintf("web:%d", p.UserID), Prompt: fmt.Sprintf("%s 在 %s 对 %v 执行 %s，理由：%s", s.cfg.Name, sp.WorldID, sp.Target, t.name, sp.Args.Reason), Args: json.RawMessage(output(sp))})
+			info, err := s.approvals.CreateForContext(ctx, tools.ApprovalInfo{Source: "body", TimeoutMS: int64(s.cfg.Approval.TimeoutSec) * 1000, Tool: t.name, Requester: fmt.Sprintf("web:%d", p.UserID), Prompt: fmt.Sprintf("%s 在 %s 对 %v 执行 %s，理由：%s", s.cfg.Name, sp.WorldID, sp.Target, t.name, sp.Args.Reason), Args: json.RawMessage(output(sp))})
 			if err != nil {
 				return fail("approval_unavailable")
 			}
@@ -123,7 +122,7 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 				return fail("audit_unavailable")
 			}
 			s.notify()
-			return "", compose.Interrupt(ctx, &info)
+			return "", tools.InterruptForApproval(ctx, &info)
 		}
 	}
 	return output(s.execute(ctx, p, t.name, args, id, &sp, grant)), nil

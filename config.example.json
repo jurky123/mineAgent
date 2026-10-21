@@ -100,6 +100,14 @@
     "approvalTimeoutSeconds": 180
   },
   "agent": {
+    "backend": "eino",
+    "dsh": {
+      "url": "http://127.0.0.1:18770",
+      "tokenFile": "/path/to/shared/bridge.token",
+      "provider": "deepseek-official",
+      "model": "deepseek-flash",
+      "models": {}
+    },
     "skillsDir": "",
     "qqMaxIterations": 0,
     "runTimeoutSec": 0,

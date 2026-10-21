@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"mineagent/internal/storage"
@@ -166,7 +165,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		return errorJSON("参数不是合法 JSON"), nil
 	}
 
-	isResume, hasData, decision := compose.GetResumeContext[*ApprovalDecision](ctx)
+	isResume, hasData, decision := ApprovalResumeContext(ctx)
 	if isResume && hasData && decision != nil {
 		if !decision.Approved {
 			reason := decision.Reason
@@ -224,7 +223,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		}
 	}
 
-	info, err := t.approvals.Create(ApprovalInfo{
+	info, err := t.approvals.CreateForContext(ctx, ApprovalInfo{
 		Tool:      t.name,
 		Args:      json.RawMessage(argsJSON),
 		Requester: RequesterFromContext(ctx),
@@ -234,7 +233,7 @@ func (t *approvalTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		t.audit(ctx, argsJSON, "policy_denied", "", err.Error())
 		return errorJSON(err.Error()), nil
 	}
-	return "", compose.Interrupt(ctx, &info)
+	return "", InterruptForApproval(ctx, &info)
 }
 
 func (t *approvalTool) validate(args map[string]any) error {

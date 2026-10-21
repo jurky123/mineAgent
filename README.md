@@ -109,7 +109,15 @@ cd paper-plugin
 
 共享目录只读挂在执行沙箱的 `/opt/mineagent-skills`，脚本可直接引用共用库，结果写到当前 workspace；只需修改个别示例时复制对应代码，不能在共享目录构建产物。沿用原有管理员权限、网络审查与操作审批，安装技能不自动执行代码、不授权上传发布、不开放普通用户的代码执行。需要浏览器检查的技能可复用现有 Playwright Chromium 安装，只挂载该浏览器运行时并设置 `CHROME_PATH`，不暴露用户整个缓存目录。
 
+可用 `python3 scripts/share-agent-skills.py` 预览现有 Codex 用户技能的归并，再加 `--apply` 把原目录移动到 `~/.agents/skills` 并留下 Codex 链接；它保留整个技能包，冲突即停止，不移动 `.system` 或插件托管包、不下载或执行技能。DSH 的 user-agents provider 默认读取此目录；自定义 `agentsHome` 或 `DSH_AGENTS_HOME` 时应指向其父目录。MineAgent 的 `skillsDir` 指向其中的 `skills` 目录；以后直接把新技能装到共用目录，重跑脚本可补齐 Codex 链接。目录统一不等于客户端工具能力完全相同，技能中的 CLI 专属操作仍须检查当前工具是否可用。
+
 [Anatomy](https://github.com/wheresryan22/anatomy) 是交互式 SVG 技术示意图技能，需要 Node.js 20.10+，浏览器验收需要 Chrome/Chromium。安装包与依赖由维护者统一管理，不加入本项目仓库。可要求 Agent“用 Anatomy 制作……示意图”；读取技能后按任务生成 HTML/SVG，QQ 可通过文件能力交付。本项目包含可选的 `MINEAGENT_TEST_SKILLS_DIR=<共享目录> go test ./internal/tools -run TestInstalledAnatomyBuildAndCapture`，验证共享 kit 构建、只读挂载和沙箱截图。
+
+## 可选 DSH 执行后端
+
+`agent.backend` 默认 `eino`，可切换为 `dsh`，把任务交给现有 DSH Web 宿主里的本地桥接插件。会话身份、FIFO、停止、QQ 附件与发送、共享技能、沙箱和 Minecraft / 身体审批仍在 MineAgent 校验；自定义人设保留并补充实际运行环境说明，DSH 默认 high 思考。未映射的显式模型选择继续走原提供商，已开始的 DSH 任务失败不会自动换引擎重跑。
+
+配置、路由、历史范围、取消行为、安装与隔离验收见 [桥接说明](dsh-bridge/README.md)。只改配置前先确认宿主适配器与默认模型显示名称一致；本项目不自动安装或重启 DSH，也不承诺移除 Go 进程或显著减少其常驻内存。
 
 ## 高权限操作与审批
 

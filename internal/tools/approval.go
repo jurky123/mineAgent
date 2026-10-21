@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
@@ -43,8 +44,9 @@ type Outcome struct {
 }
 
 type pendingApproval struct {
-	info  ApprovalInfo
-	timer *time.Timer
+	external chan ApprovalDecision
+	info     ApprovalInfo
+	timer    *time.Timer
 }
 
 // PendingFor 返回某请求者当前挂起的审批数。
@@ -101,6 +103,11 @@ func (a *Approvals) SetMaxPerRequester(n int) {
 func (a *Approvals) Decided() <-chan struct{} { return a.notify }
 
 func (a *Approvals) Create(info ApprovalInfo) (ApprovalInfo, error) {
+	return a.CreateForContext(context.Background(), info)
+}
+
+// CreateForContext routes external runners directly to their waiting tool call.
+func (a *Approvals) CreateForContext(ctx context.Context, info ApprovalInfo) (ApprovalInfo, error) {
 	a.mu.Lock()
 	if len(a.pending) >= a.maxPending {
 		n := len(a.pending)
@@ -120,7 +127,7 @@ func (a *Approvals) Create(info ApprovalInfo) (ApprovalInfo, error) {
 		}
 	}
 	info.ApprovalID = fmt.Sprintf("ap-%d-%d", time.Now().UnixMilli(), a.seq.Add(1))
-	a.pending[info.ApprovalID] = &pendingApproval{info: info}
+	a.pending[info.ApprovalID] = &pendingApproval{info: info, external: externalApprovalChannel(ctx)}
 	a.mu.Unlock()
 	a.log.Info("approval created", "approvalId", info.ApprovalID, "tool", info.Tool, "requester", info.Requester)
 	return info, nil
@@ -206,7 +213,11 @@ func (a *Approvals) finish(id string, decision ApprovalDecision) {
 		}
 	}
 	if ok {
-		a.decided[id] = Outcome{ApprovalID: id, Info: p.info, Decision: decision}
+		if p.external != nil {
+			p.external <- decision
+		} else {
+			a.decided[id] = Outcome{ApprovalID: id, Info: p.info, Decision: decision}
+		}
 	}
 	a.mu.Unlock()
 	if !ok {
@@ -261,4 +272,9 @@ func (a *Approvals) CancelBody(reason string) {
 	for _, id := range ids {
 		a.finish(id, ApprovalDecision{Reason: reason})
 	}
+}
+
+// Cancel ends an abandoned approval; a later operator response cannot execute it.
+func (a *Approvals) Cancel(id string) {
+	a.finish(id, ApprovalDecision{Reason: "任务已停止"})
 }

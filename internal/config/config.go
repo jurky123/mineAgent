@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"mineagent/internal/dshbridge"
 )
 
 type Config struct {
@@ -296,6 +298,9 @@ type Storage struct {
 // 全是"越大越强、越贵越慢"的权衡，默认值按 2 核/7.5G 小机器 + QQ 5 分钟
 // 被动窗口 + flash 级便宜模型标定，想更强就往上拧。
 type Agent struct {
+	// Empty/eino uses the existing loop; dsh delegates mapped models to the bridge.
+	Backend string           `json:"backend"`
+	DSH     dshbridge.Config `json:"dsh"`
 	// Shared, operator-managed SKILL.md bundles. Empty disables discovery.
 	SkillsDir string `json:"skillsDir"`
 	// 非 MC 对话工具迭代上限；0（默认）不设上限。MC 普通聊天保持 8。
@@ -578,6 +583,11 @@ func applyEnv(cfg *Config) {
 	set(&cfg.Model.BaseURL, "MINEAGENT_MODEL_BASE_URL")
 	set(&cfg.Model.Name, "MINEAGENT_MODEL_NAME")
 	set(&cfg.Agent.SkillsDir, "MINEAGENT_SKILLS_DIR")
+	set(&cfg.Agent.Backend, "MINEAGENT_AGENT_BACKEND")
+	set(&cfg.Agent.DSH.URL, "MINEAGENT_DSH_URL")
+	set(&cfg.Agent.DSH.TokenFile, "MINEAGENT_DSH_TOKEN_FILE")
+	set(&cfg.Agent.DSH.Provider, "MINEAGENT_DSH_PROVIDER")
+	set(&cfg.Agent.DSH.Model, "MINEAGENT_DSH_MODEL")
 	set(&cfg.Minecraft.Trigger, "MINEAGENT_TRIGGER")
 	set(&cfg.QQ.AppID, "MINEAGENT_QQ_APPID")
 	set(&cfg.QQ.Secret, "MINEAGENT_QQ_SECRET")

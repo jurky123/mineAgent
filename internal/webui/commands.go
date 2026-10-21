@@ -52,6 +52,16 @@ func (c *Channel) conversationCommand(ctx context.Context, u *storage.User, conv
 		var source *string
 		if cmd == "fork" {
 			title = "对话分支"
+			if conv != nil {
+				original, e := c.store.ConversationFor(ctx, u.ID, u.Username, *conv)
+				if e != nil {
+					return current, e
+				}
+				if original != nil && original.Title != "" {
+					name := []rune(original.Title)
+					title = string(name[:min(len(name), 48)]) + " · 分支"
+				}
+			}
 			source = conv
 		}
 		if err = c.store.CreateWebConversation(ctx, u.ID, u.Username, id, title, source, now); err != nil {
@@ -62,6 +72,9 @@ func (c *Channel) conversationCommand(ctx context.Context, u *storage.User, conv
 		reply = "已开启空白对话，旧对话历史已保存。"
 		if cmd == "fork" {
 			reply = "已复制当前已保存的历史并进入独立分支；原对话后续回复不会同步到分支。"
+			if current != "" {
+				reply += "\n来源会话：" + current
+			}
 		}
 		reply += "\n当前编号：" + id + "\n/resume 查看并恢复旧对话。旧对话中的任务会继续，可切回原对话停止。"
 	case "resume":

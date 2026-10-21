@@ -39,8 +39,11 @@ func TestPasswordSetupLoginAndReset(t *testing.T) {
 		t.Fatal("foreign origin accepted")
 	}
 	code, data := post("status", `{"name":"owner"}`, "https://example.com")
-	if code != 200 || data["needsSetup"] != true {
+	if code != 200 || data["needsSetup"] != true || data["newAccount"] != false {
 		t.Fatal("old account not offered setup")
+	}
+	if code, fresh := post("status", `{"name":"fresh"}`, "https://example.com"); code != 200 || fresh["newAccount"] != true {
+		t.Fatal("new account status incorrect")
 	}
 	if code, _ = post("setup", `{"name":"owner","password":"long test phrase!","confirm":"different"}`, "https://example.com"); code != 400 {
 		t.Fatal("mismatched password accepted")

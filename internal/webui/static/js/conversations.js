@@ -23,6 +23,7 @@ async function searchMessages() {
 
 export function initConversations() {
   $('newchat').onclick = newChat;
+  $('forkchat').onclick = () => forkConversation();
   const searchBox = $('searchbox');
   const searchInput = $('conv-search');
   const clearBtn = $('search-clear');
@@ -108,6 +109,7 @@ export function renderList() {
     const trigger = document.createElement('summary'); trigger.textContent = '⋯'; trigger.setAttribute('aria-label', '会话操作：' + label); menu.appendChild(trigger);
     const actions = document.createElement('div'); actions.className = 'conv-menu-actions';
     for (const [label, run] of [
+      ['从此对话创建分支', () => forkConversation(c.conv)],
       ['重命名', () => rename(c)],
       [c.pinned ? '取消置顶' : '置顶', () => settings(c, { pinned: !c.pinned })],
       [c.archived ? '取消归档' : '归档', () => settings(c, { archived: !c.archived })],
@@ -162,4 +164,18 @@ async function del(c) {
 async function settings(c, patch) {
  try { await apiPost('/api/conversations/settings', { conv: c.conv, pinned: !!c.pinned, archived: !!c.archived, ...patch }); await refresh(); }
  catch (error) { showError(error.message); }
+}
+
+async function forkConversation(conv = S.conv) {
+  if (conv === null) { toast('先保存一条消息，再创建分支'); return; }
+  if ($('forkchat').disabled) return;
+  const current = S.conv;
+  if (S.waiting && !await askConfirm({title:'从已保存的历史创建分支？', text:'原对话中的任务仍会继续。尚未返回的回复不会复制到分支，可回原对话查看或停止。',okLabel:'创建分支'})) return;
+  const button = $('forkchat'); button.disabled = true;
+  try {
+    const result = await apiPost('/api/send', {text:'/fork',conv});
+    await refresh(); if (S.conv === current) await switchTo(result.conv);
+    toast('已创建独立分支，原对话保留', 'ok');
+  } catch (error) { showError('创建分支未确认，请先检查会话列表再重试：' + error.message); }
+  finally { button.disabled = false; }
 }

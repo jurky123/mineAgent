@@ -127,3 +127,24 @@ export function extInfo(name) {
   if (map[ext]) return map[ext];
   return [ext ? ext.slice(0, 4).toUpperCase() : 'FILE', 'txt'];
 }
+
+// Legacy workspace, appearance and confirmation dialogs share one focus contract.
+export function initOverlayFocus() {
+  let active = null, origin = null, blocked = [];
+  const sync = () => {
+    const next = [...document.querySelectorAll('.modal.on')].at(-1) || null;
+    if (next === active) return;
+    if (!next) { blocked.forEach(([node,value]) => node.inert = value); blocked = []; const back = origin; active = null; origin = null; if (back?.isConnected) back.focus(); return; }
+    if (!active) { origin = document.activeElement; blocked = ['app','shell-top'].map(id => $(id)).filter(Boolean).map(node => [node,node.inert]); blocked.forEach(([node]) => node.inert = true); }
+    active = next; next.setAttribute('role','dialog'); next.setAttribute('aria-modal','true');
+    next.setAttribute('aria-label', next.querySelector('.dlg-title,.ap-title,.ws-path')?.textContent?.trim() || '工作区');
+    queueMicrotask(() => { if (!next.contains(document.activeElement)) next.querySelector('input:not([hidden]),button:not([disabled]),a[href]')?.focus(); });
+  };
+  const observer = new MutationObserver(sync);
+  document.querySelectorAll('.modal').forEach(node => observer.observe(node,{attributes:true,attributeFilter:['class']}));
+  document.addEventListener('keydown', event => {
+    if (!active) return;
+    if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); (active.querySelector('[id$="-cancel"],[id$="-close"]'))?.click(); }
+    if (event.key === 'Tab') { const nodes = [...active.querySelectorAll('button:not([disabled]),input:not([hidden]),select,textarea,a[href]')].filter(node => node.getClientRects().length); const first=nodes[0], last=nodes.at(-1); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } }
+  }, true);
+}

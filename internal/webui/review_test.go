@@ -135,3 +135,15 @@ func TestReviewLocalTitlesSkipDisclaimers(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestLongRunningTaskRemainsVisibleUntilCompletion(t *testing.T) {
+	c, _, _ := newTestChannel(t)
+	c.running["long-task"] = runState{Text: "正在执行…", StartedAt: time.Now().Add(-time.Hour).UnixMilli()}
+	if _, ok := c.RunningState("long-task"); !ok {
+		t.Fatal("live long task disappeared")
+	}
+	c.clearRunning("long-task")
+	if _, ok := c.RunningState("long-task"); ok {
+		t.Fatal("completed task still running")
+	}
+}

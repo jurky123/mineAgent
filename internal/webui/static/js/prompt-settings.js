@@ -78,6 +78,7 @@ export async function openPromptSettings(previewData = null) {
     }
     if (view === 'templates') {
       if (!draft.name.trim() || !draft.text.trim()) return '填写名称和正文后即可保存';
+      if (count(draft.example) > 400) return '回复示例超过字数上限';
       if (count(draft.name) > data.limits.name || count(draft.desc) > data.limits.desc || count(draft.text) > data.limits.persona) return '模板超过字数上限';
     }
     return '';
@@ -85,7 +86,7 @@ export async function openPromptSettings(previewData = null) {
 
   function syncFooter() {
     save.disabled = saving || !dirty() || !!validation();
-    save.textContent = saving ? '正在保存…' : view === 'mine' ? '应用人设' : '保存更改';
+    save.textContent = saving ? '正在保存…' : view === 'mine' ? '应用偏好' : '保存更改';
     status.textContent = previewData ? '预览模式 · 更改不会保存' : saving ? '正在保存，请稍候' : dirty() ? (validation() || '有未保存的更改') : '更改从下一条消息开始生效';
     status.classList.toggle('dirty', !!dirty());
   }
@@ -125,8 +126,15 @@ export async function openPromptSettings(previewData = null) {
   }
 
   function renderMine() {
-    draft = { persona: data.myPersona || '' };
+    draft = { persona: data.myPersona || '', style: {length: data.style?.length || '', language: data.style?.language || ''} };
     content.append(heading('让 Agent 用你习惯的方式交流', '选择适合你的表达方式。只影响你的网页对话，不会改动其他用户或渠道。'));
+    const preferences = h('div', 'prompt-preferences');
+    for (const [key, label, values] of [['length', '回复长度', [['','跟随任务'],['brief','简短'],['balanced','适中'],['detailed','详细']]], ['language','默认语言',[['','跟随对话'],['zh-CN','简体中文'],['en','English']]]]) {
+      const select = h('select', 'input'); select.id = 'prompt-preference-' + key;
+      for (const [value, name] of values) { const option = h('option', null, name); option.value = value; select.appendChild(option); }
+      select.value = draft.style[key]; select.onchange = () => { draft.style[key] = select.value; changed(); }; preferences.appendChild(field(label, select));
+    }
+    content.appendChild(preferences);
     const layout = h('div', 'prompt-personas-layout');
     const grid = h('div', 'prompt-personas');
     grid.setAttribute('role', 'radiogroup');
@@ -145,9 +153,11 @@ export async function openPromptSettings(previewData = null) {
       const p = data.personas.find((item) => item.id === (draft.persona || data.webPersona));
       const summary = h('summary');
       const title = h('div');
-      title.append(h('span', 'prompt-eyebrow', '人设预览'), h('h4', null, p?.name || '渠道默认'));
+      title.append(h('h4', null, p?.name || '渠道默认'));
       summary.append(title, icon('right', 'prompt-preview-arrow'));
-      preview.replaceChildren(summary, h('p', 'prompt-preview-desc', p?.desc || ''), h('div', 'prompt-preview-text', p?.text || '渠道默认人设暂不可用。'));
+      preview.replaceChildren(summary, h('p', 'prompt-preview-desc', p?.desc || ''));
+      if (p?.example) { const example = h('div', 'prompt-example'); example.append(h('span', null, '回复示例 · 静态示例'), h('p', null, p.example)); preview.appendChild(example); }
+      const full = h('details', 'prompt-full-text'); full.append(h('summary', null, '查看完整提示词'), h('div', 'prompt-preview-text', p?.text || '渠道默认人设暂不可用。')); preview.appendChild(full);
       preview.append(h('div', 'prompt-preview-note', '人设决定语气与交流方式；能力和操作规则仍由渠道设置决定。'));
       changed();
     };
@@ -217,14 +227,14 @@ export async function openPromptSettings(previewData = null) {
     editor.append(field('提示词来源', mode), textField);
     const tools = h('div', 'prompt-editor-tools');
     tools.append(button('从内置开始编辑', () => { draft.text = svc.default || ''; draft.enabled = true; syncMode(); }, 'btn sm'),
-      h('span', null, '自定义会替换整段渠道规则，人设会单独加入。'));
+      h('span', null, '自定义会替换渠道规则；工具与操作权限仍由服务端校验。'));
     editor.append(tools); layout.append(editor); content.append(layout); syncMode();
   }
 
   function renderTemplates() {
     const p = data.personas.find((item) => item.id === templateId) || (templateId === '' ? null : data.personas[0]);
     templateId = p?.id || '';
-    draft = { id: templateId, name: p?.name || '', desc: p?.desc || '', text: p?.text || '' };
+    draft = { id: templateId, name: p?.name || '', desc: p?.desc || '', text: p?.text || '', example: p?.example || '' };
     const head = heading('共享人设模板库', '管理员维护 · 所有人都可以预览并选择。编辑模板会影响正在使用它的对话。');
     head.append(button('＋ 新建模板', () => switchTo(() => { templateId = ''; }), 'btn sm'));
     content.append(head);
@@ -232,7 +242,7 @@ export async function openPromptSettings(previewData = null) {
     layout.append(selectionList(data.personas, templateId, (id) => { templateId = id; }));
     const editor = h('div', 'prompt-editor');
     editor.append(h('span', 'prompt-eyebrow', p ? (p.builtin ? '内置模板 · 可编辑，也可恢复' : '自定义模板') : '新模板'));
-    for (const [key, label, limit] of [['name', '模板名称', data.limits.name], ['desc', '一句话简介', data.limits.desc], ['text', '人设正文', data.limits.persona]]) {
+    for (const [key, label, limit] of [['name', '模板名称', data.limits.name], ['desc', '一句话简介', data.limits.desc], ['text', '人设正文', data.limits.persona], ['example', '回复示例（静态）', 400]]) {
       const el = h(key === 'text' ? 'textarea' : 'input', key === 'text' ? 'textarea prompt-textarea' : 'input');
       el.id = 'prompt-template-' + key; el.value = draft[key];
       if (key === 'text') { el.rows = 10; el.placeholder = '描述角色、语气和交流方式，例如：先给结论，再解释依据。'; }
@@ -265,7 +275,7 @@ export async function openPromptSettings(previewData = null) {
 
   function render() {
     tabs.replaceChildren(); content.replaceChildren(); error.textContent = '';
-    const views = [['mine', '我的人设', 'user'], ...(data.admin ? [['services', '渠道设置', 'settings'], ['templates', '模板库', 'sparkle']] : [])];
+    const views = [['mine', '我的偏好', 'user'], ...(data.admin ? [['services', '渠道设置', 'settings'], ['templates', '模板库', 'sparkle']] : [])];
     for (const [id, label, glyph] of views) {
       const tab = button('', () => { if (view !== id) return switchTo(() => { view = id; }); }, 'prompt-tab');
       tab.append(icon(glyph), document.createTextNode(label));
@@ -297,7 +307,7 @@ export async function openPromptSettings(previewData = null) {
     controls.forEach((el) => { el.disabled = true; });
     let saved = false;
     try {
-      const payload = view === 'mine' ? { scope: 'user-persona', persona: draft.persona } : view === 'services' ?
+      const payload = view === 'mine' ? { scope: 'user-settings', persona: draft.persona, style: draft.style } : view === 'services' ?
         { scope: 'service-settings', id: serviceId, ...draft } : { scope: 'persona-save', data: draft };
       const result = await post(payload);
       saved = true; baseline = JSON.stringify(draft);

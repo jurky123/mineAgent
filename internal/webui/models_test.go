@@ -55,7 +55,7 @@ func TestModelMetadataAndHTTPFailure(t *testing.T) {
 			return
 		}
 		_, _ = io.WriteString(w, `{"data":[
-		{"id":"new","name":"Newest","created":200,"context_length":32768,"pricing":{"prompt":"0.0","completion":"0"},"supported_parameters":["tools"]},
+		{"id":"new","name":"Newest","created":200,"context_length":32768,"pricing":{"prompt":"0.0","completion":"0"},"supported_parameters":["tools","reasoning"],"architecture":{"input_modalities":["text","image"]}},
 		{"id":"new"},{"id":""},
 		{"id":"image","architecture":{"output_modalities":["image"]}},
 		{"id":"no-tools","supported_parameters":["temperature"]},
@@ -66,6 +66,9 @@ func TestModelMetadataAndHTTPFailure(t *testing.T) {
 	opts, err := fetchModelOptions(context.Background(), srv.URL, "")
 	if err != nil || len(opts) != 4 {
 		t.Fatalf("options %v error %v", opts, err)
+	}
+	if opts[0].Vision == nil || !*opts[0].Vision || opts[0].Reasoning == nil || !*opts[0].Reasoning || opts[0].Tools == nil || !*opts[0].Tools {
+		t.Fatal("advertised capabilities lost")
 	}
 	if !opts[0].Free || opts[0].Created != 200 || opts[0].ContextLength != 32768 || opts[0].Label != "Newest" {
 		t.Fatalf("lost metadata: %+v", opts[0])

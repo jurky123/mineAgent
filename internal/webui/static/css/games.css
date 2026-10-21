@@ -18,7 +18,7 @@
 .lobby-piece { width: 46px; height: 46px; }
 .lobby-title { font-size: 22px; font-weight: 700; }
 .lobby-sub { color: var(--text-secondary); font-size: 14px; margin-top: 2px; }
-.lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 14px; }
+.lobby-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 14px; }
 .lobby-card { padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .lobby-card-title { font-size: 15.5px; font-weight: 650; }
 .lobby-card-sub { color: var(--text-tertiary); font-size: 13px; margin-bottom: 6px; }
@@ -62,11 +62,11 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
   filter: drop-shadow(1px 0 0 rgba(255, 255, 255, .5)) drop-shadow(-1px 0 0 rgba(255, 255, 255, .5))
           drop-shadow(0 1px 0 rgba(255, 255, 255, .5)) drop-shadow(0 -1px 0 rgba(255, 255, 255, .5));
 }
-.coord { position: absolute; font-size: 10px; font-weight: 600; opacity: .45; pointer-events: none; }
+.coord { position: absolute; font-size: 12px; font-weight: 600; opacity: 1; pointer-events: none; }
 .coord.rank { top: 2px; left: 4px; }
 .coord.file { bottom: 1px; right: 4px; }
-.sq.light .coord { color: #9a9aa0; }
-.sq.dark .coord { color: #b9b9c0; }
+.sq.light .coord { color: #545464; }
+.sq.dark .coord { color: #ededf3; }
 
 .status-bar { display: flex; align-items: center; gap: 10px; padding: 10px 0 0; color: var(--text-secondary); font-size: 14.5px; min-height: 26px; }
 .status-bar.active { color: var(--brand); font-weight: 650; }
@@ -210,7 +210,7 @@ html[data-theme="dark"] .sq.dark { background: #1b1b1f; }
    等待房间保持原来的两栏布局。 */
 .board { transition: max-width var(--motion-layout) var(--ease-standard); }
 body.game-focus .chess-wrap { --board-max: min(46rem, calc(100dvh - 292px)); max-width: 78rem; padding-top: 14px; padding-bottom: 20px; }
-body.game-focus .crumb { display: none; }         /* 对局中收掉面包屑（离开房间回大厅） */
+body.game-focus .crumb { display: flex; }         /* 对局中收掉面包屑（离开房间回大厅） */
 /* 对局中信息栏紧凑：房间码在右上角 chip 里（点击可复制），这里只留双方与着法 */
 body.game-focus .chess-side .side-hint,
 body.game-focus .chess-side .side-players { display: none; }
@@ -248,22 +248,6 @@ body.game-focus .chess-side .moves-table { max-height: 150px; }
   border: 2px solid var(--border-strong); border-top-color: var(--brand);
   animation: spin .7s linear infinite;
 }
-
-/* ---------- Game Stage：进入游戏后的极淡场景底色（2~4%）---------- */
-body.stage-chess::before, body.stage-gomoku::before {
-  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
-}
-body.stage-chess::before {
-  background:
-    radial-gradient(70rem 32rem at 50% -8%, rgba(10, 132, 255, .05), transparent 62%),
-    repeating-conic-gradient(rgba(24, 24, 27, .022) 0% 25%, transparent 0% 50%) 0 0 / 72px 72px;
-}
-body.stage-gomoku::before {
-  background:
-    radial-gradient(70rem 32rem at 50% -8%, rgba(124, 58, 237, .04), transparent 62%),
-    radial-gradient(circle at 1px 1px, rgba(24, 24, 27, .05) 1.2px, transparent 1.4px) 0 0 / 26px 26px;
-}
-body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; }
 
 /* ---------- Player Bar / 状态 pill / 终局浮层（V4-C） ---------- */
 .player-line { gap: 8px; }
@@ -310,21 +294,6 @@ body.stage-chess main, body.stage-gomoku main { position: relative; z-index: 1; 
   100% { opacity: 0; transform: translate(calc(var(--dx) * 90px), calc(var(--dy) * 60px)) scale(.4); }
 }
 
-/* ---------- AI 解说：直播间弹幕 ---------- */
-.danmaku-layer {
-  position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4;
-  border-radius: 12px;
-}
-.danmaku-item {
-  position: absolute; left: 0; display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: 999px; white-space: nowrap;
-  background: rgba(17, 17, 20, .78); color: #fff; font-size: 14px; line-height: 1.4;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .18); will-change: transform;
-}
-.danmaku-item .i { width: 12px; height: 12px; opacity: .8; }
-html[data-theme="dark"] .danmaku-item { background: rgba(255, 255, 255, .9); color: #111114; }
-@media (max-width: 640px) { .danmaku-item { font-size: 12.5px; padding: 4px 10px; } }
-
 /* Replay controls, coordinates and legible white stones. */
 .gomoku-frame { padding: 22px 0 0 22px; position: relative; width: 100%; max-width: 32rem; }
 .gomoku-cols { position: absolute; top: 0; left: 22px; right: 0; display: grid; grid-template-columns: repeat(15, 1fr); text-align: center; color: var(--text-secondary); font-size: 11px; }
@@ -346,3 +315,45 @@ html[data-theme="dark"] .moves-grid button.mv:is(:hover, .last) { color: var(--l
 .replay-controls { flex-wrap: wrap; }
 .replay-controls select { width: auto; min-width: 80px; }
 .stone.w { border: 1.5px solid #505968; box-shadow: 0 1px 3px rgba(0,0,0,.25), inset 0 0 0 1px #fff; }
+
+.lobby-title { margin: 0; font-size: 28px; }
+.board-col, .chess-side, .lobby-card { min-width: 0; }
+body.game-focus .chess-wrap { --board-max: min(42rem, calc(100dvh - 320px)); }
+.player-line { padding: 8px 0; min-height: 44px; }
+.player-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-turn { margin-left: auto; color: var(--link); font-size: 12px; white-space: nowrap; }
+.game-more { position: relative; }
+.game-more > summary { list-style: none; cursor: pointer; }
+.game-more > summary::-webkit-details-marker { display: none; }
+.game-more-menu { position: absolute; z-index: 10; bottom: calc(100% + 8px); left: 0; min-width: 220px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-raised); padding: 8px; }
+.game-more-menu .btn { width: 100%; border-color: transparent; justify-content: flex-start; }
+.game-more-menu .field-hint { padding-inline: 8px; }
+.game-action-note { font-size: 12px; color: var(--text-secondary); flex-basis: 100%; }
+.game-commentary { padding: 16px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.game-commentary strong { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+.game-commentary p { margin: 6px 0 0; }
+.chess-actions .btn, .room-code, .room-chip { min-height: 44px; }
+.chess-actions { gap: 8px; }
+.join-row .input { min-width: 0; flex: 1; }
+body.game-live .room-layout { animation: none; }
+@media (max-width: 640px) {
+  body.game-focus .chess-wrap { --board-max: 100%; padding: 16px; }
+  .lobby-card { padding: 20px; }
+  .player-line { gap: 6px; font-size: 13px; }
+  .player-line .side-label { font-size: 12px; white-space: nowrap; }
+  .chess-actions { display: flex; }
+  .chess-actions > .btn, .chess-actions > .game-more { flex: 1; }
+  .game-more > summary { width: 100%; }
+  .chess-actions .btn.danger { margin-left: 0; }
+  .game-action-note { font-size: 12px; }
+}
+
+/* Coordinates live outside the playable squares. */
+.board { width: calc(100% - 24px); margin: 0 0 24px 24px !important; overflow: visible; border: 0; box-shadow: none; }
+.coord.rank { left: -22px; top: 50%; transform: translateY(-50%); }
+.coord.file { right: 50%; bottom: -22px; transform: translateX(50%); }
+.sq.light .coord, .sq.dark .coord { color: var(--text-secondary); }
+.result-overlay { position: static; inset: auto; padding: 16px 0; background: none; backdrop-filter: none; display: block; }
+.result-overlay .result-card { width: 100%; text-align: left; background: none; border: 0; box-shadow: none; padding: 0; }
+.result-overlay .result-actions { justify-content: flex-start; }
+.result-overlay .spark { display: none; }

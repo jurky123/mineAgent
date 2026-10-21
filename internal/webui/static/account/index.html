@@ -20,7 +20,7 @@
 <meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)">
 <link rel="apple-touch-icon" href="/static/__VER__/img/icon-192.png">
 <link rel="icon" type="image/png" href="/static/__VER__/img/favicon.png">
-<title>我的 · Mine</title>
+<title>我的 · zkun</title>
 <link rel="stylesheet" href="/static/__VER__/css/tokens.css">
 <link rel="stylesheet" href="/static/__VER__/css/ds.css">
 <link rel="stylesheet" href="/static/__VER__/css/portal.css">
@@ -77,10 +77,10 @@
   <section class="section">
     <div class="section-head"><h2 class="section-title">游戏</h2></div>
     <div class="settings">
-      <div class="list-row action" id="history-row">
+      <a class="list-row action" id="history-row" href="/account/history">
         <div class="list-main"><div class="list-title">对局历史</div><div class="list-sub">和谁对战、胜负，以及逐步回放</div></div>
         <div class="right">→</div>
-      </div>
+      </a>
       <div id="acc-stats"></div>
     </div>
   </section>
@@ -89,13 +89,13 @@
     <div class="section-head"><h2 class="section-title">关于</h2></div>
     <div class="settings">
       <div class="list-row">
-        <div class="list-main"><div class="list-title">Mine 门户</div><div class="list-sub">Agent、游戏与 Minecraft · 密码登录</div></div>
+        <div class="list-main"><div class="list-title">zkun</div><div class="list-sub">Agent、游戏与 Minecraft</div></div>
         <div class="right" id="acc-version"></div>
       </div>
-      <div class="list-row action" id="logout-row">
+      <button type="button" class="list-row action" id="logout-row">
         <div class="list-main"><div class="list-title">退出登录</div></div>
         <div class="right">→</div>
-      </div>
+      </button>
     </div>
   </section>
 </main>

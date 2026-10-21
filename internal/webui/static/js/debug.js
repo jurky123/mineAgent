@@ -53,7 +53,8 @@ export function startDebug() {
   }
 
   S.token = 'debug';
-  S.me = 'Jiang';
+  S.me = '演示玩家';
+  $('forkchat').disabled = true; $('forkchat').title = '演示模式不创建真实会话';
   S.admin = true;
   initPromptSettings(promptPreview);
   if (q.get('panel') === 'prompts') openPromptSettings(promptPreview);

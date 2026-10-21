@@ -152,7 +152,7 @@ func TestResolveComposition(t *testing.T) {
 
 	// MC 默认人设是"MC 老玩家"
 	gotMC := m.Resolve("minecraft", "", "能力-mc")
-	if !strings.Contains(gotMC, "老玩家") || !strings.HasSuffix(gotMC, "能力-mc") {
+	if !strings.Contains(gotMC, "Minecraft 的游戏助手") || !strings.HasSuffix(gotMC, "能力-mc") {
 		t.Fatalf("MC 默认人设不对: %q", gotMC)
 	}
 

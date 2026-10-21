@@ -364,16 +364,12 @@ func (c *Channel) clearRunning(sessionKey string) {
 	c.mu.Unlock()
 }
 
-// RunningState 取运行状态；超过 15 分钟视为过期（防止进程内残留）。
+// RunningState remains visible until the run completion/cancellation callback clears it.
 func (c *Channel) RunningState(sessionKey string) (runState, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	st, ok := c.running[sessionKey]
 	if !ok {
-		return runState{}, false
-	}
-	if time.Since(time.UnixMilli(st.StartedAt)) > 15*time.Minute {
-		delete(c.running, sessionKey)
 		return runState{}, false
 	}
 	return st, true

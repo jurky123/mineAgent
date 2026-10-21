@@ -12,6 +12,22 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 > 使用与验证：[body/README.md](body/README.md)；架构与实施记录：[MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（§18）。
 > AI 玩家入口位于 **Minecraft → AI 玩家 → 玩家资料**（`/minecraft` → `/ai` → `/ai/<id>`）。公开资料由独立服务提供；资料内的身体状态、任务/回复、审批和控制由浏览器直接访问主站，仍须主站已验证管理员。`/body` 保留旧书签、游戏 fragment 配对及急停兼容。论坛默认关闭，既有代码与数据保留，不接写作。见 [aiplayer/README.md](aiplayer/README.md) 和 [v1.3 需求 §12](AI_PLAYER_PORTAL_REQUIREMENTS.md#12-用户确认的信息架构调整2026-10-20当前实施依据)。
 
+
+### 门户与 Agent 界面（2026-10-21）
+
+- 首页保留 Agent、游戏、Minecraft 三项入口和真实最近记录；安装说明集中到 `/minecraft`。`GET /api/portal/public` 仅调用显式注册的 `PublicCard`，公开 Minecraft 可用状态与在线人数，不包含玩家身份、聊天或机器诊断；成功结果短缓存，失败显示未知状态。
+- `/api/games` 的 GET 目录允许游客读取；房间详情、创建、加入、落子、历史与控制仍需原有账号鉴权。游客点击创建或加入后原地登录并继续操作，邀请地址保留。
+- Agent 分开显示模型和思考强度。`默认/低/中/高` 对应空值、`low/medium/high`；默认不代表关闭思考。模型默认跨提供商按日期排序，可筛选免费与提供商公布的图片、思考、工具能力；未公布能力保持未知。
+- 网页个人偏好（人设、回复长度、语言）存于现有 `prompts.json` 的 `userStyle`/`userPersona`，通过 `user-settings` 原子保存，仅影响本人网页请求，不改变渠道规则或工具授权。静态回复示例不调用模型；内置模板只在与已知旧版本完全匹配时升级，保留管理员编辑。
+- 分支入口复用 `/fork`，保留来源编号与原会话，创建时保留未发送草稿和附件；长任务状态随实际完成或取消清除，不再按 15 分钟隐藏。附件失败保留并可重试，未确认的 Agent 操作不会自动重发。
+- 对局解说默认关闭，开启后在棋盘之外显示；棋盘坐标移出落子区，小屏操作保留悔棋、更多、认输。演示模式统一标识，不能用于判断真实模型或服务器可用性。
+- 两个服务的 `tokens.css` 保持一致；原生 ES 模块和 Go 嵌入资源结构不变。没有新增前端运行时或构建依赖。主要控件按 44px 触控区域设计，检查 320/390/768/1280px、深色和减少动态效果。
+
+验收：`go test ./...`、`go vet ./...`、相关包 `-race`；`npm run test:models`、`test:prompts`、`test:community`、`test:review`、`test:conversations`。新增真实隔离流程：`go build -o /tmp/zkun-ui-fixture ./scripts/passkey-fixture` 后运行 `node scripts/portal-refresh-e2e.mjs /tmp/zkun-ui-fixture`，覆盖游客登录后创建/加入、邀请保留、偏好持久化、思考参数、分支草稿保护与附件重试；截图位于 `/tmp/zkun-delivery-ui`。不连接生产配置、真实模型或 QQ。
+
+整合包仍需按发布清单完成 Windows/PCL 实测后才开放下载；未把页面检查视为安装验证。手机软键盘、iOS 真机和真实用户 Web Vitals 需另行验证。
+
+
 ## 能做什么
 
 - **聊天问答**：像和群友聊天一样提问，回答会发在服务器聊天里，所有人都能看到

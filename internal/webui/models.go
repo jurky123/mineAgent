@@ -35,6 +35,9 @@ type ModelOption struct {
 	ContextLength     int64  `json:"contextLength,omitempty"`
 	UnavailableReason string `json:"unavailableReason,omitempty"`
 	Stale             bool   `json:"stale,omitempty"`
+	Vision            *bool  `json:"vision,omitempty"`
+	Reasoning         *bool  `json:"reasoning,omitempty"`
+	Tools             *bool  `json:"tools,omitempty"`
 }
 
 // Contributor is a billing/program designation, not a free model.
@@ -121,6 +124,7 @@ func fetchModelOptions(ctx context.Context, baseURL, key string) ([]ModelOption,
 			ContextLength int64                      `json:"context_length"`
 			Pricing       map[string]json.RawMessage `json:"pricing"`
 			Architecture  struct {
+				InputModalities  []string `json:"input_modalities"`
 				OutputModalities []string `json:"output_modalities"`
 			} `json:"architecture"`
 			SupportedParameters []string `json:"supported_parameters"`
@@ -146,6 +150,15 @@ func fetchModelOptions(ctx context.Context, baseURL, key string) ([]ModelOption,
 			label = id
 		}
 		opt := ModelOption{ID: id, Label: label, Free: catalogFreePricing(m.Pricing, id), Created: m.Created, ContextLength: m.ContextLength}
+		if m.Architecture.InputModalities != nil {
+			vision := containsString(m.Architecture.InputModalities, "image")
+			opt.Vision = &vision
+		}
+		if m.SupportedParameters != nil {
+			reasoning := containsString(m.SupportedParameters, "reasoning") || containsString(m.SupportedParameters, "reasoning_effort")
+			tools := containsString(m.SupportedParameters, "tools")
+			opt.Reasoning, opt.Tools = &reasoning, &tools
+		}
 		if len(m.Architecture.OutputModalities) > 0 && !containsString(m.Architecture.OutputModalities, "text") {
 			opt.UnavailableReason = "不支持文本对话"
 		} else if m.SupportedParameters != nil && !containsString(m.SupportedParameters, "tools") {

@@ -28,14 +28,15 @@ export const shell = {
   token: localStorage.getItem(TOKEN_KEY) || '',
   user: null,
   apps: [],
+  preview: false,
 };
 
 // 预览模式（?ui=1）：走正式 Shell 渲染路径，只把数据源换成假的——
 // 这样截图/录屏里顶部导航、账号菜单、空间尺寸都与线上一致。
-export const PREVIEW_USER = { id: 1, name: 'jzk', admin: true };
+export const PREVIEW_USER = { id: 1, name: '演示玩家', admin: true };
 export const PREVIEW_APPS = [
-  { id: 'agent', name: 'MineAgent', nav: true, navLabel: 'Agent', path: '/agent?ui=1', icon: 'sparkle', homeRole: 'hero' },
-  { id: 'games', name: '游戏', nav: true, navLabel: '游戏', path: '/games?ui=1', icon: 'gamepad', homeRole: 'content' },
+  { id: 'agent', name: 'MineAgent', enabled: true, nav: true, navLabel: 'Agent', path: '/agent?ui=1', icon: 'sparkle', homeRole: 'hero' },
+  { id: 'games', name: '游戏', enabled: true, nav: true, navLabel: '游戏', path: '/games?ui=1', icon: 'gamepad', homeRole: 'content' },
 ];
 
 // pageVersion 页面注入的版本号（静态资源带版本，避免缓存混用）。
@@ -89,6 +90,7 @@ export function fmtTime(ms) {
 // ---------- API ----------
 export async function api(path, opts) {
   opts = opts || {};
+  if (shell.preview && (opts.method || 'GET').toUpperCase() !== 'GET') throw new Error('演示模式不提交真实操作');
   opts.headers = Object.assign({}, opts.headers,
     shell.token ? { Authorization: 'Bearer ' + shell.token } : {});
   const res = await fetch(path, opts);
@@ -142,9 +144,13 @@ function loginView() {
       saveAuth({ id: data.id, name: data.name, admin: !!data.admin }, data.token);
       view.remove(); resolve(shell.user);
     }));
-    view.appendChild(box); document.body.appendChild(view);
+    const back = h('a', 'login-home', '返回首页'); back.href = '/';
+    const hint = h('p', 'login-hint', location.pathname.startsWith('/games/') ? '登录后继续进入当前游戏，邀请链接会保留。' : '登录后返回当前页面。');
+    box.append(hint, back); view.appendChild(box); document.body.appendChild(view);
   });
 }
+
+export async function requireLogin() { if (!shell.user) await loginView(); return shell.user; }
 
 // ---------- 顶栏 ----------
 function paintTop(active) {
@@ -264,6 +270,7 @@ function paintTop(active) {
     b.onclick = () => { location.href = '/account'; };
     accPop.appendChild(b);
   }
+  if (!shell.user) accBtn.appendChild(h('span', 'account-login-label', '登录'));
   accBtn.onclick = (e) => { e.stopPropagation(); closePops(accPop); togglePop(accPop); };
   accPop.onclick = (e) => e.stopPropagation();
   accWrap.appendChild(accBtn);
@@ -398,7 +405,9 @@ if (typeof window !== 'undefined') {
 // ---------- boot ----------
 // active: 顶部导航高亮；requireLogin=false 时未登录也继续（?ui=1 演示模式）。
 export async function boot({ active = '', requireLogin = true, preview = false } = {}) {
+  shell.preview = preview;
   applyTheme();
+  const main = document.querySelector('main'); if (main) { if (!main.id) main.id = 'main-content'; main.tabIndex = -1; const skip = h('a', 'skip-link', '跳到正文'); skip.href = '#' + main.id; document.body.prepend(skip); }
   // PWA：注册 Service Worker（仅"可安装"用，不做离线缓存）
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -411,6 +420,7 @@ export async function boot({ active = '', requireLogin = true, preview = false }
     shell.apps = PREVIEW_APPS;
     shell.user = PREVIEW_USER;   // 只放内存：预览不能写 localStorage（否则会顶掉真实账号的 lastName/admin）
     paintTop(active);
+    const notice = h('aside', 'preview-notice'); notice.setAttribute('role', 'status'); notice.append(h('span', null, '演示模式 · 示例数据，不影响真实账号')); const exit = h('a', null, '退出演示'); const url = new URL(location.href); ['ui','state','panel','theme','effort','empty','sidebar'].forEach(k => url.searchParams.delete(k)); exit.href = url.pathname + url.search; notice.appendChild(exit); document.getElementById('shell-top')?.after(notice); document.body.classList.add('is-preview');
     return shell.user;
   }
 

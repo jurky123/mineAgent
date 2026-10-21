@@ -33,7 +33,13 @@ func NewAPI(log *slog.Logger, mgr *Manager, acct *account.Service, auth Authed) 
 
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/games", a.auth(a.handleList))
+	mux.HandleFunc("/api/games", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET"})
+			return
+		}
+		a.handleList(w, r, nil)
+	})
 	mux.HandleFunc("/api/games/", a.handleDispatch) // /api/games/<id>/<action>
 	return mux
 }

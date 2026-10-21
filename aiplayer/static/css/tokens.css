@@ -18,9 +18,9 @@
   --header-bg: rgba(255, 255, 255, .9);
   --drop-bg: rgba(255, 255, 255, .7);
 
-  --text: #0d0d0d;
+  --text: #172033;
   --text-2: #5d5d5d;
-  --text-3: #8f8f8f;
+  --text-3: #667085;
 
   --user-bubble: #f4f4f4;
   --code-bg: #f7f7f8;
@@ -29,10 +29,10 @@
   --send-off-fg: #b0b0b0;
 
   /* 交互（蓝） */
-  --interactive: #0285ff;
-  --interactive-soft: rgba(2, 133, 255, .10);
-  --interactive-border: rgba(2, 133, 255, .32);
-  --link: #0285ff;
+  --interactive: #2563EB;
+  --interactive-soft: rgba(37, 99, 235, .08);
+  --interactive-border: #2563EB;
+  --link: #1D4ED8;
   --reason-track: #f3f3f3;
   --accent: var(--interactive);
   --accent-contrast: #ffffff;
@@ -40,6 +40,8 @@
   --danger: #d92d20;
   --ok: #067647;
   --shadow-popover: 0 8px 28px rgba(0, 0, 0, .10);
+  --shell-height: 64px;
+  --content-width: 1200px;
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 18px;
@@ -138,7 +140,7 @@ body {
 button { font: inherit; color: inherit; cursor: pointer; }
 a { color: inherit; }
 ::selection { background: var(--interactive-soft); }
-:focus-visible { outline: 2px solid var(--interactive-border); outline-offset: 2px; border-radius: 6px; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 8px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
@@ -152,7 +154,7 @@ a { color: inherit; }
 /* ---------- 跨页面过渡（View Transitions；不支持的浏览器就是普通跳转）----------
    旧页 90ms 淡出，新页稍后 220ms 淡入 + 上浮 6px；顶栏/底栏原地不动（不交叉淡化，避免文字重影），
    只有导航高亮 pill 在两页之间滑过去。主题切换走 html.vt-theme：纯交叉淡化、不位移。 */
-@view-transition { navigation: none; }
+@view-transition { navigation: auto; }
 ::view-transition-group(*) { animation-duration: var(--motion-layout); animation-timing-function: var(--ease-out); }
 ::view-transition-old(root) { animation: vt-out 90ms var(--ease-in) both; }
 ::view-transition-new(root) { animation: vt-in 220ms var(--ease-out) 40ms both; }
@@ -190,3 +192,11 @@ html.vt-theme::view-transition-group(*) { animation-duration: 0s; }
 #app.leave, #login.leave { animation: screenOut .16s ease forwards; }
 
 @media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
+
+/* Shared browser surfaces and fixed type scale. */
+a { text-underline-offset: .2em; }
+button, a, input, select, textarea, summary { touch-action: manipulation; }
+input, textarea { caret-color: var(--brand); }
+::placeholder { color: var(--text-secondary, var(--text-2)); opacity: 1; }
+.num, time, .setting-value { font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { :root { --shell-height: 56px; } }

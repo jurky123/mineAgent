@@ -134,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/me", s.web.HandleMe)
 	mux.HandleFunc("/api/account/sessions", s.requireUser(s.handleSessions))
 	mux.HandleFunc("/api/account/stats", s.requireUser(s.handleAccountStats))
+	mux.HandleFunc("/api/account/security", s.requireUser(s.handleSecurity))
 	mux.HandleFunc("/api/account/sessions/revoke", s.requireUser(s.handleSessionsRevoke))
 	mux.HandleFunc("/api/prompts", s.requireUser(s.handlePrompts))
 	mux.HandleFunc("/api/downloads", s.handleDownloads)
@@ -142,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Portal API
 	mux.HandleFunc("/api/portal/apps", s.handleApps)
+	mux.HandleFunc("/api/portal/public", s.handlePublicHome)
 	mux.HandleFunc("/api/portal/home", s.requireUser(s.handleHome))
 	mux.HandleFunc("/api/portal/presence", s.requireUser(s.handlePresence))
 	mux.HandleFunc("/api/portal/announcements", s.handleAnnouncements) // GET 公开；POST/DELETE 管理员
@@ -278,7 +280,10 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "games/"+id+"/index.html")
 		return
 	}
-	http.NotFound(w, r)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	s.render(w, "error/index.html")
 }
 
 // gamePageExists 游戏页是否存在（注册表启用 + 内嵌页存在）。

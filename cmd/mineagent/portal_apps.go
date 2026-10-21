@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"mineagent/internal/games"
 	"mineagent/internal/portal"
@@ -36,7 +37,8 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 			ID: "minecraft", Name: "Minecraft", Desc: "服务器状态", Icon: "pickaxe",
 			Path: "/minecraft", NavLabel: "Minecraft",
 			Order: 20, Enabled: true, Nav: true, HomeRole: "status", Priority: 20,
-			Card: mcStatusCard(gw),
+			Card:       mcStatusCard(gw),
+			PublicCard: mcPublicCard(gw),
 		},
 		portal.App{
 			ID: "games", Name: "游戏", Desc: "国际象棋与五子棋在线对局", Icon: "gamepad",
@@ -55,6 +57,37 @@ func registerPortalApps(p *portal.Server, store *storage.Store, gw *tools.Gatewa
 			Card: announcementsFeed(store),
 		},
 	)
+}
+
+// A public visitor can read availability and the count, never player identities,
+// world details or machine diagnostics. Cache successes briefly to bound gateway work.
+func mcPublicCard(gw *tools.Gateway) portal.CardFunc {
+	var mu sync.Mutex
+	var cached map[string]any
+	var updated time.Time
+	return func(ctx context.Context, _ *storage.User) (any, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if cached != nil && time.Since(updated) < 15*time.Second {
+			return cached, nil
+		}
+		raw, err := gw.Call(ctx, "minecraft_server_status", nil)
+		if err != nil {
+			return nil, err
+		}
+		var st struct {
+			Online *int `json:"online"`
+		}
+		if err := json.Unmarshal([]byte(raw), &st); err != nil {
+			return nil, err
+		}
+		if st.Online == nil || *st.Online < 0 {
+			return nil, fmt.Errorf("服务器状态缺少有效在线人数")
+		}
+		updated = time.Now()
+		cached = map[string]any{"online": true, "count": *st.Online, "updatedAt": updated.UnixMilli()}
+		return cached, nil
+	}
 }
 
 // agentHeroCard 首页一级入口：最近一次对话 + 会话数。

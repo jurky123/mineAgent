@@ -142,7 +142,7 @@ func (p *Passwords) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	action := strings.TrimPrefix(r.URL.Path, "/api/auth/password/")
 	if action == "status" {
-		authJSON(w, 200, map[string]any{"needsSetup": hash == "" && len(credentials) == 0, "passkeyOnly": hash == "" && len(credentials) > 0})
+		authJSON(w, 200, map[string]any{"newAccount": u == nil, "needsSetup": hash == "" && len(credentials) == 0, "passkeyOnly": hash == "" && len(credentials) > 0})
 		return
 	}
 	if action != "setup" && action != "login" {

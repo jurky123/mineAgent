@@ -19,10 +19,10 @@ export function autoGrow() {
 }
 
 export function updateSendBtn() {
-  const ready = !S.sending && (!S.waiting || directCommand($('text').value)) && ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done && !p.err);
+  const ready = !S.sending && (!S.waiting || directCommand($('text').value)) && ($('text').value.trim() || S.pending.some((p) => p.done)) && !S.pending.some((p) => !p.done);
   $('send').classList.toggle('ready', !!ready);
   $('send').disabled = !ready;
-  $('text').placeholder = S.waiting ? '回答结束后可发送，草稿会保留' : '给 MineAgent 发消息';
+  $('text').placeholder = S.waiting ? '回答结束后可发送，草稿会保留' : '给 Agent 发消息';
 }
 
 // ---------- 发送 ----------
@@ -31,7 +31,7 @@ export async function sendMsg() {
   const text = $('text').value.trim();
   const files = S.pending.filter((p) => p.done).map((p) => p.file);
   if (!text && !files.length) return;
-  if (S.pending.some((p) => !p.done && !p.err)) { showError('还有文件在上传，稍等'); return; }
+  if (S.pending.some((p) => !p.done)) { showError('请等待附件上传，或重试、移除失败的附件'); return; }
   const originConv = S.conv;
   const sentPending = S.pending;
   S.sending = true;
@@ -80,7 +80,9 @@ export function renderPending() {
     } else {
       chip.innerHTML = '<div class="doc">' + ICON.file + '<span class="n">' + esc(p.name) + '</span></div>';
     }
-    if (!p.done) {
+    chip.title = p.name;
+    chip.setAttribute('aria-label', p.name + (p.err ? '，上传失败' : p.done ? '，已上传' : '，上传中'));
+    if (!p.done && !p.err) {
       const bar = document.createElement('div');
       bar.className = 'bar';
       bar.style.width = Math.round((p.progress || 0) * 100) + '%';
@@ -92,12 +94,15 @@ export function renderPending() {
       note.textContent = p.note;
       chip.appendChild(note);
     }
+    if (p.err) {
+      const retry = document.createElement('button'); retry.className = 'attachment-retry'; retry.type = 'button'; retry.textContent = '重试'; retry.setAttribute('aria-label', '重新上传 ' + p.name); retry.title = p.err; retry.onclick = () => uploadPending(p); chip.appendChild(retry);
+    }
     const x = document.createElement('button');
-    x.className = 'x';
+    x.className = 'x'; x.type = 'button'; x.setAttribute('aria-label', '移除附件 ' + p.name);
     x.innerHTML = ICON.x;
     x.onclick = () => {
       if (p.url) URL.revokeObjectURL(p.url);
-      S.pending.splice(S.pending.indexOf(p), 1);
+      const index = S.pending.indexOf(p); if (index >= 0) S.pending.splice(index, 1);
       renderPending(); updateSendBtn();
     };
     chip.appendChild(x);
@@ -157,19 +162,27 @@ export async function addFiles(fileList) {
   }));
   for (const p of prepared) {
     const item = {
-      file: p.file, name: p.file.name, isImage: p.isImage || /^image\//.test(p.file.type || ''),
+      original: p.file, file: p.file, name: p.file.name, isImage: p.isImage || /^image\//.test(p.file.type || ''),
       progress: 0, done: false, note: p.saved > 0 ? '已压缩 ' + fmtSize(p.saved) : '',
       url: p.isImage ? URL.createObjectURL(p.file) : ''
     };
     S.pending.push(item); renderPending();
-    uploadOne(p.file, (v) => {
-      item.progress = v;
-      const b = item.el && item.el.querySelector('.bar');
-      if (b) b.style.width = Math.round(v * 100) + '%';
-    }).then((ref) => { item.file = ref; item.done = true; renderPending(); })
-      .catch((e) => { item.err = true; showError('上传失败：' + e.message); S.pending.splice(S.pending.indexOf(item), 1); renderPending(); });
+    uploadPending(item);
   }
   $('text').focus();
+}
+
+async function uploadPending(item) {
+  if (!S.pending.includes(item) || item.uploading) return;
+  item.uploading = true; item.err = ''; item.progress = 0; item.done = false; renderPending();
+  try {
+    const ref = await uploadOne(item.original, value => { item.progress = value; const bar = item.el?.querySelector('.bar'); if (bar) bar.style.width = Math.round(value * 100) + '%'; });
+    if (!S.pending.includes(item)) return;
+    item.file = ref; item.done = true;
+  } catch (error) {
+    if (!S.pending.includes(item)) return;
+    item.err = error.message; showError('「' + item.name + '」上传失败，可重试或移除：' + error.message);
+  } finally { item.uploading = false; renderPending(); }
 }
 
 // ---------- 斜杠命令面板 ----------
@@ -236,22 +249,22 @@ document.addEventListener('click', (e) => {
 }, true);   // 捕获阶段：处理器重建 DOM 前就判断好，避免"点了却被自己关掉"
 
 // ---------- Intelligence（思考强度 + 模型 合一） ----------
-// UI 四档映射到后端 reasoning_effort：Instant='' / Medium='low' / High='medium' / Extra High='high'。
+// Labels match the request exactly. Empty means provider/site default, not "no reasoning".
 const INTEL = [
-  { v: '', name: 'Instant' },
-  { v: 'low', name: 'Medium' },
-  { v: 'medium', name: 'High' },
-  { v: 'high', name: 'Extra High' }
+  { v: '', name: '默认' },
+  { v: 'low', name: '低' },
+  { v: 'medium', name: '中' },
+  { v: 'high', name: '高' }
 ];
 function intelIndex(effort) {
   const i = INTEL.findIndex((x) => x.v === (effort || ''));
   return i < 0 ? 0 : i;
 }
-let intelPaint = null;
 
 export function renderToolbar() {
   if (!S.options) return;
-  $('intellabel').textContent = INTEL[intelIndex(S.options.effort)].name;
+  $('intellabel').textContent = '思考：' + INTEL[intelIndex(S.options.effort)].name;
+  const label = $('model-label'); if (label) { label.textContent = modelLabel() || '默认模型'; $('modelbtn').title = '选择模型：' + label.textContent; }
 }
 
 // modelLabel 给 Intelligence 面板里的 Model 行显示（默认提供商显示原名，额外提供商显示 label）
@@ -293,10 +306,16 @@ function renderPlusMenu() {
 
 let modelFreeOnly = localStorage.getItem('mineagent.freeonly') === '1';
 let modelShowUnavailable = false;
+let modelCapability = '';
 let modelSort = 'newest';
+let catalogReadAt = 0;
+let popoverOpener = 'modelbtn';
 
 export function openModelPopover(back, query = '') {
+  popoverOpener = 'modelbtn';
+  let visibleModels = 80;
   const box = $('popover');
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '选择模型');
   const cur = S.options ? S.options.model || '' : '';
   const defaultModel = (S.options && S.options.defaultModel) || '';
   const all = (S.options && S.options.models) || [];
@@ -306,8 +325,8 @@ export function openModelPopover(back, query = '') {
     '<div class="po-toolrow po-modelcontrols">' +
     '<button class="po-chip' + (modelFreeOnly ? ' on' : '') + '" id="po-freeonly" aria-pressed="' + modelFreeOnly + '">只看免费</button>' +
     '<button class="po-chip' + (modelShowUnavailable ? ' on' : '') + '" id="po-showall" aria-pressed="' + modelShowUnavailable + '">显示不可用</button>' +
-    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option></select></div>' +
-    '<div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
+    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option><option value="provider">按提供商分组</option></select></div>' +
+    '<div class="po-toolrow"><select id="po-capability" class="po-sort" aria-label="模型能力筛选"><option value="">全部能力</option><option value="vision">支持图片</option><option value="reasoning">支持思考</option><option value="tools">支持工具</option></select></div><div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
     '<div id="po-providerstatus" class="po-providerstatus"></div>' +
     '<div class="po-scroll" id="po-list"></div>';
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
@@ -317,7 +336,10 @@ export function openModelPopover(back, query = '') {
     let out = m.free ? '<span class="po-badge free">免费</span>' : '';
     if (m.needsKey) out += '<span class="po-badge dim">未配置密钥</span>';
     else if (m.unavailable) out += '<span class="po-badge dim">不可用</span>';
-    else if (m.verified) out += '<span class="po-badge dim">已验证</span>';
+    else if (m.verified) out += '<span class="po-badge dim">调用验证通过</span>';
+    if (m.vision) out += '<span class="po-badge dim">图片</span>';
+    if (m.reasoning) out += '<span class="po-badge dim">思考</span>';
+    if (m.tools) out += '<span class="po-badge dim">工具</span>';
     return out;
   };
   const mk = (m) => {
@@ -326,7 +348,7 @@ export function openModelPopover(back, query = '') {
     b.disabled = !usable(m);
     const released = new Date((m.created || 0) * 1000);
     const date = m.created && Number.isFinite(released.getTime()) ? released.toISOString().slice(0, 10) : '';
-    const detail = [m.id, date ? '发布 ' + date : '', m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
+    const detail = [m.providerLabel || m.provider, m.id, date ? '发布 ' + date : '', m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
       m.unavailableReason || '', m.stale ? '缓存目录' : ''].filter(Boolean).join(' · ');
     b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">' + esc(m.label) +
       (m.provider === 'default' && m.id === defaultModel ? ' <span class="po-desc">默认</span>' : '') + badge(m) +
@@ -339,7 +361,7 @@ export function openModelPopover(back, query = '') {
     list.innerHTML = '';
     const q = (f || '').trim().toLowerCase();
     const matches = all.filter((m) => (!q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) &&
-      (!modelFreeOnly || m.free) && (modelShowUnavailable || usable(m)));
+      (!modelFreeOnly || m.free) && (modelShowUnavailable || usable(m)) && (!modelCapability || m[modelCapability] === true || modelCapability === 'tools' && m.verified));
     matches.sort((a, b) => {
       if (usable(a) !== usable(b)) return usable(a) ? -1 : 1;
       if (modelSort === 'free' && a.free !== b.free) return a.free ? -1 : 1;
@@ -350,9 +372,9 @@ export function openModelPopover(back, query = '') {
     const unknownDates = matches.some((m) => !m.created);
     $('po-modelstatus').textContent = matches.length + ' 个模型 · ' + freeCount + ' 个免费可选' +
       (modelSort === 'newest' && unknownDates ? ' · 无发布日期的按名称排序' : '') +
-      (all.some((m) => m.stale) ? ' · 刷新失败，显示缓存' : '') + ' · 实际可用性与额度以提供商为准';
+      (all.some((m) => m.stale) ? ' · 刷新失败，显示缓存' : '') + (modelCapability ? ' · 仅显示已公布或验证的能力' : '') + (catalogReadAt ? ' · 列表读取于 ' + new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit'}).format(catalogReadAt) : '') + ' · 额度以提供商为准';
     const def = all.find((m) => m.provider === 'default' && m.id === defaultModel);
-    if (!q && !modelFreeOnly && (!def || usable(def) || modelShowUnavailable)) {
+    if (!q && !modelFreeOnly && !modelCapability && (!def || usable(def) || modelShowUnavailable)) {
       const b = document.createElement('button');
       b.className = 'po-item model' + (cur === '' ? ' on' : '');
       b.innerHTML = '<span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="check">' + ICON.check + '</span>';
@@ -360,18 +382,15 @@ export function openModelPopover(back, query = '') {
       b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: '' }); };
       list.appendChild(b);
     }
-    // Group by provider after sorting; each provider appears once.
-    const groups = new Map();
-    for (const m of matches) {
-      if (!groups.has(m.provider)) groups.set(m.provider, []);
-      groups.get(m.provider).push(m);
-    }
-    for (const models of groups.values()) {
-      const t = document.createElement('div');
-      t.className = 'po-title po-provider';
-      t.textContent = models[0].providerLabel || models[0].provider;
-      list.appendChild(t);
-      models.forEach(mk);
+    const displayed = matches.slice(0, visibleModels);
+    if (modelSort === 'provider') {
+      const groups = new Map();
+      for (const m of displayed) { if (!groups.has(m.provider)) groups.set(m.provider, []); groups.get(m.provider).push(m); }
+      for (const models of groups.values()) { const title = document.createElement('div'); title.className = 'po-title po-provider'; title.textContent = models[0].providerLabel || models[0].provider; list.appendChild(title); models.forEach(mk); }
+    } else displayed.forEach(mk);
+    if (matches.length > displayed.length) {
+      const more = document.createElement('button'); more.className = 'po-item po-load-more'; more.textContent = '显示更多模型（剩余 ' + (matches.length - displayed.length) + ' 个）';
+      more.onclick = () => { const top = list.scrollTop; const before = list.querySelectorAll('button.model').length; visibleModels += 80; build(f); list.scrollTop = top; list.querySelectorAll('button.model')[Math.max(0, before - 1)]?.focus(); }; list.appendChild(more);
     }
     if (!matches.length) {
       const empty = document.createElement('div'); empty.className = 'po-modelempty';
@@ -388,6 +407,7 @@ export function openModelPopover(back, query = '') {
     show.onclick = () => { modelShowUnavailable = true; $('po-showall').classList.add('on'); $('po-showall').setAttribute('aria-pressed', 'true'); $('po-filter').value = provider + '/'; build(provider + '/'); };
     notice.append(text, show); $('po-providerstatus').appendChild(notice);
   }
+  $('po-capability').value = modelCapability; $('po-capability').onchange = () => { modelCapability = $('po-capability').value; build($('po-filter').value); };
   $('po-sort').value = modelSort;
   $('po-filter').value = query;
   build(query);
@@ -422,133 +442,38 @@ export function openModelPopover(back, query = '') {
   closePopovers('popover');
   placePopover(box);
   box.classList.add('on');
+  $('po-filter').focus();
 }
 
 export function openIntelPopover() {
-  const box = $('popover');
-  const idx = intelIndex(S.options && S.options.effort);
-  const modelName = modelLabel();
-  const curOpt = (S.options && (S.options.models || []).find((m) => m.id === S.options.model)) || null;
-  const modelBad = !!(curOpt && curOpt.unavailable);
-  box.innerHTML = '<div class="intel-head">' + INTEL[idx].name + '<svg class="i"><use href="#i-chevron"/></svg></div>' +
-    '<div class="reason init" id="reason">' +
-    '<div class="reason-track" id="reason-track">' +
-    '<div class="reason-rail"><div class="reason-fill" id="reason-fill">' +
-    '<div class="fill-aurora"></div></div>' +
-    '<div class="reason-sparkles" id="reason-sparkles"></div></div>' +
-    '<div class="reason-dots" id="reason-dots"></div>' +
-    '<div class="reason-thumb" id="reason-thumb"></div></div>' +
-    '<div class="reason-labels" id="reason-labels">' + INTEL.map((x, i) =>
-      '<span class="' + (i === idx ? 'on' : '') + '" data-i="' + i + '">' + x.name + '</span>').join('') + '</div>' +
-    '</div>' +
-    '<div class="intel-sep"></div>' +
-    '<button class="intel-model" id="po-model"><span>Model</span><span class="val"' + (modelBad ? ' style="color:var(--danger)"' : '') + '>' +
-    esc(modelName) + (modelBad ? '（不可用）' : '') + '</span><svg class="i sm"><use href="#i-chevron"/></svg></button>';
-  const track = $('reason-track');
-  closePopovers('popover');
-  placePopover(box);
-  box.classList.add('on');   // 先可见，量宽度才算得准
-  const PAD = 12, N = INTEL.length;
-  let rect = null;
-  const trackRect = () => rect || (rect = track.getBoundingClientRect());
-  const xAt = (f) => PAD + (trackRect().width - PAD * 2) * (f / (N - 1));   // f 允许小数
-  const fracFromX = (clientX) => {
-    const r = trackRect();
-    const rel = Math.min(Math.max(clientX - r.left, PAD), r.width - PAD);
-    return Math.max(0, Math.min(N - 1, (rel - PAD) / ((r.width - PAD * 2) / (N - 1))));
-  };
-
-  // paint 接受小数档位：拖动时跟手连续移动，点击/松手传整数吸附
-  const paint = (f) => {
-    const x = xAt(f);
-    $('reason-thumb').style.transform = 'translate3d(' + x + 'px, -50%, 0)';
-    $('reason-fill').style.width = Math.max(0, x - PAD) + 'px';
-    const near = Math.round(f);
-    $('reason-labels').querySelectorAll('span').forEach((n, k) => n.classList.toggle('on', k === near));
-    const head = document.querySelector('.intel-head');
-    if (head) head.firstChild.textContent = INTEL[near].name;
-    // 刻度点：只建一次，之后只更新位置/选中态（拖动不再重建 DOM）
-    const dots = $('reason-dots');
-    if (dots) {
-      if (dots.children.length !== N) {
-        dots.innerHTML = INTEL.map(() => '<div class="reason-dot"></div>').join('');
-      }
-      Array.prototype.forEach.call(dots.children, (d, k) => {
-        const dx = xAt(k);
-        d.style.left = dx + 'px';
-        d.classList.toggle('on', dx <= x + 0.5);
-      });
-    }
-    $('reason').classList.toggle('max', near === N - 1);
-    intelPaint = (i) => paint(i);   // 供 setPrefs 原地重绘
-  };
-
-  // 立即播放吸附动画（乐观更新），网络请求在后台跑，失败回滚
-  function applyEffort(i) {
-    const v = INTEL[i].v;
-    const cur = (S.options && S.options.effort) || '';
-    paint(i);
-    if (v === cur) return;
-    const prev = intelIndex(cur);
-    setPrefs({ effort: v }).then((ok) => { if (!ok) paint(prev); });
+  popoverOpener = 'intelbtn';
+  const box = $('popover'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '思考强度');
+  box.replaceChildren();
+  const head = document.createElement('div'); head.className = 'intel-head'; head.textContent = '思考强度'; box.appendChild(head);
+  const options = document.createElement('div'); options.className = 'effort-options'; options.setAttribute('role', 'radiogroup'); options.setAttribute('aria-label', '思考强度');
+  const selected = (S.options && S.options.effort) || '';
+  for (const [i, item] of INTEL.entries()) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'effort-option';
+    button.setAttribute('role', 'radio'); button.setAttribute('aria-checked', String(item.v === selected)); button.tabIndex = item.v === selected ? 0 : -1;
+    button.textContent = item.name;
+    button.onclick = async () => {
+      if (button.disabled || item.v === (S.options?.effort || '')) return;
+      options.querySelectorAll('button').forEach(b => b.disabled = true);
+      const ok = await setPrefs({ effort: item.v });
+      if (!options.isConnected) return;
+      options.querySelectorAll('button').forEach(b => b.disabled = false);
+      if (ok) { options.querySelectorAll('button').forEach(b => { const on = b === button; b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; }); toast('思考强度：' + item.name, 'ok'); }
+    };
+    button.onkeydown = e => {
+      const directions = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1};
+      let next = e.key === 'Home' ? 0 : e.key === 'End' ? INTEL.length - 1 : directions[e.key] ? (i + directions[e.key] + INTEL.length) % INTEL.length : null;
+      if (next === null) return; e.preventDefault(); options.children[next].focus(); options.children[next].click();
+    };
+    options.appendChild(button);
   }
-
-  renderSparkles();   // 常驻渲染，靠 .max 透明度淡入
-  // 白色粒子：确定性伪随机，尺寸/位置/漂移/时长各不同
-  function renderSparkles() {
-    const box = $('reason-sparkles');
-    if (!box || box.children.length) return;
-    let seed = 7;
-    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-    let html = '';
-    for (let k = 0; k < 18; k++) {
-      const size = 1.5 + rnd() * 3.5;
-      html += '<span class="spark" style="' +
-        'left:' + (4 + rnd() * 92).toFixed(1) + '%;' +
-        'top:' + (18 + rnd() * 64).toFixed(1) + '%;' +
-        'width:' + size.toFixed(1) + 'px;height:' + size.toFixed(1) + 'px;' +
-        '--dx:' + ((rnd() - 0.5) * 14).toFixed(1) + 'px;' +
-        '--dy:' + ((rnd() - 0.5) * 10).toFixed(1) + 'px;' +
-        '--dur:' + (1.8 + rnd() * 1.8).toFixed(2) + 's;' +
-        '--delay:' + (-rnd() * 2).toFixed(2) + 's;' +
-        'opacity:' + (0.4 + rnd() * 0.5).toFixed(2) + ';"></span>';
-    }
-    box.innerHTML = html;
-  }
-
-  paint(idx);
-  requestAnimationFrame(() => $('reason').classList.remove('init'));
-
-  let dragging = false, rafPending = false, lastX = 0;
-  track.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    rect = track.getBoundingClientRect();   // 缓存几何，拖动期间避免反复 layout
-    $('reason').classList.add('dragging');
-    try { track.setPointerCapture(e.pointerId); } catch (err) {}
-    paint(fracFromX(e.clientX));
-  });
-  track.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    lastX = e.clientX;
-    if (rafPending) return;
-    rafPending = true;
-    requestAnimationFrame(() => {
-      rafPending = false;
-      if (dragging) paint(fracFromX(lastX));   // 跟手（小数位置）
-    });
-  });
-  const stop = (e) => {
-    if (!dragging) return;
-    dragging = false;
-    $('reason').classList.remove('dragging');
-    applyEffort(Math.round(fracFromX(e.clientX)));   // 立刻吸附，不等网络
-  };
-  track.addEventListener('pointerup', stop);
-  track.addEventListener('pointercancel', stop);
-  $('reason-labels').querySelectorAll('span').forEach((n) => {
-    n.onclick = () => applyEffort(+n.dataset.i);
-  });
-  $('po-model').onclick = (e) => { e.stopPropagation(); openModelPopover(true); };
+  const note = document.createElement('p'); note.className = 'effort-note'; note.textContent = '高强度适合复杂任务，通常需要更长时间。默认沿用站点设置；实际支持情况取决于当前模型。';
+  box.append(options, note); closePopovers('popover'); placePopover(box); box.classList.add('on');
+  options.querySelector('[aria-checked=true]')?.focus();
 }
 
 async function setPrefs(patch) {
@@ -559,8 +484,6 @@ async function setPrefs(patch) {
     if ('model' in patch) {
       if ($('popover').classList.contains('on')) openModelPopover(true);
       toast('模型：' + (r.model || '默认'), 'ok');
-    } else if (intelPaint && $('reason-track')) {
-      intelPaint(intelIndex(r.effort));   // 原地重绘：平滑吸附，不重建 DOM
     }
     return true;
   } catch (e) { showError(e.message); return false; }
@@ -569,6 +492,7 @@ async function setPrefs(patch) {
 export async function loadOptions(force) {
   if (S.options && !force) { renderToolbar(); return S.options; }
   if (S.token !== 'debug') S.options = await api('/api/options' + (force ? '?refresh=1' : ''));
+  catalogReadAt = Date.now();
   renderToolbar();
   return S.options;
 }
@@ -605,6 +529,8 @@ $('intelbtn').onclick = (e) => {
   if (box.classList.contains('on')) { box.classList.remove('on'); return; }  // 再点一次关闭
   openIntelPopover();
 };
+$('modelbtn').onclick = e => { e.stopPropagation(); openModelPopover(false); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('popover').classList.contains('on')) { closePopovers(); $(popoverOpener).focus(); } });
 $('file').onchange = () => { addFiles($('file').files); $('file').value = ''; };
 document.querySelectorAll('.suggests button').forEach((b) => {
   b.onclick = () => { $('text').value = b.dataset.q; autoGrow(); $('text').focus(); };

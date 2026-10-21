@@ -11,7 +11,8 @@
     "test:passwords": "node scripts/password-e2e.mjs",
     "test:conversations": "node scripts/conversation-commands-e2e.mjs",
     "test:review": "node scripts/review-ui-test.mjs",
-    "test:downloads": "node scripts/download-e2e.mjs"
+    "test:downloads": "node scripts/download-e2e.mjs",
+    "test:portal-refresh": "node scripts/portal-refresh-e2e.mjs"
   },
   "devDependencies": {
     "playwright": "^1.49.0"

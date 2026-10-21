@@ -40,7 +40,7 @@ func (s *Server) promptsGet(w http.ResponseWriter, u *storage.User) {
 	personas := make([]map[string]any, 0)
 	for _, p := range prompts.Personas() {
 		// 人设是共享模板，登录用户可预览正文；渠道系统提示词细节仍只对管理员开放。
-		item := map[string]any{"id": p.ID, "name": p.Name, "desc": p.Desc, "builtin": p.Builtin, "text": p.Text}
+		item := map[string]any{"id": p.ID, "name": p.Name, "desc": p.Desc, "builtin": p.Builtin, "text": p.Text, "example": p.Example}
 		personas = append(personas, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -48,6 +48,7 @@ func (s *Server) promptsGet(w http.ResponseWriter, u *storage.User) {
 		"services":   services,
 		"personas":   personas,
 		"myPersona":  prompts.UserPersona(u.Username),
+		"style":      prompts.UserPreferences(u.Username),
 		"webPersona": prompts.ServicePersona("web"),
 		"limits": map[string]int{"persona": prompts.MaxPersonaLen, "capability": prompts.MaxCapabilityLen,
 			"name": prompts.MaxNameLen, "desc": prompts.MaxDescLen},
@@ -56,12 +57,13 @@ func (s *Server) promptsGet(w http.ResponseWriter, u *storage.User) {
 
 func (s *Server) promptsPost(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	var req struct {
-		Scope   string          `json:"scope"`
-		ID      string          `json:"id"`
-		Enabled *bool           `json:"enabled"`
-		Text    *string         `json:"text"`
-		Persona string          `json:"persona"`
-		Data    json.RawMessage `json:"data"`
+		Scope   string             `json:"scope"`
+		ID      string             `json:"id"`
+		Enabled *bool              `json:"enabled"`
+		Text    *string            `json:"text"`
+		Persona string             `json:"persona"`
+		Data    json.RawMessage    `json:"data"`
+		Style   *prompts.UserStyle `json:"style"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 256<<10)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
@@ -74,6 +76,15 @@ func (s *Server) promptsPost(w http.ResponseWriter, r *http.Request, u *storage.
 	}
 
 	switch strings.TrimSpace(req.Scope) {
+	case "user-settings":
+		if req.Style == nil {
+			writeJSON(w, 400, map[string]string{"error": "请提交完整的个人偏好"})
+			return
+		}
+		if err := prompts.SetUserSettings(u.Username, strings.TrimSpace(req.Persona), *req.Style); err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
+		}
 	case "user-persona":
 		if err := prompts.SetUserPersona(u.Username, strings.TrimSpace(req.Persona)); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

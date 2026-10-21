@@ -32,7 +32,7 @@ function catalogCard(game, status) {
   art.setAttribute('aria-hidden', 'true'); art.tabIndex = -1;
   const big = h('img', 'catalog-art-piece');
   big.src = gameIcon(game.id).src;
-  big.alt = '';
+  big.alt = ''; big.width = 64; big.height = 64;
   art.appendChild(big);
   card.appendChild(art);
   if (game.enabled !== false && game.path) art.style.viewTransitionName = 'game-' + game.id;
@@ -46,7 +46,7 @@ function catalogCard(game, status) {
   body.appendChild(h('p', 'game-description', '2 人 · ' + (game.desc || (game.id === 'gomoku' ? '15 路棋盘，先连五子获胜' : '国际象棋在线对局'))));
   const bits = [];
   if (status && status.total) bits.push('最近 ' + status.wins + ' 胜 ' + status.losses + ' 负' + (status.draws ? ' ' + status.draws + ' 和' : ''));
-  body.appendChild(h('div', 'game-stats', status?.historyFailed ? '战绩暂时不可用' : bits.length ? bits.join(' · ') : '还没有对局记录'));
+  body.appendChild(h('div', 'game-stats', status?.guest ? '登录后可创建或加入房间' : status?.historyFailed ? '战绩暂时不可用' : bits.length ? bits.join(' · ') : '还没有对局记录'));
 
   if (status?.roomsFailed) body.appendChild(h('p', 'field-hint', '房间状态暂时不可用，可进入大厅重试'));
   const go = h('a', 'catalog-go', '进入' + game.name + ' →');
@@ -76,16 +76,15 @@ function catalogCard(game, status) {
         { openRooms: 0, wins: 0, losses: 0, draws: 0, total: 0 }));
     return;
   }
-  await boot({ active: '/games' });
-  if (!shell.user) return;
+  await boot({ active: '/games', requireLogin: false });
   const host = document.getElementById('catalog');
   try {
     const { games } = await apiGet('/api/games');
     const list = (games || []).filter((g) => g.enabled);
     if (!list.length) { host.appendChild(h('div', 'card', '暂时还没有可玩的游戏')); return; }
-    const stats = await Promise.all(list.map((g) => gameStatus(g.id)));
+    const stats = shell.user ? await Promise.all(list.map((g) => gameStatus(g.id))) : list.map(() => ({ guest: true }));
     list.forEach((g, i) => host.appendChild(catalogCard(g, stats[i])));
-    reveal(host.children);
+    const demo = h('a', 'btn', '先看一局演示回放'); demo.href = '/account/history?demo=gomoku'; host.after(demo);
   } catch (e) {
     host.appendChild(h('div', 'card', '加载失败：' + e.message));
   }

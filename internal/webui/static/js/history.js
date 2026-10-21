@@ -3,7 +3,7 @@ import { boot, apiGet, fmtTime } from './shell.js';
 import { h, icon, gameIcon, reveal } from './ds.js';
 
 const qs = new URLSearchParams(location.search);
-const DEMO = qs.get('demo') === 'gomoku' || qs.get('ui') === '1';
+const DEMO = ['gomoku', 'chess'].includes(qs.get('demo')) || qs.get('ui') === '1';
 const GAME_NAME = { chess: '国际象棋', gomoku: '五子棋' };
 const SIDE_NAME = { white: '白方', black: '黑方' };
 const REASON = {

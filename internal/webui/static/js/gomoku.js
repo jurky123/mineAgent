@@ -155,7 +155,7 @@ function paint() {
     lobbyEl.hidden = false;
     room.lobby(lobbyEl, {
       gameId: GAME, onRoom: apply, iconEl: gameIcon(GAME, 'lobby-piece'),
-      demoRooms: DEMO ? () => [{ id: 'GM5K2Q', host: '朋友的房间', createdAt: Date.now() - 132000 }] : undefined,
+      demoRooms: DEMO ? () => [{ id: 'GM5K2Q', host: '演示房间', createdAt: Date.now() - 132000 }] : undefined,
       demoCreate: DEMO ? demoWaiting : undefined,
       demoJoin: DEMO ? demoPlaying : undefined,
     });
@@ -171,7 +171,7 @@ function apply(r) {
 // ---------- UI 预览模式（?ui=1&state=… / ?ui=motion）----------
 const UI_STATE = (qs.get('state') || 'lobby').toLowerCase();
 const UI_MOTION = qs.get('ui') === 'motion';
-const DEMO_PLAYERS = { black: { id: 1, name: 'jzk' }, white: { id: 2, name: '朋友' } };
+const DEMO_PLAYERS = { black: { id: 1, name: '演示玩家 A' }, white: { id: 2, name: '演示玩家 B' } };
 
 function demoRoom(over) {
   const cells = new Array(225).fill('.');
@@ -198,7 +198,7 @@ function withStones(pts, over) {
   }, over || {}));
 }
 function demoWaiting() {
-  return demoRoom({ status: 'waiting', players: { black: { id: 1, name: 'jzk' }, white: null } });
+  return demoRoom({ status: 'waiting', players: { black: { id: 1, name: '演示玩家 A' }, white: null } });
 }
 function demoPlaying() {
   return withStones(['h8', 'h9', 'i8', 'i9', 'g8', 'j8'], {
@@ -262,8 +262,8 @@ function runMotion() {
     apply(build());
     return;
   }
-  const user = await boot({ active: '/games' });
-  if (!user) return;
+  const user = await boot({ active: '/games', requireLogin: false });
+  if (!user) { paint(); return; }
   const invite = (qs.get('room') || '').trim().toUpperCase();
   const current = await room.loadRoom(GAME);
   if (current) { apply(current); }

@@ -3,7 +3,7 @@ import { passwordForm } from "./passwords.js";
 import { h, toast, withPending, confirmDialog } from "./ds.js";
 
 const errors = {
-  not_operator: "需要主站已验证的管理员账号；内容服务登录不授予身体权限。",
+  not_operator: "使用主站管理员账号登录后，可查看身体详情和控制任务。",
   body_not_found: "此玩家未接入身体。",
   body_paused: "身体已暂停。",
   stale_approval: "审批已过期或目标状态已改变，请重新发起。",

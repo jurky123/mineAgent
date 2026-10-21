@@ -187,9 +187,9 @@ header {
 }
 
 /* Keep the community navigation and identity visible around the Agent workspace. */
-.agent-page #app { height: calc(100% - 64px); }
-.agent-page #sidebar { top: 64px; }
-.agent-page #login { top: 64px; overflow-y: auto; align-items: safe center; }
+.agent-page #app { height: calc(100dvh - var(--shell-height)); }
+.agent-page #sidebar { top: var(--shell-height); }
+.agent-page #login { top: var(--shell-height); overflow-y: auto; align-items: safe center; }
 .agent-page #shell-top { position: relative; z-index: 35; }
 .agent-page .tabbar { display: none; }
 .agent-page .topbar .nav-item { width: auto; padding: 6px 11px; font-size: 14px; }
@@ -204,7 +204,7 @@ header {
 .conv-menu { position: relative; flex: none; }
 .conv-menu summary { cursor: pointer; list-style: none; padding: 8px; min-width: 32px; text-align: center; }
 .conv-menu summary::-webkit-details-marker { display: none; }
-.conv-menu-actions { position: absolute; top: 100%; right: 0; z-index: 30; min-width: 130px; padding: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); }
+.conv-menu-actions { position: absolute; top: 100%; right: 0; z-index: 30; min-width: 130px; padding: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 10px; box-shadow: var(--shadow-popover); }
 .conv-menu-actions button { display: block; width: 100%; padding: 10px; text-align: left; border: 0; border-radius: 6px; background: none; color: var(--text); }
 .conv-menu-actions button:hover { background: var(--surface-hover); }
 .side-archive-toggle { border: 0; background: none; color: var(--text-2); padding: 8px 16px; text-align: left; }
@@ -222,3 +222,30 @@ header {
 
 .title { min-width: 0; }
 @media (hover: none) { .conv-menu summary { min-width: 44px; min-height: 44px; } }
+
+.agent-page { --col: 50rem; }
+.agent-page .topbar, .agent-page header { background: var(--surface); backdrop-filter: none; }
+.agent-page header { min-height: 64px; }
+.agent-page .title { margin: 0; font-size: 15px; font-weight: 600; }
+.agent-page .side-top .brand { padding: 16px 12px 12px; font-size: 16px; }
+.side-product-note { color: var(--text-2); font-size: 12px; margin-left: auto; font-weight: 400; }
+.agent-page .icon-btn { min-width: 40px; height: 40px; }
+.agent-page .conv-item { padding-block: 5px; }
+.agent-page .conv-open { min-height: 44px; justify-content: center; }
+.agent-page .conv-menu summary { min-height: 44px; min-width: 40px; display: grid; place-items: center; }
+.agent-page #text { font-size: 16px; }
+.agent-page #listInner { padding-block: 24px 32px; }
+.agent-page #bottomSlot { padding-top: 8px; }
+.agent-page .is-preview { --preview-height: 40px; }
+.agent-page.is-preview #app { height: calc(100dvh - var(--shell-height) - 40px); }
+.agent-page.is-preview #sidebar { top: calc(var(--shell-height) + 40px); }
+@media (max-width: 600px) {
+  .agent-page header { min-height: 56px; padding-inline: 8px; }
+  .agent-page .icon-btn { min-width: 44px; height: 44px; }
+  .agent-page #app { height: 100dvh; }
+  .agent-page #sidebar, .agent-page #login { top: 0; }
+  .agent-page.is-preview #app { height: calc(100dvh - 40px); }
+  .agent-page.is-preview #sidebar { top: 40px; }
+  .agent-page #listInner { width: calc(100% - 32px); }
+  .agent-page .login-card { padding: 24px 0; }
+}

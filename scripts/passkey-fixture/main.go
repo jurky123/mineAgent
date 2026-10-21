@@ -17,7 +17,9 @@ import (
 
 	"mineagent/internal/account"
 	"mineagent/internal/config"
+	"mineagent/internal/games"
 	"mineagent/internal/portal"
+	"mineagent/internal/prompts"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/webui"
@@ -36,6 +38,11 @@ func main() {
 	defer store.Close()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx := context.Background()
+	promptManager, err := prompts.Init(filepath.Join(dir, "prompts.json"))
+	if err != nil {
+		panic(err)
+	}
+	promptManager.Register(prompts.Service{ID: "web", Name: "网页聊天", DefaultText: func() string { return "以实际工具和权限为准。" }})
 	service := account.New(store, log, nil, []string{"owner"})
 	code, err := service.IssueEnrollment(ctx, "owner", false)
 	if err != nil {
@@ -60,6 +67,15 @@ func main() {
 	cfg.Web.PasskeyOrigins = []string{origin}
 	ch := webui.NewChannel(log, cfg, service, session.NewHub(store, log), store, nil, nil)
 	server := portal.New(log, cfg, store, service, ch)
+	manager := games.NewManager(log, store)
+	server.WithGames(games.NewAPI(log, manager, service, server.Auth()).Handler())
+	server.Register(
+		portal.App{ID: "agent", Name: "Agent", Path: "/agent", Enabled: true, Nav: true, HomeRole: "hero"},
+		portal.App{ID: "games", Name: "游戏", Path: "/games", Enabled: true, Nav: true, HomeRole: "content"},
+		portal.App{ID: "minecraft", Name: "Minecraft", Path: "/minecraft", Enabled: true, Nav: true, PublicCard: func(context.Context, *storage.User) (any, error) {
+			return map[string]any{"online": true, "count": 0}, nil
+		}},
+	)
 	mux := server.Handler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/fixture" {

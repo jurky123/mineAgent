@@ -114,3 +114,7 @@
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
 @keyframes modal-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
 .popover.on { animation: pop 160ms var(--ease-out); }
+
+.ws-path button { border: 0; padding: 6px; background: none; color: var(--link); font: inherit; min-height: 36px; cursor: pointer; }
+.modal { overscroll-behavior: contain; }
+@media (max-width: 640px) { .icon-button { min-height: 44px; min-width: 44px; } .ws-row { min-height: 44px; } }

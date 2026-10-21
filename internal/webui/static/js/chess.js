@@ -176,7 +176,7 @@ function paint() {
     lobbyEl.hidden = false;
     room.lobby(lobbyEl, {
       gameId: GAME, onRoom: apply, iconEl: gameIcon(GAME, 'lobby-piece'),
-      demoRooms: DEMO ? () => [{ id: 'AB3K9Q', host: '朋友的房间', createdAt: Date.now() - 132000 }] : undefined,
+      demoRooms: DEMO ? () => [{ id: 'AB3K9Q', host: '演示房间', createdAt: Date.now() - 132000 }] : undefined,
       demoCreate: DEMO ? demoWaiting : undefined,
       demoJoin: DEMO ? demoAfterE4E5 : undefined,
     });
@@ -221,7 +221,7 @@ function demoPieces(moves) {
   return p;
 }
 
-const DEMO_PLAYERS = { white: { id: 1, name: 'jzk' }, black: { id: 2, name: '朋友' } };
+const DEMO_PLAYERS = { white: { id: 1, name: '演示玩家 A' }, black: { id: 2, name: '演示玩家 B' } };
 function demoRoom(over) {
   return Object.assign({
     id: 'AB3K9Q', game: 'chess', status: 'playing', result: '', reason: '',
@@ -230,7 +230,7 @@ function demoRoom(over) {
   }, over || {});
 }
 function demoWaiting() {
-  return demoRoom({ status: 'waiting', players: { white: { id: 1, name: 'jzk' }, black: null }, moves: [] });
+  return demoRoom({ status: 'waiting', players: { white: { id: 1, name: '演示玩家 A' }, black: null }, moves: [] });
 }
 function demoAfterE4() {
   return demoRoom({ turn: 'black', pieces: demoPieces(['e2e4']), lastMove: 'e2e4', moves: ['e4'],
@@ -317,8 +317,8 @@ function runMotion() {
     apply(build());
     return;
   }
-  const user = await boot({ active: '/games' });
-  if (!user) return;
+  const user = await boot({ active: '/games', requireLogin: false });
+  if (!user) { paint(); return; }
   const invite = (qs.get('room') || '').trim().toUpperCase();
   const current = await room.loadRoom(GAME);
   if (current) { apply(current); }

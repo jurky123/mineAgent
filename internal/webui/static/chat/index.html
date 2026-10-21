@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#131316" media="(prefers-color-scheme: dark)">
 <link rel="apple-touch-icon" href="/static/__VER__/img/icon-192.png">
 <link rel="icon" type="image/png" href="/static/__VER__/img/favicon.png">
-<title>MineAgent</title>
+<title>Agent · zkun</title>
 <meta name="mineagent-version" content="__VER__">
 <script>
   // 主题要在首屏渲染前定好，避免闪白/闪黑
@@ -72,12 +72,12 @@
 <div id="app">
   <aside id="sidebar">
     <div class="side-top">
-      <div class="brand"><span class="logo-mark">M</span>MineAgent</div>
+      <div class="brand">Agent<span class="side-product-note">工作区</span></div>
     </div>
     <div class="side-actions">
       <div class="side-search" id="searchbox">
         <svg class="i sm"><use href="#i-search"/></svg>
-        <input id="conv-search" class="search-input" placeholder="搜索聊天" autocomplete="off" spellcheck="false">
+        <input id="conv-search" class="search-input" aria-label="搜索聊天" placeholder="搜索聊天…" autocomplete="off" spellcheck="false">
         <button class="search-clear" id="search-clear" hidden title="清除"><svg class="i sm"><use href="#i-x"/></svg></button>
       </div>
       <button class="nav-item" id="newchat"><svg class="i"><use href="#i-plus"/></svg>新聊天</button>
@@ -108,12 +108,13 @@
       <a class="icon-btn" id="home" href="/" title="回门户"><svg class="i lg"><use href="#i-home"/></svg></a>
       <button class="icon-btn" id="menu" title="菜单"><svg class="i lg"><use href="#i-menu"/></svg></button>
       <button class="icon-btn" id="collapse" title="收起侧栏"><svg class="i lg"><use href="#i-panel"/></svg></button>
-      <div class="title" id="header-title">MineAgent</div>
+      <h1 class="title" id="header-title">新对话</h1>
       <div class="spacer"></div>
+      <button class="icon-btn" id="forkchat" title="沿用已保存历史创建分支" aria-label="创建对话分支"><svg class="i lg"><use href="#i-plus"/></svg></button>
       <button class="icon-btn" id="header-prompts" title="Agent 设置" aria-label="Agent 设置"><svg class="i lg"><use href="#i-settings"/></svg></button>
     </header>
 
-    <div id="list">
+    <div id="list" tabindex="-1" aria-label="对话内容">
       <div id="listInner">
         <button id="loadolder" hidden>载入更早消息</button>
         <div class="empty" id="empty">
@@ -122,7 +123,7 @@
           <div class="suggests">
             <button data-q="看看服务器现在在线有谁">在线玩家</button>
             <button data-q="服务器状态怎么样，卡不卡？">服务器状态</button>
-            <button data-q="把下面的活动想法整理成时间表，先询问缺少的信息">整理活动时间表</button>
+            <button data-q="帮我整理一份文档，先确认需要哪些材料">整理文档</button>
             <button data-q="/help">看看命令</button>
           </div>
         </div>
@@ -137,12 +138,13 @@
         <div id="popover" class="popover"></div>
         <div id="cmdpalette" class="popover"></div>
         <div class="composer-box">
-          <textarea id="text" rows="1" placeholder="给 MineAgent 发消息"></textarea>
+          <textarea id="text" rows="1" aria-label="消息" placeholder="给 Agent 发消息"></textarea>
           <div class="composer-tools">
             <input type="file" id="file" multiple hidden>
             <button class="tool-btn" id="attach" title="添加内容"><svg class="i"><use href="#i-plus"/></svg><span class="label">附件</span></button>
+            <button class="tool-btn model-selector" id="modelbtn" type="button" aria-label="选择模型"><span id="model-label">选择模型</span><svg class="i sm"><use href="#i-chevron"/></svg></button>
             <div class="spacer"></div>
-            <button class="tool-btn" id="intelbtn" title="Intelligence / 模型"><span id="intellabel">Medium</span><svg class="i sm chev-right"><use href="#i-chevron"/></svg></button>
+            <button class="tool-btn" id="intelbtn" title="设置思考强度" aria-label="设置思考强度"><span id="intellabel">思考：默认</span><svg class="i sm chev-right"><use href="#i-chevron"/></svg></button>
             <button class="tool-btn" id="stop" hidden type="button">停止</button>
             <button class="send" id="send" disabled title="发送"><svg class="i"><use href="#i-send"/></svg></button>
           </div>
@@ -226,8 +228,8 @@
 </div>
 
 <div id="drop"><div class="dropcard"><svg class="i"><use href="#i-arrow-down"/></svg>松开上传文件</div></div>
-<div id="toasts"></div>
-<div id="connbar" hidden>连接断开，正在重连…</div>
+<div id="toasts" role="status" aria-live="polite"></div>
+<div id="connbar" role="status" hidden>连接断开，正在重连…</div>
 
 <script type="module" src="/static/__VER__/js/app.js"></script>
 </body>

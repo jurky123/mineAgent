@@ -10,7 +10,7 @@ const staticRoot = path.join(root, 'internal/webui/static');
 let selection = '', refreshes = 0, failRefresh = false;
 const models = [
   { id: 'old', label: 'Old', provider: 'default', providerLabel: 'Gateway', created: 100 },
-  { id: 'new-free', label: 'New Free', provider: 'default', providerLabel: 'Gateway', created: 200, free: true, verified: true },
+  { id: 'new-free', label: 'New Free', provider: 'default', providerLabel: 'Gateway', created: 200, free: true, verified: true, vision: true, reasoning: true, tools: true },
   { id: 'blocked-free', label: 'Blocked', provider: 'default', providerLabel: 'Gateway', created: 250, free: true, unavailable: true, unavailableReason: '网关暂时无法路由' },
   { id: 'openrouter/needs-key', label: 'Needs Key', provider: 'openrouter', providerLabel: 'OpenRouter', free: true, needsKey: true },
   { id: 'contributor', label: 'Contributor', provider: 'default', providerLabel: 'Gateway', free: false },
@@ -24,7 +24,7 @@ const server = createServer(async (req, res) => {
       if (url.searchParams.get('refresh') === '1') {
         refreshes++;
         if (failRefresh) return json({ error: '模拟刷新失败' }, 503);
-        if (!models.some((m) => m.id === 'fresh')) models.push({ id: 'fresh', label: 'Fresh', provider: 'default', providerLabel: 'Gateway', created: 300, free: true });
+        if (!models.some((m) => m.id === 'fresh')) models.push({ id: 'fresh', label: 'Fresh', provider: 'openrouter', providerLabel: 'OpenRouter', created: 300, free: true, vision: true, reasoning: true });
       }
       return json({ models, skills: [], model: selection, defaultModel: 'old', effort: 'medium' });
     }
@@ -69,6 +69,9 @@ try {
   assert.match(await rows.first().textContent(), /New Free/);
   assert.equal(await rows.count(), 3, 'known unavailable models should be hidden');
   assert.equal(await page.getByText('OpenRouter 未配置 API 密钥，暂不可使用。', { exact: true }).isVisible(), true);
+  await page.locator('#po-capability').selectOption('vision');
+  assert.equal(await rows.count(),1,'unknown image capabilities were advertised');
+  await page.locator('#po-capability').selectOption('');
   await page.locator('#po-freeonly').click();
   assert.equal(await rows.count(), 1);
   assert.match(await rows.first().textContent(), /免费/);
@@ -114,6 +117,15 @@ try {
   await page.locator('#po-refresh').click();
   await page.locator('#po-refresh:not(:disabled)').waitFor();
   assert.equal(refreshes, 2, 'preview contacted live options API');
+  models.push(...Array.from({length:200},(_,i)=>({id:'bulk-'+i,label:'Bulk '+i,provider:'default',providerLabel:'Gateway',created:400+i})));
+  await page.goto(base + '/agent');
+  await page.evaluate(async()=>{const c=await import('/static/preview/js/composer.js');await c.loadOptions();c.openModelPopover(false);});
+  await page.locator('#po-filter').waitFor();
+  assert.equal(await page.locator('#po-list .po-modelbody').count(),80,'large model catalog rendered without a bound');
+  await page.getByRole('button',{name:/显示更多模型/}).click();
+  assert.equal(await page.locator('#po-list .po-modelbody').count(),160);
+  await page.locator('#po-filter').fill('bulk-0');
+  assert.equal(await page.locator('#po-list .po-modelbody').count(),1,'search ignored an unloaded model');
   assert.deepEqual(errors, []);
   console.log('Model UI checks passed (sorting, free/availability filters, refresh, failure, selection, mobile, preview).');
 } finally {

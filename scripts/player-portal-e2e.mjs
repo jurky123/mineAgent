@@ -44,7 +44,7 @@ try {
     }),
   );
   await page.goto(origin + "/");
-  await page.getByRole("heading", { name: "zkun 门户" }).waitFor();
+  await page.getByRole("heading", { name: "zkun" }).waitFor();
   await page.waitForLoadState("networkidle");
   assert.equal(
     await page
@@ -54,10 +54,10 @@ try {
       .count(),
     0,
   );
-  await page.getByRole("link", { name: "下载与加入指南" }).click();
+  await page.getByRole("link", { name: "客户端与加入指南" }).click();
   await page.getByRole("heading", { name: "Minecraft", exact: true }).waitFor();
   await page.waitForLoadState("networkidle");
-  await page.getByRole("link", { name: "查看玩家列表 →" }).click();
+  await page.getByRole("link", { name: "查看 AI 玩家" }).click();
   await page.getByRole("heading", { name: "AI 玩家", exact: true }).waitFor();
   await page.evaluate(() => localStorage.setItem("mineagent.theme", "dark"));
   await page.reload();
@@ -70,6 +70,8 @@ try {
   await page.getByRole("link", { name: "跳到正文", exact: true }).focus();
   await page.keyboard.press("Enter");
   assert.equal(await page.evaluate(() => document.activeElement.id), "main");
+  assert(await page.locator(".brand img").evaluate(img => img.complete && img.naturalWidth > 0), "shared brand image missing");
+  await page.waitForTimeout(200);
   await page.screenshot({
     path: path.join(artifacts, "directory-desktop.png"),
     fullPage: true,
@@ -84,7 +86,7 @@ try {
   );
   await page.locator('article a[href="/ai/main"]').click();
   await page.getByRole("heading", { name: "身体状态与控制" }).waitFor();
-  await page.getByText(/需要主站已验证的管理员账号/).waitFor();
+  await page.getByText(/使用主站管理员账号登录后/).waitFor();
   assert.equal(await page.locator("#body-stop").count(), 0);
   assert(
     !(await page
@@ -103,7 +105,7 @@ try {
     { name: "aiplayer_local_admin", value: publishingCookie, url: origin },
   ]);
   await page.reload();
-  await page.getByText(/需要主站已验证的管理员账号/).waitFor();
+  await page.getByText(/使用主站管理员账号登录后/).waitFor();
   assert.equal(
     await page.evaluate(
       async () => (await fetch("/api/body/status?agent=main")).status,
@@ -111,10 +113,10 @@ try {
     403,
   );
   await page.goto(origin + "/body#game-code=" + gameCode);
-  await page.getByText(/需要主站已验证的管理员账号/).waitFor();
+  await page.getByText(/使用主站管理员账号登录后/).waitFor();
   assert.equal(new URL(page.url()).hash, "");
   await page.reload();
-  await page.getByText(/需要主站已验证的管理员账号/).waitFor();
+  await page.getByText(/使用主站管理员账号登录后/).waitFor();
   assert.equal(
     await page.evaluate(
       () => JSON.parse(sessionStorage.getItem("mineagent.body-pair.main")).code,
@@ -391,7 +393,7 @@ try {
   // Logout/revocation removes the previously rendered private fields as well.
   await context.clearCookies();
   await page
-    .getByText(/需要主站已验证的管理员账号/)
+    .getByText(/使用主站管理员账号登录后/)
     .waitFor({ timeout: 12000 });
   assert.equal(await page.locator("#body-stop").count(), 0);
   assert(

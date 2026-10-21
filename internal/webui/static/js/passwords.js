@@ -4,6 +4,7 @@ import { passkeyForm } from './passkeys.js';
 
 export function passwordForm(onSuccess) {
   const root = h('div', 'passkey-form');
+  let isNewAccount = false;
   let name = (localStorage.getItem('mineagent.lastName') || '').trim(), busy = false;
   const request = async (action, body) => {
     const response = await fetch('/api/auth/password/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -13,7 +14,8 @@ export function passwordForm(onSuccess) {
   };
   const paint = (mode = 'name') => {
     root.replaceChildren();
-    root.append(h('p', 'eyebrow', 'ZKUN / 账号'), h('h1', null, mode === 'setup' ? '为账号设置密码' : '欢迎回来。'));
+    root.append(h('h1', null, mode === 'setup' ? (isNewAccount ? '创建账号' : '为账号设置密码') : '登录 zkun'));
+    if (mode === 'name') root.appendChild(h('p', 'login-sub', '输入账号名称继续。首次使用可创建账号；已有账号请使用原名称。'));
     const error = h('p', 'field-err'); error.setAttribute('role', 'alert');
     const form = h('form', 'password-fields');
     const label = h('label', 'field-label', '账号名称');
@@ -21,7 +23,7 @@ export function passwordForm(onSuccess) {
     form.append(label, input);
     let password, confirm;
     if (mode !== 'name') {
-      root.appendChild(h('p', 'login-sub', mode === 'setup' ? '这个账号尚未设置密码。创建后，其他设备也需使用此密码登录；原有对话和战绩会保留。' : '请输入这个账号的密码。'));
+      root.appendChild(h('p', 'login-sub', mode === 'setup' ? (isNewAccount ? '设置密码后创建账号，可在其他设备使用同一账号登录。' : '这个账号尚未设置密码。创建后，其他设备也需使用此密码登录；原有对话和战绩会保留。') : '请输入这个账号的密码。'));
       const passLabel = h('label', 'field-label', mode === 'setup' ? '创建密码' : '密码');
       password = h('input', 'input'); password.id = 'login-password'; password.name = 'password'; password.type = 'password'; password.autocomplete = mode === 'setup' ? 'new-password' : 'current-password'; password.minLength = 12; password.maxLength = 128; password.required = true; passLabel.htmlFor = password.id;
       form.append(passLabel, password);
@@ -49,7 +51,7 @@ export function passwordForm(onSuccess) {
         if (mode === 'name') {
           const status = await request('status', { name });
           if (status.passkeyOnly) throw new Error('这个账号已绑定 Passkey，请使用下方 Passkey 登录');
-          paint(status.needsSetup ? 'setup' : 'login'); return;
+          isNewAccount = !!status.newAccount; paint(status.needsSetup ? 'setup' : 'login'); return;
         }
         if (confirm && password.value !== confirm.value) throw new Error('两次输入的密码不一致');
         const data = await request(mode === 'setup' ? 'setup' : 'login', { name, password: password.value, confirm: confirm?.value });
@@ -64,7 +66,10 @@ export function passwordForm(onSuccess) {
       root.replaceChildren(passkeyForm(onSuccess));
       const back = h('button', 'btn ghost', '返回密码登录'); back.onclick = () => paint('name'); root.appendChild(back);
     }; root.appendChild(alternative);
-    requestAnimationFrame(() => (password || input).focus());
+    const recovery = h('details', 'login-recovery'); recovery.appendChild(h('summary', null, '无法登录？'));
+    recovery.append(h('p', 'login-sub', '忘记密码：联系管理员核验后重置。Passkey 丢失：使用离线恢复码重新绑定。'), h('a', 'login-help-link', '查看 Passkey 恢复流程'));
+    recovery.querySelector('a').href = '/account?recover=1'; root.appendChild(recovery);
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) requestAnimationFrame(() => (password || input).focus());
   };
-  paint(); return root;
+  if (new URLSearchParams(location.search).has('recover')) root.replaceChildren(passkeyForm(onSuccess, 'recover')); else paint(); return root;
 }

@@ -1,7 +1,7 @@
 // portal.js —— 首页：Agent 一级入口 + MC 状态 + 游戏 + 最新动态（Bento 布局）。
 import { shell, boot, apiGet, fmtTime } from './shell.js';
-import { h, icon, toast, openDialog, confirmDialog, gameIcon, reveal } from './ds.js';
-import { loadMinecraftRelease, worldVisual, downloadCard } from './minecraft-release.js';
+import { h, icon, toast, openDialog, confirmDialog, gameIcon } from './ds.js';
+import { loadMinecraftRelease, copyButton } from './minecraft-release.js';
 let releaseData = null;
 let releaseError = '';
 
@@ -13,112 +13,8 @@ if (FORCE_THEME === 'dark' || FORCE_THEME === 'light') localStorage.setItem('min
 
 const home = () => document.getElementById('home');
 
-// 用名字稳定地取一个低饱和度底色（无外部头像依赖）
-function tintOf(name) {
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
-  return 'hsl(' + h + ' 42% 88%)';
-}
-
 function skeleton() {
-  const wrap = h('div', 'welcome-skeleton skeleton');
-  wrap.setAttribute('role', 'status'); wrap.setAttribute('aria-label', '正在加载首页');
-  home().replaceChildren(wrap);
-}
-
-function entryCard({ title, text, path, label, glyph }) {
-  const card = h('article', 'entry-card');
-  const mark = h('span', 'entry-icon'); mark.appendChild(icon(glyph, 'lg'));
-  card.append(mark, h('h2', null, title), h('p', null, text));
-  const link = h('a', 'btn', label); link.href = path; card.appendChild(link);
-  return card;
-}
-
-// ---------- MC 状态卡 ----------
-function statusCard(app) {
-  const c = app.card || {};
-  const card = h('article', 'card status-card');
-  const head = h('div', 'status-head');
-  const tile = h('span', 'app-icon-tile');
-  tile.appendChild(icon(app.icon || 'server', 'lg'));
-  head.appendChild(tile);
-  const dot = h('span', 'status-dot' + (app.error ? ' off' : ' on'));
-  head.appendChild(dot);
-  head.appendChild(h('span', null, 'Minecraft'));
-  card.appendChild(head);
-
-  if (app.error) {
-    card.appendChild(h('div', 'status-empty', '服务器状态暂时拿不到'));
-    return card;
-  }
-  if (!c.online) {
-    card.appendChild(h('div', 'status-count', '离线'));
-    card.appendChild(h('div', 'status-sub', '服务器现在没开'));
-    return card;
-  }
-  const players = c.players || [];
-  if (players.length) {
-    const faces = h('div', 'player-faces');
-    for (const name of players.slice(0, 6)) {
-      const a = h('span', 'face', (name[0] || '?').toUpperCase());
-      a.title = name;
-      a.style.setProperty('--tint', tintOf(name));
-      faces.appendChild(a);
-    }
-    if (players.length > 6) faces.appendChild(h('span', 'face more', '+' + (players.length - 6)));
-    card.appendChild(faces);
-  }
-  card.appendChild(h('div', 'status-count',
-    players.length ? players.length + ' 人正在游戏' : '现在没人，服务器正在运行'));
-  const bits = [];
-  if (c.weather) bits.push(c.weather);
-  if (c.period) bits.push(c.period);
-  if (c.tps) bits.push('TPS ' + Number(c.tps).toFixed(2));
-  if (bits.length) card.appendChild(h('div', 'status-sub', bits.join(' · ')));
-
-  if (c.details && c.details.length) {
-    const details = h('div', 'status-details');
-    details.hidden = true;
-    for (const d of c.details) {
-      const row = h('div', 'row');
-      row.appendChild(h('span', null, d.label));
-      row.appendChild(h('b', null, String(d.value)));
-      details.appendChild(row);
-    }
-    card.appendChild(details);
-    const toggle = h('button', 'btn ghost sm', '查看详情');
-    toggle.onclick = () => {
-      details.hidden = !details.hidden;
-      toggle.textContent = details.hidden ? '查看详情' : '收起';
-    };
-    card.appendChild(toggle);
-  }
-  return card;
-}
-
-// ---------- 游戏卡 ----------
-function gameCard(item) {
-  const card = h('article', 'card game-card');
-  const head = h('div', 'catalog-head');
-  const ic = h('span', 'game-icon');
-  ic.appendChild(gameIcon(item.id, 'game-icon-img'));
-  head.appendChild(ic);
-  const t = h('div');
-  t.appendChild(h('div', 'game-title', item.name));
-  const openRooms = item.openRooms || 0;
-  if (openRooms) t.appendChild(h('div', 'game-desc', openRooms + ' 个开放房间'));
-  head.appendChild(t);
-  card.appendChild(head);
-  const stats = [];
-  if (item.wins) stats.push(item.wins + ' 胜');
-  if (item.losses) stats.push(item.losses + ' 负');
-  if (item.draws) stats.push(item.draws + ' 和');
-  card.appendChild(h('div', 'game-stats', stats.length ? '最近战绩：' + stats.join(' · ') : '还没有对局记录'));
-  // 首页只把 Agent 当一级操作；游戏入口降一级（进入 /games 后才是 primary）
-  const start = h('a', 'btn cta', (openRooms ? '去加入' : '开始') + ' →');
-  start.href = item.path || '/games';
-  card.appendChild(start);
-  return card;
+ const wrap = h('div', 'welcome-skeleton skeleton'); wrap.setAttribute('role','status'); wrap.setAttribute('aria-label','正在加载首页'); home().replaceChildren(wrap);
 }
 
 // ---------- 最新动态 ----------
@@ -128,12 +24,12 @@ function feedSection(app) {
   const head = h('div', 'section-head');
   const st = h('h2', 'section-title');
   st.appendChild(icon(app.icon || 'megaphone', 'sm'));
-  st.appendChild(h('span', null, c.title || '最新动态'));
+  st.appendChild(h('span', null, c.title || '站点更新'));
   head.appendChild(st);
   head.appendChild(h('div', 'spacer'));
   if (c.canEdit) {
     const publish = h('button', 'btn sm', '发布动态');
-    publish.onclick = () => publishDialog();
+    publish.disabled = DEMO; if (DEMO) publish.title = '演示模式不发布更新'; publish.onclick = () => publishDialog();
     head.appendChild(publish);
   }
   sec.appendChild(head);
@@ -157,7 +53,7 @@ function feedSection(app) {
       row.appendChild(main);
       if (c.canEdit) {
         const del = h('button', 'icon-btn sm feed-del');
-        del.title = '删除';
+        del.title = '删除'; del.disabled = DEMO;
         del.appendChild(icon('x', 'sm'));
         del.onclick = async () => {
           const ok = await confirmDialog({
@@ -225,60 +121,50 @@ function paint(data) {
   const host = home();
   host.replaceChildren(); host.setAttribute('aria-busy', 'false');
   const apps = data.apps || [];
-  const hero = apps.find((a) => a.id === 'agent');
-  const mc = apps.find((a) => a.id === 'minecraft');
-  const recent = hero?.card;
+  const recent = apps.find(a => a.id === 'agent')?.card;
   const hasRecent = !!recent?.lastTitle || recent?.count > 0;
-  const welcome = h('section', 'welcome-grid');
-  const copy = h('div', 'welcome-copy');
-  copy.appendChild(h('p', 'eyebrow', 'ZKUN / 门户'));
-  copy.appendChild(h('p', 'welcome-greeting', data.greeting || '欢迎访问'));
-  const heading = h('h1', null, 'zkun 门户');
-  copy.append(heading, h('p', 'welcome-description', 'Agent 对话、在线游戏与 Minecraft 服务器入口。'));
-  const actions = h('div', 'welcome-actions');
-  const primary = h('a', 'btn primary cta', hasRecent ? '继续上次对话 →' : '打开 Agent →');
-  primary.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
-  const explore = h('a', 'text-link', '游戏大厅'); explore.href = '/games';
-  actions.append(primary, explore); copy.appendChild(actions);
+  const head = h('header', 'portal-heading');
+  head.append(h('h1', null, 'zkun'), h('p', null, 'Agent、在线游戏与 Minecraft。'));
+  host.appendChild(head);
+  const entries = h('section', 'portal-launchpad entry-grid'); entries.setAttribute('aria-label', '快速入口');
+  const agent = h('article', 'launch-agent');
+  const agentHead = h('div', 'launch-heading'); agentHead.append(icon('sparkle', 'lg'), h('h2', null, 'Agent'));
+  agent.append(agentHead, h('p', 'launch-description', '对话、处理文件与使用工具。'));
+  const examples = h('div', 'launch-examples');
+  for (const [label, query] of [['查询服务器状态', '看看服务器现在的运行状态'], ['整理一份文档', '帮我整理一份文档，先确认需要哪些材料']]) {
+    const a = h('a', 'launch-example', label); a.href = '/agent?new=1&q=' + encodeURIComponent(query); a.appendChild(icon('right', 'sm')); examples.appendChild(a);
+  }
+  const open = h('a', 'btn primary cta', hasRecent ? '继续对话' : '打开 Agent'); open.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
+  agent.append(examples, open); entries.appendChild(agent);
+  const games = h('article', 'launch-secondary launch-games');
+  const gameHead = h('div', 'launch-heading'); gameHead.append(icon('gamepad', 'lg'), h('h2', null, '在线游戏'));
+  games.append(gameHead, h('p', null, '国际象棋与五子棋，创建房间即可开始。'));
+  const gameLinks = h('div', 'launch-game-links');
+  for (const [id, name] of [['chess', '国际象棋'], ['gomoku', '五子棋']]) { const a = h('a', 'launch-game', name); a.href = '/games/' + id; a.prepend(gameIcon(id)); gameLinks.appendChild(a); }
+  games.appendChild(gameLinks); entries.appendChild(games);
+  const mc = apps.find(a => a.id === 'minecraft');
+  const minecraft = h('article', 'launch-secondary launch-minecraft'); minecraft.id = 'minecraft';
+  const mcHead = h('div', 'launch-heading'); mcHead.append(icon('pickaxe', 'lg'), h('h2', null, 'Minecraft'));
+  const state = data.loading ? '正在读取服务器状态…' : mc?.error ? '状态暂不可用' : mc?.card?.online === true ? '服务器在线' + (Number.isFinite(mc.card.count) ? ' · ' + mc.card.count + ' 人' : '') : mc?.card?.online === false ? '服务器离线' : '状态暂不可用';
+  const status = h('p', 'launch-status', state); status.setAttribute('role', 'status');
+  minecraft.append(mcHead, status);
+  if (releaseData?.serverAddress) {
+    const address = h('div', 'portal-address'); address.append(h('code', null, releaseData.serverAddress), copyButton(releaseData.serverAddress, '复制地址')); minecraft.appendChild(address);
+  }
+  const guide = h('a', 'text-link', '客户端与加入指南'); guide.href = '/minecraft'; guide.appendChild(icon('right', 'sm')); minecraft.appendChild(guide);
+  entries.appendChild(minecraft); host.appendChild(entries);
   if (hasRecent) {
-    copy.appendChild(h('p', 'recent-context', (recent.lastTitle || '未命名会话') + (recent.lastUpdated ? ' · ' + fmtTime(recent.lastUpdated) : '')));
-    if (recent.lastSummary) copy.appendChild(h('p', 'recent-summary', recent.lastSummary));
+    const section = h('section', 'portal-recent'); section.appendChild(h('h2', null, '最近对话'));
+    const link = h('a', 'recent-row'); link.href = recent.continuePath || '/agent';
+    const title = h('div'); title.append(h('strong', null, recent.lastTitle || '未命名会话'));
+    if (recent.lastSummary) title.appendChild(h('p', 'recent-summary', recent.lastSummary));
+    link.append(title, h('span', 'recent-date', fmtTime(recent.lastUpdated)), icon('right')); section.appendChild(link); host.appendChild(section);
   }
-  welcome.appendChild(copy);
-  const status = mc?.error ? '状态暂不可用' : mc?.card?.online === true ? '服务器在线' : mc?.card?.online === false ? '离线' : '登录后查看实时状态';
-  const world = h('a', 'world-link'); world.href = '#minecraft'; world.setAttribute('aria-label', '查看 Minecraft 加入方式');
-  world.appendChild(worldVisual(releaseData, status)); welcome.appendChild(world); host.appendChild(welcome);
-  const entries = h('section', 'entry-grid'); entries.setAttribute('aria-label', '快速入口');
-  for (const entry of [
-    { title: 'Agent', text: '对话、查询资料与使用工具。', path: '/agent', label: hasRecent ? '回到对话' : '开始对话', glyph: 'sparkle' },
-    { title: '小游戏', text: '国际象棋与五子棋在线对局。', path: '/games', label: '进入游戏大厅', glyph: 'gamepad' },
-    { title: 'Minecraft', text: '客户端准备、整合包下载与服务器信息。', path: '/minecraft', label: '下载与加入指南', glyph: 'pickaxe' },
-  ]) entries.appendChild(entryCard(entry));
-  host.appendChild(entries);
-  const minecraft = downloadCard(releaseData, { compact: true, status }); minecraft.id = 'minecraft';
-  if (releaseError) {
-    const error = h('p', 'field-err', releaseError); error.setAttribute('role', 'status'); minecraft.appendChild(error);
-    const retry = h('button', 'btn', '重新读取发布信息'); retry.onclick = refresh; minecraft.appendChild(retry);
-  }
-  if (mc) {
-    const detail = h('details', 'home-server-details'); detail.appendChild(h('summary', null, '服务器实时详情'));
-    detail.appendChild(statusCard(mc)); minecraft.appendChild(detail);
-  }
-  host.appendChild(minecraft);
-  const games = apps.find((a) => a.id === 'games');
-  if (games?.error) {
-    const error = h('p', 'field-err', '游戏状态暂时加载失败，仍可从游戏大厅进入。'); host.appendChild(error);
-  } else if (games?.card?.items?.length) {
-    const section = h('section', 'section'); section.appendChild(h('h2', 'section-title', '游戏房间'));
-    const grid = h('div', 'game-grid'); for (const item of games.card.items) grid.appendChild(gameCard(item));
-    section.appendChild(grid); host.appendChild(section);
-  }
-  for (const app of apps.filter((a) => a.role === 'feed')) {
+  for (const app of apps.filter(a => a.role === 'feed')) {
     if (app.card?.items?.length || app.card?.canEdit) host.appendChild(feedSection(app));
-    else if (app.error) host.appendChild(h('p', 'field-err', '动态暂时无法加载，请稍后重试。'));
+    else if (app.error) host.appendChild(h('p', 'field-err', '更新暂时无法加载，请稍后重试。'));
   }
-  if (!paint.done) reveal(host.children); paint.done = true;
-  if (location.hash === '#minecraft') requestAnimationFrame(() => minecraft.scrollIntoView());
+  if (releaseError) { const note = h('p', 'field-err', releaseError); const retry = h('button', 'btn ghost', '重试'); retry.onclick = refresh; host.append(note, retry); }
 }
 
 function demoData() {
@@ -312,16 +198,19 @@ function demoData() {
 }
 
 async function refresh() {
+  const pageTask = DEMO ? Promise.resolve(demoData()) : apiGet(shell.user ? '/api/portal/home' : '/api/portal/public');
+  const updateTask = shell.user || DEMO ? Promise.resolve(null) : apiGet('/api/portal/announcements?limit=3');
+  const remaining = Promise.allSettled([pageTask, updateTask]);
   try { releaseData = await loadMinecraftRelease(); releaseError = ''; }
   catch (error) { releaseError = error.message; }
-  if (DEMO) { paint(demoData()); return; }
-  if (!shell.user) { paint({ greeting: '欢迎访问', apps: shell.apps }); return; }
-  try { paint(await apiGet('/api/portal/home')); }
-  catch (error) {
-    paint({ greeting: '欢迎回来', apps: [] });
-    const box = h('div', 'home-error'); box.setAttribute('role', 'status');
-    box.appendChild(h('p', 'field-err', '个人动态加载失败：' + error.message));
-    const retry = h('button', 'btn', '重新加载'); retry.onclick = refresh; box.appendChild(retry); home().appendChild(box);
+  if (!DEMO) paint({apps: [], loading: true});
+  const [page, updates] = await remaining;
+  const data = page.status === 'fulfilled' ? page.value : { apps: [{id: 'minecraft', error: true}] };
+  if (updates.status === 'fulfilled' && updates.value?.announcements?.length) data.apps.push({id: 'announcements', role: 'feed', card: {title: '站点更新', items: updates.value.announcements}});
+  paint(data);
+  if (page.status === 'rejected') {
+    const box = h('div', 'home-error'); box.setAttribute('role', 'status'); const retry = h('button', 'btn', '重新加载'); retry.onclick = refresh;
+    box.append(h('p', 'field-err', '状态加载失败，请重试。'), retry); home().appendChild(box);
   }
 }
 

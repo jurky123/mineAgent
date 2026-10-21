@@ -51,6 +51,13 @@ type Persona struct {
 	Desc    string `json:"desc,omitempty"`
 	Text    string `json:"text"`
 	Builtin bool   `json:"builtin,omitempty"`
+	Example string `json:"example,omitempty"`
+}
+
+// UserStyle applies only to this user's web conversation, never to another channel.
+type UserStyle struct {
+	Length   string `json:"length,omitempty"`
+	Language string `json:"language,omitempty"`
 }
 
 type snapshot struct {
@@ -58,6 +65,7 @@ type snapshot struct {
 	Personas       []Persona                     `json:"personas,omitempty"`
 	ServicePersona map[string]string             `json:"servicePersona,omitempty"`
 	UserPersona    map[string]string             `json:"userPersona,omitempty"`
+	UserStyle      map[string]UserStyle          `json:"userStyle,omitempty"`
 }
 
 // DefaultPersonaFor 返回某服务的默认人设（Minecraft 用"MC 老玩家"，其余"默认助手"）。
@@ -79,6 +87,7 @@ type Manager struct {
 	personaIndex   map[string]int
 	servicePersona map[string]string
 	userPersona    map[string]string
+	userStyle      map[string]UserStyle
 }
 
 func New(path string) *Manager {
@@ -89,6 +98,7 @@ func New(path string) *Manager {
 		personaIndex:   make(map[string]int),
 		servicePersona: make(map[string]string),
 		userPersona:    make(map[string]string),
+		userStyle:      make(map[string]UserStyle),
 	}
 	m.ensureBuiltins()
 	return m
@@ -115,8 +125,7 @@ func (m *Manager) ensureBuiltins() {
 	for _, b := range builtinPersonas {
 		if i, ok := m.personaIndex[b.ID]; ok {
 			// 只升级未编辑过的旧版内置模板；任何名称/简介/正文改动都保留。
-			if old, known := legacyPersonas[b.ID]; known && m.personas[i].Name == old.Name &&
-				m.personas[i].Desc == old.Desc && m.personas[i].Text == old.Text {
+			if old, known := legacyPersonas[b.ID]; known && samePersonaContent(m.personas[i], old) || previousDefault(m.personas[i]) {
 				b.Builtin = true
 				m.personas[i] = b
 			}
@@ -156,6 +165,9 @@ func (m *Manager) Load() error {
 	if snap.ServicePersona != nil {
 		m.servicePersona = snap.ServicePersona
 	}
+	if snap.UserStyle != nil {
+		m.userStyle = snap.UserStyle
+	}
 	if snap.UserPersona != nil {
 		m.userPersona = snap.UserPersona
 	}
@@ -169,6 +181,7 @@ func (m *Manager) saveLocked() error {
 		Personas:       m.personas,
 		ServicePersona: m.servicePersona,
 		UserPersona:    m.userPersona,
+		UserStyle:      m.userStyle,
 	})
 	if err != nil {
 		return err
@@ -262,6 +275,10 @@ func (m *Manager) SavePersona(p Persona) (Persona, error) {
 	p.Name = strings.TrimSpace(p.Name)
 	p.Desc = strings.TrimSpace(p.Desc)
 	p.Text = strings.TrimSpace(p.Text)
+	p.Example = strings.TrimSpace(p.Example)
+	if len([]rune(p.Example)) > 400 {
+		return p, fmt.Errorf("回复示例太长（上限 400 字）")
+	}
 	if p.Name == "" {
 		return p, fmt.Errorf("人设名称不能为空")
 	}
@@ -357,7 +374,7 @@ func (m *Manager) personaText(id string) string {
 }
 
 func (m *Manager) personaFor(service, user string) string {
-	if user != "" {
+	if service == "web" && user != "" {
 		if id := m.userPersona[user]; id != "" {
 			return id
 		}
@@ -471,12 +488,82 @@ func (m *Manager) SetUserPersona(user, personaID string) error {
 	return nil
 }
 
+func samePersonaContent(a, b Persona) bool {
+	return a.Name == b.Name && a.Desc == b.Desc && a.Text == b.Text && a.Example == b.Example
+}
+func previousDefault(p Persona) bool {
+	for _, old := range previousBuiltinPersonas {
+		if p.ID == old.ID && samePersonaContent(p, old) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Manager) UserStyle(user string) UserStyle {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.userStyle[user]
+}
+func (m *Manager) SetUserSettings(user, persona string, style UserStyle) error {
+	if user == "" {
+		return fmt.Errorf("缺少账号")
+	}
+	if style.Length != "" && style.Length != "brief" && style.Length != "balanced" && style.Length != "detailed" {
+		return fmt.Errorf("回复长度无效")
+	}
+	if style.Language != "" && style.Language != "zh-CN" && style.Language != "en" {
+		return fmt.Errorf("回复语言无效")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if persona != "" {
+		if _, ok := m.personaIndex[persona]; !ok {
+			return fmt.Errorf("人设不存在")
+		}
+	}
+	oldPersona, hadPersona := m.userPersona[user]
+	oldStyle, hadStyle := m.userStyle[user]
+	if persona == "" {
+		delete(m.userPersona, user)
+	} else {
+		m.userPersona[user] = persona
+	}
+	if style == (UserStyle{}) {
+		delete(m.userStyle, user)
+	} else {
+		m.userStyle[user] = style
+	}
+	if err := m.saveLocked(); err != nil {
+		if hadPersona {
+			m.userPersona[user] = oldPersona
+		} else {
+			delete(m.userPersona, user)
+		}
+		if hadStyle {
+			m.userStyle[user] = oldStyle
+		} else {
+			delete(m.userStyle, user)
+		}
+		return err
+	}
+	return nil
+}
+
 // ---------- 组合 ----------
 
 // Resolve 返回某服务某用户的最终系统提示词。
 func (m *Manager) Resolve(service, user, defaultCapabilities string) string {
 	m.mu.RLock()
 	ptext := m.personaText(m.personaFor(service, user))
+	if service == "web" {
+		style := m.userStyle[user]
+		length := map[string]string{"brief": "回复偏好：简短回答，保留关键条件与下一步。", "balanced": "回复偏好：按任务复杂度安排必要细节。", "detailed": "回复偏好：详细说明推理依据、步骤和必要示例，避免重复。"}[style.Length]
+		language := map[string]string{"zh-CN": "默认使用简体中文回复。", "en": "默认使用英语回复。"}[style.Language]
+		if length != "" || language != "" {
+			ptext += "\n\n个人表达偏好（以本条消息明确要求为先）：" + length + language
+		}
+	}
 	caps := defaultCapabilities
 	if g, ok := m.global[service]; ok && g.Enabled && strings.TrimSpace(g.Text) != "" {
 		caps = strings.TrimSpace(g.Text)
@@ -602,4 +689,17 @@ func Resolve(service, user, defaultCapabilities string) string {
 		return defaultCapabilities
 	}
 	return def.Resolve(service, user, defaultCapabilities)
+}
+
+func UserPreferences(user string) UserStyle {
+	if def == nil {
+		return UserStyle{}
+	}
+	return def.UserStyle(user)
+}
+func SetUserSettings(user, persona string, style UserStyle) error {
+	if def == nil {
+		return fmt.Errorf("提示词未初始化")
+	}
+	return def.SetUserSettings(user, persona, style)
 }

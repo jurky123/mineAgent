@@ -77,12 +77,18 @@ function renderAccountRows(u, sessCount) {
   row('登录设备', sessCount + ' 台');
 }
 
-function renderSecurity() {
-  const box = document.getElementById('acc-security'); box.replaceChildren();
-  const row = h('div', 'list-row'); const main = h('div', 'list-main');
-  main.append(h('div', 'list-title', '账号密码'), h('div', 'list-sub', '首次进入时创建密码，以后必须验证密码。也可使用已绑定的 Passkey。'));
-  row.append(main, h('span', 'badge', '已启用')); box.appendChild(row);
-  const note = h('p', 'list-sub', '忘记密码请联系管理员核验后重置。使用 Passkey 的用户请离线保存恢复码，丢失后从 Passkey 登录页进入恢复流程。'); box.appendChild(note);
+async function renderSecurity() {
+  const box = document.getElementById('acc-security'); box.replaceChildren(h('p', 'list-sub', '正在读取安全设置…'));
+  try {
+    const data = DEMO ? {password:true, passkeys:1} : await apiGet('/api/account/security');
+    box.replaceChildren();
+    for (const [title, desc, state] of [
+      ['账号密码', '忘记密码时联系管理员核验后重置。', data.password ? '已设置' : '未设置'],
+      ['Passkey', '通过设备解锁或安全密钥登录；开通需先获取账号激活码。', data.passkeys ? '已绑定 ' + data.passkeys + ' 枚' : '尚未绑定'],
+    ]) { const row = h('div', 'list-row'); const main = h('div', 'list-main'); main.append(h('div', 'list-title', title), h('div', 'list-sub', desc)); row.append(main, h('span', 'badge', state)); box.appendChild(row); }
+    const recovery = h('details', 'account-recovery'); recovery.append(h('summary', null, '账号恢复方法'), h('p', 'list-sub', '密码丢失：联系管理员核验后重置。Passkey 丢失：在登录页选择恢复流程，使用离线恢复码绑定新 Passkey；成功后旧 Passkey、旧登录和旧恢复码失效。没有恢复码时联系管理员。'));
+    box.appendChild(recovery);
+  } catch (error) { const retry = h('button', 'btn', '重新读取'); retry.onclick = renderSecurity; box.replaceChildren(h('p', 'field-err', error.message), retry); }
 }
 
 // segControl 分段开关：只建一次，之后只切 .on，选中背景由滑块滑过去（不再整段重建）
@@ -147,7 +153,7 @@ function renderStats(games) {
   const names = { chess: '国际象棋', gomoku: '五子棋' };
   for (const g of games) {
     const rate = g.total ? Math.round((g.wins / g.total) * 100) : 0;
-    const row = h('div', 'list-row');
+    const row = h('a', 'list-row'); row.href = '/account/history';
     const main = h('div', 'list-main');
     main.appendChild(h('div', 'list-title', names[g.gameId] || g.gameId));
     main.appendChild(h('div', 'list-sub', '共 ' + g.total + ' 局 · ' + g.wins + ' 胜 ' + g.losses + ' 负 ' + g.draws + ' 和'));
@@ -208,7 +214,7 @@ document.getElementById('revoke-others').onclick = async () => {
   reload();
 };
 document.getElementById('logout-row').onclick = () => logout();
-document.getElementById('history-row').onclick = () => { location.href = '/account/history'; };
+
 
 (async () => {
   if (DEMO) {

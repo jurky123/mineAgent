@@ -36,7 +36,7 @@ async function load() {
     if (!entries.length) box.innerHTML = '<div class="ws-empty">这里是空的</div>';
     entries.forEach((en) => {
       const full = (res.path ? res.path + '/' : '') + en.name;
-      const row = document.createElement('a');
+      const row = document.createElement(en.dir ? 'button' : 'a');
       row.className = 'ws-row';
       if (en.dir) {
         row.innerHTML = ICON.folder + '<span class="ws-name">' + esc(en.name) + '</span>';
@@ -61,10 +61,10 @@ async function load() {
 
 function renderPath(rel) {
   const parts = rel ? rel.split('/') : [];
-  let html = '<a data-p="">workspace</a>';
+  let html = '<button type="button" data-p="">工作区</button>';
   let acc = '';
-  parts.forEach((seg) => { acc = acc ? acc + '/' + seg : seg; html += ' / <a data-p="' + esc(acc) + '">' + esc(seg) + '</a>'; });
+  parts.forEach((seg) => { acc = acc ? acc + '/' + seg : seg; html += ' / <button type="button" data-p="' + esc(acc) + '">' + esc(seg) + '</button>'; });
   const el = $('ws-path');
   el.innerHTML = html;
-  el.querySelectorAll('a').forEach((a) => { a.onclick = (e) => { e.preventDefault(); wsPath = a.dataset.p || ''; load(); }; });
+  el.querySelectorAll('button').forEach((a) => { a.onclick = (e) => { e.preventDefault(); wsPath = a.dataset.p || ''; load(); }; });
 }

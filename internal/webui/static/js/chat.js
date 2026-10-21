@@ -106,7 +106,8 @@ export function setTyping(on, text, startedAt) {
   if (!row) {
     row = document.createElement('div');
     row.className = 'typing';
-    row.innerHTML = '<span class="dots"><span></span><span></span><span></span></span><span class="typing-text"></span>';
+    row.innerHTML = '<span class="task-state"></span><span class="typing-text"></span>';
+    row.setAttribute('role', 'status');
     box.appendChild(row);
     typingStart = startedAt || Date.now();
   }
@@ -114,7 +115,9 @@ export function setTyping(on, text, startedAt) {
     const el = row.querySelector('.typing-text');
     if (!el) return;
     const secs = Math.floor((Date.now() - typingStart) / 1000);
-    el.textContent = typingLabel + (secs >= 3 ? '（' + secs + 's）' : '');
+    const state = /审批|授权/.test(typingLabel) ? '等待审批' : /队|等待处理|已提交/.test(typingLabel) ? '排队中' : /停止|取消/.test(typingLabel) ? '正在停止' : /工具|搜索|执行|读取|查询/.test(typingLabel) ? '使用工具' : '处理中';
+    row.querySelector('.task-state').textContent = state;
+    el.textContent = typingLabel + (secs >= 3 ? ' · ' + secs + ' 秒' : '');
   };
   paint();
   if (!typingTimer) typingTimer = setInterval(paint, 1000);
@@ -284,11 +287,11 @@ $('list').addEventListener('click', (e) => {
 function renderRunEvents(events, append = false) {
   if (!events.length) return;
   let details = $('listInner').querySelector('.run-events');
-  if (!details) { details = document.createElement('details'); details.className = 'run-events'; details.innerHTML = '<summary>工具记录</summary><div class="run-event-list"></div>'; $('listInner').appendChild(details); }
+  if (!details) { details = document.createElement('details'); details.className = 'run-events'; details.innerHTML = '<summary>任务步骤</summary><ol class="run-event-list"></ol>';  $('listInner').appendChild(details); }
   const list = details.querySelector('.run-event-list'); if (!append) list.replaceChildren();
   for (const event of events) {
     let row = Array.from(list.children).find((el) => el.dataset.callId === event.id);
-    if (!row) { row = document.createElement('p'); row.dataset.callId = event.id; list.appendChild(row); }
+    if (!row) { row = document.createElement('li'); row.dataset.callId = event.id; list.appendChild(row); }
     const labels = { started: '请求调用', returned: '已返回（结果以回复为准）', failed: '调用失败', cancelled: '已停止或未完成', unconfirmed: '未收到完成事件', approval: '等待管理员审批' };
     row.textContent = (event.at ? new Date(event.at).toLocaleTimeString() + ' · ' : '') + event.name + ' · ' + (labels[event.status] || event.status) + (event.durationMs ? ' · ' + (event.durationMs / 1000).toFixed(1) + 's' : '');
   }

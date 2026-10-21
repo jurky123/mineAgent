@@ -41,7 +41,6 @@ export function worldVisual(data, status) {
   placeholder.appendChild(h('span', 'world-placeholder-note', '服务器信息与加入指南'));
   wrap.appendChild(placeholder);
   const caption = h('div', 'world-caption');
-  caption.appendChild(h('span', 'world-label', 'MINECRAFT'));
   caption.appendChild(h('strong', null, data?.name || 'Minecraft 服务器'));
   caption.appendChild(h('span', 'world-state', status || '查看服务器与加入方式'));
   wrap.appendChild(caption);
@@ -72,16 +71,15 @@ export function copyButton(text, label = '复制服务器地址') {
 export function downloadCard(data, { compact = false, status = '' } = {}) {
   const section = h('section', 'minecraft-section');
   const intro = h('div', 'minecraft-intro');
-  intro.appendChild(h('p', 'eyebrow', 'MINECRAFT / 服务器'));
   intro.appendChild(h('h2', null, '下载与加入'));
   intro.appendChild(h('p', null, '查看服务器信息，下载整合包并按指南配置客户端。'));
-  if (!compact) intro.appendChild(worldVisual(data, status));
+  if (!compact && data?.cover?.src) intro.appendChild(worldVisual(data, status));
   section.appendChild(intro);
   const card = h('div', 'card download-card');
   const release = downloadableRelease(data);
   card.appendChild(h('span', 'badge', release ? '稳定版' : '发布准备中'));
-  card.appendChild(h('h3', null, release ? '下载整合包' : '发布进度'));
-  if (!release) { const checklist = h('ol', 'release-checklist'); for (const text of ['客户端版本确认：待验证', 'PCL 导入验证：待验证', '服务器连接验证：待验证']) checklist.appendChild(h('li', null, text)); card.appendChild(checklist); }
+  card.appendChild(h('h3', null, release ? '下载整合包' : '整合包准备中'));
+
   card.appendChild(h('p', null, release ? '下载后导入电脑端 PCL，安装为独立实例。' : '兼容版本和 PCL 导入流程验证完成后开放下载。已有玩家可先查看加入指南。'));
   const facts = h('dl', 'release-facts');
   const add = (key, value) => { const row = h('div'); row.append(h('dt', null, key), h('dd', null, value)); facts.appendChild(row); };
@@ -96,17 +94,16 @@ export function downloadCard(data, { compact = false, status = '' } = {}) {
     if (release.changelog) card.appendChild(h('p', 'guide-note', release.changelog));
   } else {
     if (data?.serverVersion) add('服务端（状态查询）', data.serverVersion);
-    add('客户端版本', '待验证'); add('PCL 导入验证', '尚未完成'); card.appendChild(facts);
-    const button = h('button', 'btn primary cta', '整合包准备中'); button.disabled = true; card.appendChild(button);
+    card.appendChild(facts);
   }
   const guide = h('a', 'btn', compact ? 'PCL 安装指南 →' : '查看安装步骤 ↓'); guide.href = compact ? '/minecraft' : '#installation';
   card.appendChild(guide);
   if (data?.serverAddress) {
     const label = h('div', 'server-address'); label.append(h('span', null, '服务器地址'), h('code', null, data.serverAddress));
-    card.append(label, copyButton(data.serverAddress, '已有客户端？复制服务器地址'));
+    if (compact) card.append(label, copyButton(data.serverAddress));
   } else card.appendChild(h('p', 'guide-note', '进服地址待管理员确认，请勿使用猜测地址。'));
   if (status === '离线') card.appendChild(h('p', 'guide-note', '服务器暂时离线，仍可安装；恢复后再加入。'));
-  if (!compact) card.appendChild(copyButton(location.origin + '/minecraft', '复制指南链接'));
+
   section.appendChild(card);
   return section;
 }

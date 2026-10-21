@@ -1,6 +1,6 @@
 // gameroom.js — 棋类房间的公共部分（大厅 / 房间信息 / 着法 / SSE / 动作按钮）。
 // 国际象棋与五子棋共用；各游戏只负责自己的棋盘渲染与走子交互。
-import { shell, apiGet, apiPost } from './shell.js';
+import { shell, apiGet, apiPost, requireLogin } from './shell.js';
 import { h, icon, toast, confirmDialog, copyText, openDialog, withPending, notify, reveal, swapView } from './ds.js';
 import { play } from './sfx.js';
 
@@ -97,8 +97,8 @@ export function playerBar(room, side) {
   const line = h('div', 'player-line' + (turn ? ' acting' : ''));
   line.appendChild(h('span', 'face sm', (p && p.name ? p.name[0] : '?').toUpperCase()));
   line.appendChild(h('span', 'player-name', p ? p.name + (you ? '（你）' : '') : '等待加入…'));
-  line.appendChild(h('span', 'spacer'));
   line.appendChild(h('span', 'side-label', SIDE_LABEL[side] || side));
+  if (turn) line.appendChild(h('span', 'player-turn', '当前回合'));
   if (room.status === 'finished' && room.result === side) line.appendChild(h('span', 'badge brand', '胜'));
   return line;
 }
@@ -300,7 +300,7 @@ function requestBanner(el, room, kind, onRoom) {
 
 // ---------- AI 解说 ----------
 // 每个用户自己开关（localStorage）；开启时每收到新的一手就请求解说，服务端每个 ply 只生成一次。
-export function commentaryOn() { return localStorage.getItem('mineagent.commentary') !== 'off'; }
+export function commentaryOn() { return localStorage.getItem('mineagent.commentary') === 'on'; }
 export function setCommentary(on) { localStorage.setItem('mineagent.commentary', on ? 'on' : 'off'); }
 
 let commentPendingPly = 0;
@@ -324,59 +324,28 @@ export function maybeRequestComment(room) {
   }).finally(() => { if (commentPendingPly === ply) commentPendingPly = 0; });
 }
 
-// ---------- 弹幕（AI 解说以直播间弹幕形式飘过棋盘） ----------
-const DANMAKU_LANES = 5;
-const laneFreeAt = new Array(DANMAKU_LANES).fill(0);
-
-function danmakuLayer() {
-  const col = document.querySelector('.board-col');
-  if (!col) return null;
-  let layer = col.querySelector('.danmaku-layer');
-  if (!layer) {
-    layer = h('div', 'danmaku-layer');
-    layer.style.position = 'absolute';
-    col.appendChild(layer);
-  }
-  return layer;
-}
-
-// danmaku 让一条点评从右往左飘过棋盘；多条会自动错开轨道，不叠在一起。
+// A stationary caption outside the board never covers a move or coordinate.
 export function danmaku(text) {
   if (!text || !commentaryOn()) return;
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const layer = danmakuLayer();
-  if (!layer) return;
-  const dur = Math.min(13, 7 + text.length * 0.12);   // 长一点的弹幕飘慢些
-  const now = Date.now();
-  let lane = 0;
-  for (let i = 1; i < DANMAKU_LANES; i++) if (laneFreeAt[i] < laneFreeAt[lane]) lane = i;
-  laneFreeAt[lane] = now + dur * 1000 * 0.55;
-  const item = h('div', 'danmaku-item');
-  item.appendChild(icon('sparkle', 'sm'));
-  item.appendChild(h('span', null, text));
-  item.style.top = (6 + lane * 13) + '%';
-  item.style.transform = 'translateX(' + layer.clientWidth + 'px)';
-  layer.appendChild(item);
-  const w = item.offsetWidth;
-  requestAnimationFrame(() => {
-    item.style.transition = 'transform ' + dur + 's linear';
-    item.style.transform = 'translateX(' + (-w - 8) + 'px)';
-  });
-  setTimeout(() => item.remove(), dur * 1000 + 200);
+  const col = document.querySelector('.board-col'); if (!col) return;
+  let caption = col.querySelector('.game-commentary');
+  if (!caption) { caption = h('aside', 'game-commentary'); caption.setAttribute('role', 'status'); col.appendChild(caption); }
+  caption.replaceChildren(h('strong', null, 'AI 解说'), h('p', null, text));
 }
 
 // 解说开关（放在操作行；开着时每手都会飘一条弹幕）
 export function commentaryToggle(room) {
   const btn = h('button', 'btn sm' + (commentaryOn() ? '' : ' ghost'));
   btn.appendChild(icon('megaphone'));
-  const label = h('span', null, commentaryOn() ? '弹幕开' : '弹幕关');
+  const label = h('span', null, commentaryOn() ? '解说已开启' : '开启解说');
   btn.appendChild(label);
-  btn.title = '每一步让 AI 发一条弹幕（同一个模型网关，失败不影响下棋）';
+  btn.title = '在棋盘外显示 AI 解说'; btn.setAttribute('aria-pressed', String(commentaryOn()));
   btn.onclick = () => {
     setCommentary(!commentaryOn());
-    label.textContent = commentaryOn() ? '弹幕开' : '弹幕关';
+    label.textContent = commentaryOn() ? '解说已开启' : '开启解说';
     btn.classList.toggle('ghost', !commentaryOn());
-    if (commentaryOn()) maybeRequestComment(room);
+    btn.setAttribute('aria-pressed', String(commentaryOn()));
+    if (commentaryOn()) maybeRequestComment(room); else document.querySelector('.game-commentary')?.remove();
   };
   return btn;
 }
@@ -408,6 +377,7 @@ function resultOverlay(room, onRoom) {
   card.appendChild(h('div', 'result-sub', sub));
   const acts = h('div', 'result-actions');
   const again = h('button', 'btn primary cta', '再来一局');
+  again.disabled = shell.preview;
   again.onclick = async () => { onRoom(await rematch(room.game)); };
   acts.appendChild(again);
   const replay = h('a', 'btn cta', '查看棋谱');
@@ -416,16 +386,7 @@ function resultOverlay(room, onRoom) {
   card.appendChild(acts);
   box.appendChild(card);
   col.appendChild(box);
-  if (youWin) {
-    for (let i = 0; i < 10; i++) {
-      const p = h('span', 'spark');
-      const a = (Math.PI * 2 * i) / 10 + Math.random() * 0.4;
-      p.style.setProperty('--dx', Math.cos(a).toFixed(2));
-      p.style.setProperty('--dy', Math.sin(a).toFixed(2));
-      p.style.animationDelay = (i * 14) + 'ms';
-      box.appendChild(p);
-    }
-  }
+
 }
 
 export function actionButtons(el, room, { onRoom, onExit }) {
@@ -438,7 +399,9 @@ export function actionButtons(el, room, { onRoom, onExit }) {
   maybeRequestModal(room, 'draw', onRoom);
 
   if (room.status === 'playing') {
-    el.appendChild(commentaryToggle(room));
+    const more = h('details', 'game-more'); const trigger = h('summary', 'btn sm', '更多'); more.appendChild(trigger); const menu = h('div', 'game-more-menu'); more.appendChild(menu);
+    menu.appendChild(commentaryToggle(room));
+    more.addEventListener('keydown', e => { if (e.key === 'Escape') { more.open = false; trigger.focus(); } });
     const undo = h('button', 'btn sm');
     undo.appendChild(icon('restart'));
     undo.appendChild(h('span', null, '悔棋'));
@@ -465,7 +428,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
         toast('已请求换边，等待对方同意');
       } catch (e) { toast(e.message, { warn: true }); }
     });
-    el.appendChild(swap);
+    menu.appendChild(swap);
 
     const draw = h('button', 'btn sm');
     draw.appendChild(icon('handshake') || icon('flag'));
@@ -479,7 +442,9 @@ export function actionButtons(el, room, { onRoom, onExit }) {
         toast('已提议和棋，等待对方同意');
       } catch (e) { toast(e.message, { warn: true }); }
     });
-    el.appendChild(draw);
+    menu.appendChild(draw);
+    menu.appendChild(h('p', 'field-hint', '悔棋、换边和提和需要对方同意。'));
+    el.appendChild(more);
 
     const resign = h('button', 'btn danger sm');
     resign.appendChild(icon('flag'));
@@ -491,6 +456,7 @@ export function actionButtons(el, room, { onRoom, onExit }) {
       if (next) onRoom(next); else onExit();
     });
     el.appendChild(resign);
+    const note = h('span', 'game-action-note', '悔棋需对方同意'); el.appendChild(note);
   }
 
   if (room.status === 'waiting') {
@@ -525,13 +491,12 @@ export function actionButtons(el, room, { onRoom, onExit }) {
         onExit();
         return;
       }
-      const ok = await confirmDialog({ title: '离开房间？', body: '对局中的离开会计为认输。', confirmText: '离开', danger: true });
-      if (!ok) return;
       await leaveRoom(room.game);
       onExit();
     };
     el.appendChild(leave);
   }
+  if (shell.preview) for (const button of el.querySelectorAll('button')) { button.disabled = true; button.title = '演示模式不提交真实对局操作'; }
 }
 
 // 大厅：创建房间 / 输码加入 / 开放房间列表
@@ -543,8 +508,8 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   tile.appendChild(iconEl || icon('gamepad', 'lg'));
   hero.appendChild(tile);
   const txt = h('div');
-  txt.appendChild(h('div', 'lobby-title', '在线对弈'));
-  txt.appendChild(h('div', 'lobby-sub', '房间制双人对战 · 服务端裁判 · 刷新不丢对局'));
+  txt.appendChild(h('h1', 'lobby-title', gameId === 'chess' ? '国际象棋' : '五子棋'));
+  txt.appendChild(h('div', 'lobby-sub', '创建房间，或输入邀请码加入一局。'));
   hero.appendChild(txt);
   el.appendChild(hero);
 
@@ -555,7 +520,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   const create = h('button', 'btn primary cta', '创建房间');
   create.onclick = () => withPending(create, async () => {
     if (demoCreate) { onRoom(demoCreate()); return; }
-    try { onRoom(await createRoom(gameId)); } catch (e) { toast(e.message, { warn: true }); }
+    try { const guest = !shell.user; if (guest) await requireLogin(); onRoom(await createRoom(gameId)); if (guest) location.reload(); } catch (e) { toast(e.message, { warn: true }); }
   });
   createCard.appendChild(create);
   grid.appendChild(createCard);
@@ -565,11 +530,11 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   joinCard.appendChild(h('div', 'lobby-card-sub', '输入 6 位房间码'));
   const row = h('div', 'join-row');
   const input = h('input', 'input code-input');
-  input.maxLength = 32;
+  input.maxLength = 32; input.name = 'room'; input.autocomplete = 'off';
   input.id = 'join-room-code';
   const label = h('label', 'field-label', '房间码'); label.htmlFor = input.id; joinCard.appendChild(label);
   const error = h('p', 'field-err'); error.id = 'join-room-error'; error.setAttribute('role', 'status'); input.setAttribute('aria-describedby', error.id);
-  input.placeholder = 'AB3K9Q';
+  input.placeholder = '例如 AB3K9Q'; input.value = new URLSearchParams(location.search).get('room') || '';
   input.autocapitalize = 'characters';
   input.spellcheck = false;
   const join = h('button', 'btn cta', '加入');
@@ -579,9 +544,10 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
     if (!/^[A-Z0-9]{6}$/.test(code)) { error.textContent = '请输入完整的 6 位房间码'; input.setAttribute('aria-invalid', 'true'); input.focus(); return; }
     if (demoJoin) { onRoom(demoJoin()); return; }
     try {
+      const guest = !shell.user; if (guest) await requireLogin();
       const res = await joinRoom(gameId, code);
       if (res.redirect && res.redirect !== '/games/' + gameId) { location.href = res.redirect; return; }
-      onRoom(res.room);
+      onRoom(res.room); if (guest) location.reload();
     } catch (e) { error.textContent = e.message; input.setAttribute('aria-invalid', 'true'); }
   };
   join.onclick = () => withPending(join, doJoin);
@@ -606,6 +572,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   let firstRooms = true;
   const loadRooms = async () => {
     try {
+      if (!shell.user && !demoRooms) { const empty = h('div', 'empty'); empty.append(h('p', null, '登录后查看房间，或先观看演示回放。')); const demo = h('a', 'btn', '观看演示回放'); demo.href = '/account/history?demo=' + gameId; empty.appendChild(demo); list.replaceChildren(empty); return; }
       const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
       list.innerHTML = '';
       if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂无开放房间。可以创建房间，或观看演示回放。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?demo=gomoku'; empty.appendChild(replay); list.appendChild(empty); return; }

@@ -91,7 +91,7 @@
 .status-details .row b { color: var(--text); font-weight: 550; }
 .status-empty { color: var(--text-secondary); font-size: 13.5px; }
 
-.game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 14px; }
+.game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 14px; }
 .game-card { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; min-height: 150px; }
 .game-title { font-size: 16px; font-weight: 650; }
 .game-desc { color: var(--text-secondary); font-size: 13.5px; }
@@ -205,3 +205,34 @@
 .feed-dot.game { background: #f59e0b; }
 
 .demo-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px; margin: 0 0 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+
+/* Shared page geometry. */
+.wrap { max-width: var(--content-width); padding: 40px 24px 64px; }
+.wrap.narrow { max-width: 920px; }
+.catalog { min-width: 0; }
+.catalog-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.catalog-card, .catalog-body, .catalog-head { min-width: 0; }
+.catalog-head { flex-wrap: wrap; }
+.catalog-go { min-height: 44px; display: inline-flex; align-items: center; color: var(--link); }
+.catalog-card { box-shadow: none; }
+.game-description { overflow-wrap: anywhere; }
+.login-view { inset: var(--shell-height) 0 0; }
+.login-box { width: min(100%, 400px); padding: 28px 0; animation: none; text-align: left; }
+.login-home { display: inline-flex; min-height: 44px; align-items: center; color: var(--link); font-size: 14px; text-decoration: none; }
+.login-recovery { border-top: 1px solid var(--border); padding-top: 8px; font-size: 13px; }
+.login-recovery summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+.login-help-link { color: var(--link) !important; display: inline-flex; align-items: center; min-height: 44px; }
+.settings button.list-row { width: 100%; background: none; border: 0; text-align: left; font: inherit; }
+.settings a.list-row { color: inherit; text-decoration: none; }
+.settings .list-main { min-width: 0; }
+.settings .list-title, .settings .list-sub { overflow-wrap: anywhere; }
+.error-page { padding-block: 100px; }
+.error-code { color: var(--text-secondary); font-size: 14px; }
+.error-page h1 { font-size: 32px; margin-block: 12px; }
+.error-page p { color: var(--text-secondary); margin-bottom: 24px; }
+.error-page .btn { margin: 0 8px 12px 0; }
+.status-dot.on::after, .presence-dot::after { animation: none; }
+@media (max-width: 640px) { .wrap { padding: 24px 16px 36px; } .catalog-grid, .game-grid { grid-template-columns: 1fr; } .login-view { padding: 20px 24px calc(84px + env(safe-area-inset-bottom)); } .settings .list-row { gap: 12px; flex-wrap: wrap; } }
+
+.account-recovery summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; }
+.account-recovery p { max-width: 65ch; }

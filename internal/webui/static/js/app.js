@@ -2,7 +2,7 @@
 
 import { boot as bootShell, shell } from './shell.js';
 import { passwordForm } from './passwords.js';
-import { $, toast, bus } from './ui.js';
+import { $, toast, bus, initOverlayFocus } from './ui.js';
 import { S, saveAuth, clearAuth } from './state.js';
 import { api, apiPost, logoutRequest, setUnauthorizedHandler } from './api.js';
 import { initTheme, openAppearance } from './theme.js';
@@ -121,6 +121,7 @@ async function ensureFresh() {
 // ---------- 启动 ----------
 async function boot() {
   initTheme();
+  initOverlayFocus();
   initPromptSettings();
   ensureFresh();
   await bootShell({ active: '/agent', requireLogin: false, preview: new URLSearchParams(location.search).has('ui') });

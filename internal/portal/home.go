@@ -36,6 +36,31 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleHome 首页聚合：欢迎语 + 各应用卡片。单个应用失败只降级该卡片。
+func (s *Server) handlePublicHome(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET"})
+		return
+	}
+	apps := make([]map[string]any, 0)
+	for _, a := range s.apps {
+		if !a.Enabled || a.AdminOnly || a.PublicCard == nil {
+			continue
+		}
+		item := map[string]any{"id": a.ID, "name": a.Name, "path": a.Path, "role": a.HomeRole}
+		ctx, cancel := withTimeout(r.Context(), 3*time.Second)
+		card, err := a.PublicCard(ctx, nil)
+		cancel()
+		if err != nil {
+			item["error"] = "暂不可用"
+		} else {
+			item["card"] = card
+		}
+		apps = append(apps, item)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"apps": apps})
+}
+
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request, u *storage.User) {
 	type appCard struct {
 		ID       string `json:"id"`
@@ -122,6 +147,25 @@ func (s *Server) handleAccountStats(w http.ResponseWriter, r *http.Request, u *s
 		stats = []storage.GameStat{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"games": stats})
+}
+
+func (s *Server) handleSecurity(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 GET"})
+		return
+	}
+	hash, err := s.store.PasswordHash(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, 503, map[string]string{"error": "安全设置暂时无法读取"})
+		return
+	}
+	credentials, err := s.store.PasskeyCredentials(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, 503, map[string]string{"error": "安全设置暂时无法读取"})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"password": hash != "", "passkeys": len(credentials)})
 }
 
 // handleAnnouncements 公告栏：GET 公开（未登录也能看），POST/DELETE 仅管理员。

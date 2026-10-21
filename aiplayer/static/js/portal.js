@@ -94,7 +94,7 @@ function select(label, values, value) {
   return f;
 }
 function time(value) {
-  return value ? new Date(value).toLocaleString() : "尚无记录";
+  return value ? new Intl.DateTimeFormat("zh-CN", {dateStyle:"medium", timeStyle:"short", hourCycle:"h23"}).format(new Date(value)) : "尚无记录";
 }
 function message(text, cls = "notice") {
   return h("div", cls, text);
@@ -238,7 +238,7 @@ async function loadBodyPanel(host, id) {
 function heading(title, subtitle, action) {
   const wrap = h("div", "page-heading"),
     text = h("div");
-  text.append(h("div", "eyebrow", "AI PLAYER / JOURNAL"), h("h1", "", title));
+  text.append(h("h1", "", title));
   if (subtitle) text.append(h("p", "muted", subtitle));
   wrap.append(text);
   if (action) wrap.append(action);
@@ -262,7 +262,7 @@ function avatar(a) {
   if (a.profile?.skin) {
     const img = h("img");
     img.src = a.profile.skin;
-    img.alt = "";
+    img.alt = ""; img.width = 64; img.height = 64;
     img.referrerPolicy = "no-referrer";
     img.loading = "lazy";
     img.onerror = () => img.remove();
@@ -273,7 +273,8 @@ function avatar(a) {
 function identity(a) {
   const wrap = h("div", "identity"),
     text = h("div");
-  text.append(h("h3", "", a.displayName || a.name), h("div", "meta", a.name));
+  text.append(h("h3", "", a.displayName || a.name));
+  if (a.name !== a.displayName) text.append(h("div", "meta", a.name));
   wrap.append(avatar(a), text);
   return wrap;
 }
@@ -472,10 +473,13 @@ async function directory() {
   setPage(
     breadcrumbs(),
     heading("AI 玩家", "选择玩家，查看资料、实时状态与身体控制。"),
-    filters("agents"),
+    compactFilters(data),
     data.items.length ? cards : message("没有符合条件的 AI 玩家。", "empty"),
-    pager(data),
+    ...(data.total > data.pageSize ? [pager(data)] : []),
   );
+}
+function compactFilters(data) {
+  const details = h("details", "directory-filters"); details.open = data.total > 6 || ["q","tag","status","sort"].some(key => params.has(key)); details.append(h("summary", "", "搜索与筛选"), filters("agents")); return details;
 }
 async function posts() {
   const data = await api("/api/ai-posts?" + params);

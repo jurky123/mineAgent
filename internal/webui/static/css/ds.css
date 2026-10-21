@@ -17,9 +17,8 @@ body.ds a { color: inherit; }
 .topbar {
   position: sticky; top: 0; z-index: 30;
   display: flex; align-items: center; gap: 12px;
-  height: 56px; padding: 0 max(18px, calc(50vw - 36rem));
-  background: color-mix(in srgb, var(--page) 82%, transparent);
-  backdrop-filter: blur(14px);
+  height: var(--shell-height); padding: 0 max(24px, calc((100vw - var(--content-width)) / 2 + 24px));
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; letter-spacing: .1px; text-decoration: none; font-size: 15px; }
@@ -251,8 +250,7 @@ body.ds a { color: inherit; }
   .tabbar {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
     display: flex; align-items: stretch;
-    background: color-mix(in srgb, var(--page) 92%, transparent);
-    backdrop-filter: blur(14px); border-top: 1px solid var(--border);
+    background: var(--surface); border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
   .tabbar .tab {
@@ -310,10 +308,19 @@ body.ds a { color: inherit; }
 .passkey-form .recovery-codes { font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 12px; padding: 16px; user-select: all; }
 .recovery-confirm { display: flex; gap: 10px; align-items: center; min-height: 44px; font-size: 14px; }
 .recovery-confirm input { width: 20px; height: 20px; }
-@media (max-width: 640px) { .topbar { padding-inline: 16px; } .tabbar .tab { min-width: 0; font-size: 10px; } }
+@media (max-width: 640px) { .topbar { padding-inline: 16px; } .tabbar .tab { min-width: 0; font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 @media (max-width: 640px) { .topbar .brand span { display: inline; } }
 
 html[data-theme="dark"] .badge.brand { color: var(--link); }
 .password-fields { display: flex; flex-direction: column; gap: 10px; }
 .password-fields > .btn { margin-top: 8px; }
+
+.skip-link { position: fixed; left: 16px; top: -80px; z-index: 100; padding: 12px 16px; background: var(--surface); color: var(--text); border: 2px solid var(--brand); border-radius: 8px; }
+.skip-link:focus { top: 8px; }
+.account-login-label { font-size: 14px; margin-left: 6px; white-space: nowrap; }
+.account-btn:has(.account-login-label) { width: auto; padding-inline: 10px; }
+.preview-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 24px; background: var(--surface-muted); border-bottom: 1px solid var(--border); font-size: 12px; min-height: 40px; }
+.preview-notice a { color: var(--link); white-space: nowrap; }
+@media (hover: none), (max-width: 640px) { .icon-btn, .acc-btn { min-width: 44px; min-height: 44px; } .btn { min-height: 44px; } }
+@media (max-width: 640px) { .preview-notice { padding-inline: 16px; font-size: 11px; } }

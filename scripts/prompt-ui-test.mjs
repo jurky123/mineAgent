@@ -9,9 +9,9 @@ import { chromium } from 'playwright';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const staticRoot = path.join(root, 'internal/webui/static');
 const templateSource = (await readFile(path.join(root, 'internal/prompts/templates.go'), 'utf8')).split('var legacyPersonas')[0];
-const personas = [...templateSource.matchAll(/ID:\s*"([^"]+)",\s*Name:\s*"([^"]+)",\s*Desc:\s*"([^"]+)",\s*Text:\s*`([\s\S]*?)`/g)]
-  .map(([, id, name, desc, text]) => ({ id, name, desc, text, builtin: true }));
-assert.equal(personas.length, 7);
+const personas = [...templateSource.matchAll(/\{ID:\s*"([^"]+)",([\s\S]*?)Text:\s*`([\s\S]*?)`/g)]
+ .map(([,id,fields,text])=>({id,text,name:fields.match(/Name:\s*"([^"]+)"/)[1],desc:fields.match(/Desc:\s*"([^"]+)"/)[1],example:fields.match(/Example:\s*"([^"]+)"/)?.[1] || '',builtin:true}));
+assert.equal(personas.length, 8);
 let data = {
   admin: true, myPersona: '', webPersona: 'default', personas,
   limits: { persona: 8000, capability: 20000, name: 40, desc: 200 },
@@ -34,7 +34,7 @@ const server = createServer(async (req, res) => {
         const p = JSON.parse(body); posts.push(p);
         if (failNextSave) { failNextSave = false; return json({ error: '模拟保存失败' }, 500); }
         let id = p.id;
-        if (p.scope === 'user-persona') data.myPersona = p.persona;
+        if (p.scope === 'user-persona' || p.scope === 'user-settings') { data.myPersona = p.persona; data.style = p.style || {}; }
         if (p.scope === 'service-settings') {
           const svc = data.services.find((s) => s.id === p.id);
           svc.persona = p.persona || svc.defaultPersona;
@@ -102,7 +102,7 @@ try {
   await page.locator('#header-prompts').click();
   await page.locator('.prompt-choice').first().waitFor();
   assert.equal(await page.getByRole('tab').count(), 3);
-  assert.equal(await page.locator('.prompt-choice').count(), 8);
+  assert.equal(await page.locator('.prompt-choice').count(), 9);
   await page.locator('.agent-prompts .dialog-head button').focus();
   await page.keyboard.press('Shift+Tab');
   assert.equal(await page.evaluate(() => document.activeElement.tagName), 'SUMMARY', 'focus trap missed preview summary');
@@ -111,17 +111,18 @@ try {
   assert.equal(await page.evaluate(() => document.body.classList.contains('ds')), false, 'chat layout replaced by portal layout');
   await shot(page, 'desktop-personas');
   await page.locator('[data-persona=tech]').click();
+  await page.locator('.prompt-full-text summary').click();
   assert.match(await page.locator('.prompt-preview').innerText(), /资深工程师搭档/);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.locator('.dialog-mask').nth(1).waitFor({ state: 'detached' });
   assert.equal(await page.locator('.agent-prompts').count(), 1, 'Escape closed parent editor');
   failNextSave = true;
-  await page.getByRole('button', { name: '应用人设', exact: true }).click();
+  await page.getByRole('button', { name: '应用偏好', exact: true }).click();
   await page.getByRole('alert').filter({ hasText: '模拟保存失败' }).waitFor();
   assert.equal(data.myPersona, '', 'failed save changed settings');
   assert.equal(await page.locator('[data-persona=tech]').getAttribute('aria-checked'), 'true', 'failed save lost draft');
-  await page.getByRole('button', { name: '应用人设', exact: true }).click();
+  await page.getByRole('button', { name: '应用偏好', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('#agent-persona-label').textContent === '技术搭档');
   assert.equal(data.myPersona, 'tech');
   await page.getByRole('tab', { name: '渠道设置' }).click();
@@ -183,9 +184,9 @@ try {
     assert.equal(await p.locator('.prompt-content').evaluate((el) => el.scrollWidth <= el.clientWidth + 1), true, 'mobile content scrolls horizontally');
     await shot(p, 'mobile-' + theme);
     const pick = theme === 'light' ? 'concise' : 'translator';
-    const label = theme === 'light' ? '简洁客服' : '中英翻译';
+    const label = personas.find(p => p.id === pick).name;
     await p.locator('[data-persona=' + pick + ']').click();
-    await p.getByRole('button', { name: '应用人设', exact: true }).click();
+    await p.getByRole('button', { name: '应用偏好', exact: true }).click();
     await p.waitForFunction((name) => document.querySelector('#agent-persona-label').textContent === name, label);
     await mobile.close();
   }

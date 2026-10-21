@@ -14,15 +14,16 @@ type CardFunc func(ctx context.Context, u *storage.User) (any, error)
 
 // App 是门户里的一个应用/卡片。新增功能只在这里注册，不改门户骨架。
 type App struct {
-	ID        string
-	Name      string
-	Desc      string
-	Icon      string // 前端图标名（emoji 或内置 svg 名）
-	Path      string // 点击跳转的 URL；空 = 纯信息卡
-	Order     int
-	AdminOnly bool
-	Enabled   bool
-	Card      CardFunc // 空 = 不展示卡片（只出现在导航）
+	ID         string
+	Name       string
+	Desc       string
+	Icon       string // 前端图标名（emoji 或内置 svg 名）
+	Path       string // 点击跳转的 URL；空 = 纯信息卡
+	Order      int
+	AdminOnly  bool
+	Enabled    bool
+	Card       CardFunc // 空 = 不展示卡片（只出现在导航）
+	PublicCard CardFunc // Explicit, sanitized public summary; never fall back to Card.
 
 	// 展示元数据：决定首页怎么摆、顶栏是否出现（见 MINE_PORTAL_DESIGN.md §7.5）。
 	// HomeRole: hero（一级入口）/ status（状态）/ content（内容区）/ feed（动态流）/ hidden（不上面）。

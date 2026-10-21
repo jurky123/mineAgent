@@ -8,6 +8,10 @@ export function setUnauthorizedHandler(fn) { unauthorizedHandler = fn; }
 
 export async function api(path, opts) {
   opts = opts || {};
+  if (S.token === 'debug') {
+    if (path === '/api/prefs' && opts.method === 'POST') { const patch = JSON.parse(opts.body || '{}'); return { model: patch.model ?? S.options?.model ?? '', effort: patch.effort ?? S.options?.effort ?? '' }; }
+    throw new Error('演示模式不连接真实服务');
+  }
   opts.headers = Object.assign({}, opts.headers, S.token ? { 'Authorization': 'Bearer ' + S.token } : {});
   const res = await fetch(path, opts);
   let body = null;

@@ -1,0 +1,76 @@
+{
+  "brand": "zkun",
+  "mode": "operate",
+  "surfaces": {
+    "home": "Choose Agent, a game or Minecraft without repeating navigation.",
+    "agent": "Work in a conversation with visible model, effort and actual task state.",
+    "games": "Discover before login; authenticate every room operation.",
+    "minecraft": "Copy the address and find verified installation information.",
+    "account": "Understand sign-in methods, recovery and active devices."
+  },
+  "tokens": {
+    "source": "internal/webui/static/css/tokens.css",
+    "mirror": "aiplayer/static/css/tokens.css",
+    "font": "system Chinese sans-serif",
+    "contentWidth": 1200,
+    "mobileGutter": 16,
+    "desktopGutter": 24,
+    "primary": "#2563EB",
+    "page": "#F6F7F9",
+    "text": "#172033"
+  },
+  "states": {
+    "request": [
+      "loading",
+      "empty",
+      "error-retry",
+      "success",
+      "stale-cache"
+    ],
+    "task": [
+      "queued",
+      "processing",
+      "using-tool",
+      "awaiting-approval",
+      "stopping",
+      "finished",
+      "failed"
+    ],
+    "attachment": [
+      "uploading",
+      "ready",
+      "failed-retry-or-remove"
+    ],
+    "settings": [
+      "unchanged",
+      "dirty",
+      "invalid",
+      "saving",
+      "saved",
+      "failed-draft-preserved"
+    ]
+  },
+  "rules": [
+    "No fabricated status, model capability, release validation or progress.",
+    "Public summaries never reuse authenticated card builders.",
+    "Personal persona and style apply only to the owning web user.",
+    "Model metadata may be unknown; missing capability flags are not a negative assertion.",
+    "A queued or running request is never automatically replayed after an ambiguous failure.",
+    "Preview data is explicitly labeled and never persisted as account state."
+  ],
+  "breakpoints": [
+    320,
+    390,
+    768,
+    1280
+  ],
+  "verification": {
+    "automated": "scripts/portal-refresh-e2e.mjs",
+    "artifacts": "/tmp/zkun-delivery-ui",
+    "unverified": [
+      "iOS hardware and soft keyboard",
+      "clean Windows/PCL modpack installation",
+      "field Web Vitals"
+    ]
+  }
+}

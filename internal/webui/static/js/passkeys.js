@@ -31,7 +31,7 @@ async function request(path, body = {}) {
   return data;
 }
 
-export function passkeyForm(onSuccess) {
+export function passkeyForm(onSuccess, initialMode = 'login') {
   const box = h('div', 'passkey-form');
   const error = h('p', 'field-err'); error.setAttribute('role', 'alert');
   let busy = false, unsaved = false;
@@ -56,7 +56,7 @@ export function passkeyForm(onSuccess) {
   });
   const paint = (mode) => {
     box.replaceChildren();
-    box.append(h('p', 'eyebrow', 'ZKUN / 账号'), h('h1', null, mode === 'login' ? '欢迎回来。' : mode === 'recover' ? '找回你的账号' : '激活你的账号'));
+    box.append(h('h1', null, mode === 'login' ? '欢迎回来。' : mode === 'recover' ? '找回你的账号' : '激活你的账号'));
     if (mode === 'login') {
       box.appendChild(h('p', 'login-sub', '使用设备解锁或安全密钥验证身份。昵称只用于显示，不再用作登录凭证。'));
       const enter = h('button', 'btn primary cta', '使用 Passkey 登录'); enter.onclick = login; box.appendChild(enter);
@@ -97,5 +97,5 @@ export function passkeyForm(onSuccess) {
     check.onchange = () => { enter.dataset.requiresSave = check.checked ? '0' : '1'; enter.disabled = !check.checked; };
     enter.onclick = () => { unsaved = false; login(); }; box.append(download, label, enter, error);
   };
-  paint('login'); return box;
+  paint(initialMode); return box;
 }

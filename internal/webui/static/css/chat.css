@@ -161,3 +161,17 @@
 
 .export-stage { width: max-content; max-width: none; }
 .export-stage .tablewrap { overflow: visible; }
+
+.msg { animation: none; }
+.msg.assistant .body { width: 100%; }
+.content :is(.math-inline, .katex-display, .tablewrap) { max-width: 100%; overflow-x: auto; }
+.content .math-inline { display: inline-block; vertical-align: middle; }
+.content .blockwrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.typing { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px; padding: 12px 0; font-size: 13px; color: var(--text-2); }
+.task-state { font-weight: 600; color: var(--text); white-space: nowrap; }
+.typing-text { min-width: 0; overflow-wrap: anywhere; }
+.run-events { border: 0; border-block: 1px solid var(--border); border-radius: 0; padding: 16px 0; }
+.run-events summary { min-height: 36px; font-weight: 500; }
+.run-event-list { margin: 8px 0 0; padding-left: 24px; }
+.run-event-list li { padding: 8px 0; overflow-wrap: anywhere; line-height: 1.6; }
+@media (hover: none), (max-width: 640px) { .actions { opacity: 1; } .act { min-height: 44px; } .codecopy, .blockimg { min-height: 36px; } }

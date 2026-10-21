@@ -1,6 +1,7 @@
 # MINE_BODY_DESIGN.md — MineAgent 具身接入设计（v1.2）
 
 > 状态：**2026-10-21 身体UX与DSH兼容修订已按服主授权部署生产（后端a90cafc、Paper0.3.3）；默认配置仍关闭，新启用需显式配置。M0与隔离回归通过，24h、长期负载及真实模型可靠性余项仍待完成，见 §18与实测文档。**
+> 导航后续提案：[Navigation V2](MINE_BODY_NAVIGATION_DESIGN.md)；飞行/游泳等新能力尚未实现，当前发布行为仍见§18。
 > 目标读者：实现这个仓库的 coding agent / 后续维护者
 > 范围：让 mineAgent 后端的 agent 控制一个**真实 Minecraft 玩家身体**，提供移动、挖掘、放置、方块/实体交互、物品使用、聊天、指令等工具；以及相应的权限、审批、审计、运维和门户联动
 > 不在本设计内：具体代码、模型提示词调参、Minecraft 协议/物理的自研实现
@@ -1602,7 +1603,7 @@ node src/index.js --config /home/ubuntu/mineagent-data/body/config.json
 | [ViaVersion](https://github.com/ViaVersion/ViaVersion) / [ViaBackwards](https://github.com/ViaVersion/ViaBackwards) | GPL-3.0 | 备选：服务端协议转换 | 仅备选；装 Paper 需重启 |
 | [FakePlayerPlus](https://github.com/xiplugin/FakePlayerPlus) | GPL-3.0 | Plan B 服务端假人 | 仅评估；不复制代码 |
 | [FakePlayer CE](https://github.com/EndlessPixel-Studio/FakePlayer-CE) | Apache-2.0 | Plan B 服务端假人（HTTP API） | 仅评估；不复制代码 |
-| [Baritone](https://github.com/cabaletta/baritone) | LGPL-3.0 | 高保真寻路（HeadlessMC） | v1 不用；需要正版/GL |
+| [Baritone](https://github.com/cabaletta/baritone) | LGPL-3.0 | 客户端寻路 | 当前不替换；客户端运行栈、版本与资源开销需另验，不预设必须正版/GL |
 | [MCProtocolLib](https://github.com/GeyserMC/MCProtocolLib) | MIT | 协议库 | 不用（无物理/寻路） |
 | [go-mc](https://github.com/Tnze/go-mc) | MIT | Go 协议库 | 不用（过旧/无高层） |
 | [minecraft-mcp-server](https://github.com/yuniko-software/minecraft-mcp-server) | Apache-2.0 | 工具命名/接口参考 | 参考，不引入 MCP |
@@ -1728,3 +1729,8 @@ Paper 0.3.2 在原 WorldEdit 实际写入守卫上增加 Bukkit 破坏/放置拦
 本轮覆盖 MC 公开投影与已验证私密会话、动作取消与管理员暂停的分离、碰撞修正阈值、地形摘要/可选y导航，以及12步/3次只读/medium预算。精确语义、兼容性和限界见 [body/README.md](body/README.md#身体体验修订2026-10-21已部署)；实测与后续一轮迭代见 [BODY_UX_FOLLOWUP_2026-10-21.md](BODY_UX_FOLLOWUP_2026-10-21.md)。不变更审批、出生点512格/WorldEdit两层保护、非OP与实时operator gate，不增加第二套模型循环。
 
 体验迭代增加私有任务工具进度（既有runEvents的名称、状态、耗时，最近20项），无需独立执行器或新增权限。Node客户端视距默认4、可配置2–8以控制区块缓存；ViaProxy仍是固定协议版本的前置依赖。完整测试启动前核验真实cgroup硬限额及主机余量，具体门槛与当轮结果见执行层说明和体验记录。
+
+
+### 2026-10-21 导航重设计提案（尚未实现）
+
+后续导航以[MINE_BODY_NAVIGATION_DESIGN.md](MINE_BODY_NAVIGATION_DESIGN.md)为设计依据：修正目标列与到达区域的语义，保留分层地形和未知区块状态；以分片A*与局部修复驱动单一确定性导航协调器；按实际能力支持地面、水面和创造飞行。该提案扩展历史“不飞行”的计划边界，但在实现、兼容性和故障矩阵验收前，现有执行器仍不自动飞行。不扩展破坏/放置权限，不绕过出生点/WorldEdit保护和operator gate。

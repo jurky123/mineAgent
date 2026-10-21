@@ -10,6 +10,7 @@ Minecraft 服务器的 AI 聊天助手：玩家在游戏聊天里就能提问，
 > **持续任务**：身体任务默认不限总轮数与总时长，限速时等待配额；`body_status` 独立诊断控制通道，停止/断线/撤权取消旧任务。普通聊天预算不变，详见 body/README.md。
 > **建造权限**：Paper 0.3.2 支持 AI 专用 LuckPerms 建造组，以及出生点四周各 512 格、全高度的方块破坏/放置与 WorldEdit 实际写入保护；保护区允许移动和观察，按目标方块拦截写入；须先启用保护再授权批量编辑，详见 body/README.md。
 > 使用与验证：[body/README.md](body/README.md)；架构与实施记录：[MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（§18）。
+> **下一版导航设计**：[Navigation V2](MINE_BODY_NAVIGATION_DESIGN.md)：目标候选与分段寻路、路线修复，以及受控创造飞行/游泳/精确移动；仅设计，尚未改变当前身体能力。
 > AI 玩家入口位于 **Minecraft → AI 玩家 → 玩家资料**（`/minecraft` → `/ai` → `/ai/<id>`）。公开资料由独立服务提供；资料内的身体状态、任务/回复、审批和控制由浏览器直接访问主站，仍须主站已验证管理员。`/body` 保留旧书签、游戏 fragment 配对及急停兼容。论坛默认关闭，既有代码与数据保留，不接写作。见 [aiplayer/README.md](aiplayer/README.md) 和 [v1.3 需求 §12](AI_PLAYER_PORTAL_REQUIREMENTS.md#12-用户确认的信息架构调整2026-10-20当前实施依据)。
 
 

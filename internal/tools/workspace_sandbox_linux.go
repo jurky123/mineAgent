@@ -36,6 +36,33 @@ func newWorkspaceCommand(ctx context.Context, root, command string, network bool
 		return nil, fmt.Errorf("workspace 根目录不能是宿主根目录")
 	}
 	args := []string{"--unshare-all", "--die-with-parent", "--new-session", "--cap-drop", "ALL"}
+	var chromePath string
+	if library, _ := ctx.Value(skillRootKey{}).(string); library != "" {
+		library, err = filepath.Abs(library)
+		if err != nil {
+			return nil, fmt.Errorf("共享技能目录无效")
+		}
+		library, err = filepath.EvalSymlinks(library)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("共享技能目录不可读")
+		}
+		if err == nil {
+			if library == "/" || library == root || strings.HasPrefix(root, library+"/") || strings.HasPrefix(library, root+"/") {
+				return nil, fmt.Errorf("共享技能目录必须独立于 workspace")
+			}
+			args = append(args, "--ro-bind", library, SharedSkillsMount)
+			// Reuse a single operator-installed browser runtime. Do not mount
+			// the entire home/cache or download a browser per conversation.
+			if home, e := os.UserHomeDir(); e == nil {
+				browsers, _ := filepath.Glob(filepath.Join(home, ".cache/ms-playwright/chromium-*/chrome-linux64/chrome"))
+				if len(browsers) > 0 {
+					browser := browsers[len(browsers)-1]
+					args = append(args, "--ro-bind", filepath.Dir(browser), "/opt/mineagent-browser")
+					chromePath = "/opt/mineagent-browser/chrome"
+				}
+			}
+		}
+	}
 	if network {
 		// 仅静态约束与语义审查都通过的下载/装包命令使用宿主网络。
 		args = append(args, "--share-net")
@@ -86,6 +113,9 @@ func newWorkspaceCommand(ctx context.Context, root, command string, network bool
 		"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=" + root, "LANG=C.UTF-8",
 		"NO_COLOR=1", "GIT_PAGER=cat", "PIP_CONFIG_FILE=/dev/null",
 		"VENV_BIN=" + filepath.Join(root, ".venv", "bin"),
+	}
+	if chromePath != "" {
+		cmd.Env = append(cmd.Env, "CHROME_PATH="+chromePath)
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {

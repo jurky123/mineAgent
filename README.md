@@ -101,6 +101,16 @@ cd paper-plugin
   只有下载/装包命令通过审查后才开放网络。命令静态检查是额外护栏，不作为隔离边界。
   各通道只认自己的管理员名单（QQ / 企微应用 / 智能机器人 / 个人微信 / 网页），同名不能跨通道提权。
 
+## 共享 Agent Skills
+
+`agent.skillsDir`（或环境变量 `MINEAGENT_SKILLS_DIR`）指向一份由维护者管理的共享目录，使用绝对路径；留空不启用。推荐使用用户级 `.agents/skills`，可与 DSH 等读取相同目录的客户端共用，Codex 可通过其用户技能目录的符号链接引用同一份文件。网页 `web.skills` 仍是快捷提示词菜单，与这里的标准技能包不同。
+
+目录格式为 `<共享目录>/<技能名>/SKILL.md`，文件带 `name` 与 `description` YAML frontmatter，名称与目录相同；脚本、参考文档、素材保留在包内。所有 MineAgent 通道按需发现共享技能：只向模型提供名称和有上限的简介，调用 `skill` 才读取正文或资源；资源支持分页，拒绝路径和符号链接越界。新增技能在下一次任务发现，无须给每个会话安装副本。
+
+共享目录只读挂在执行沙箱的 `/opt/mineagent-skills`，脚本可直接引用共用库，结果写到当前 workspace；只需修改个别示例时复制对应代码，不能在共享目录构建产物。沿用原有管理员权限、网络审查与操作审批，安装技能不自动执行代码、不授权上传发布、不开放普通用户的代码执行。需要浏览器检查的技能可复用现有 Playwright Chromium 安装，只挂载该浏览器运行时并设置 `CHROME_PATH`，不暴露用户整个缓存目录。
+
+[Anatomy](https://github.com/wheresryan22/anatomy) 是交互式 SVG 技术示意图技能，需要 Node.js 20.10+，浏览器验收需要 Chrome/Chromium。安装包与依赖由维护者统一管理，不加入本项目仓库。可要求 Agent“用 Anatomy 制作……示意图”；读取技能后按任务生成 HTML/SVG，QQ 可通过文件能力交付。本项目包含可选的 `MINEAGENT_TEST_SKILLS_DIR=<共享目录> go test ./internal/tools -run TestInstalledAnatomyBuildAndCapture`，验证共享 kit 构建、只读挂载和沙箱截图。
+
 ## 高权限操作与审批
 
 传送、给物品、执行命令属于高权限操作，处理流程：

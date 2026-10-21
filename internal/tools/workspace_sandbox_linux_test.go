@@ -68,3 +68,58 @@ func TestWorkspaceExecFailsClosedWithoutPrivilegeDropper(t *testing.T) {
 		t.Fatal("unsandboxed command ran")
 	}
 }
+
+func TestSharedSkillsReadOnlyMount(t *testing.T) {
+	requireWorkspaceSandbox(t)
+	library, workspace := t.TempDir(), t.TempDir()
+	writeTestSkill(t, library, "anatomy", "diagrams")
+	ctx := WithSkillRoot(context.Background(), library)
+	command := `python3 -c 'from pathlib import Path; p=Path("/opt/mineagent-skills/anatomy/SKILL.md"); assert "PRIVATE_BODY" in p.read_text(); blocked=False
+try: p.write_text("unsafe")
+except OSError: blocked=True
+assert blocked; Path("result.txt").write_text("generated")'`
+	cmd, err := newWorkspaceCommand(ctx, workspace, command, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("shared sandbox: %s %v", out, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(workspace, "result.txt")); err != nil || string(b) != "generated" {
+		t.Fatal("workspace output failed")
+	}
+	if _, err := newWorkspaceCommand(WithSkillRoot(context.Background(), "/"), workspace, "true", false); err == nil {
+		t.Fatal("host root mounted as skill library")
+	}
+}
+
+func TestInstalledAnatomyBuildAndCapture(t *testing.T) {
+	library := os.Getenv("MINEAGENT_TEST_SKILLS_DIR")
+	if library == "" {
+		t.Skip("optional installed-skill smoke test")
+	}
+	requireWorkspaceSandbox(t)
+	workspace := t.TempDir()
+	// Adapt just the sample's output and imports; the kit remains shared/read-only.
+	source, err := os.ReadFile(filepath.Join(library, "anatomy/examples/dial-indicator/build.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := strings.ReplaceAll(string(source), "../../", SharedSkillsMount+"/anatomy/")
+	script = strings.Replace(script, "const HERE = dirname(fileURLToPath(import.meta.url));", "const HERE = process.cwd();", 1)
+	if err = os.WriteFile(filepath.Join(workspace, "example.mjs"), []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(WithSkillRoot(context.Background(), library), 30*time.Second)
+	defer cancel()
+	cmd, err := newWorkspaceCommand(ctx, workspace, "node example.mjs && node /opt/mineagent-skills/anatomy/scripts/capture.mjs dial-indicator.html --out capture.png", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Anatomy shared runtime failed: %s %v", out, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(workspace, "capture.png")); err != nil || len(b) < 1000 || !strings.HasPrefix(string(b), "\x89PNG") {
+		t.Fatal("shared kit/browser did not generate screenshot")
+	}
+}

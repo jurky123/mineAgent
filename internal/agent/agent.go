@@ -317,6 +317,7 @@ type Agent struct {
 	cfg          config.Agent
 	// workspaceRoot 读用户上传的图片附件用（网页端上传落在 workspace 里）。
 	workspaceRoot string
+	skillsDir     string
 
 	mcRunner  *adk.Runner
 	approvals *tools.Approvals
@@ -346,6 +347,7 @@ func New(ctx context.Context, cfg config.Config, store *storage.Store, log *slog
 		cfg:           cfg.Agent,
 		modelCfg:      cfg.Model,
 		workspaceRoot: cfg.WorkspaceRoot(),
+		skillsDir:     cfg.Agent.SkillsDir,
 		pool:          newSessionPool(cfg.Agent.MaxConcurrentRuns, 10*time.Minute, log),
 		models:        make(map[string]model.BaseModel[*schema.Message]),
 		jobs:          make(chan Request, 64),
@@ -631,6 +633,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	if req.Context != nil && req.Context.Err() != nil {
 		return
 	}
+	req = a.withSkills(req)
 	if req.Started != nil {
 		req.Started()
 	}
@@ -647,6 +650,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 		rctx = tools.WithMCRequester(rctx, req.MCRequester)
 	}
 	rctx = tools.WithSession(rctx, sessionKey)
+	rctx = tools.WithSkillRoot(rctx, a.skillsDir)
 	// 回执目标进 ctx：qq_markdown/qq_image 工具凭它只能发回当前会话。
 	rctx = tools.WithReplyTarget(rctx, req.ReplyTarget)
 	var prepared *schema.Message
@@ -1080,6 +1084,7 @@ func (a *Agent) resume(ctx context.Context, out tools.Outcome) {
 		rctx = tools.WithMCRequester(rctx, run.mcRequester)
 	}
 	rctx = tools.WithSession(rctx, run.sessionKey)
+	rctx = tools.WithSkillRoot(rctx, a.skillsDir)
 	rctx = tools.WithReplyTarget(rctx, run.replyTarget)
 	if run.request.Prepare != nil {
 		var err error

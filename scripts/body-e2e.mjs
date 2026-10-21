@@ -631,6 +631,15 @@ try {
     instrument,
     `
 import { MinecraftBody } from ${JSON.stringify(pathToFileURL(path.join(repo, "body/src/minecraft.js")).href)};
+const inspectOriginal = MinecraftBody.prototype.inspect;
+MinecraftBody.prototype.inspect=function(...args){
+ const send=this.send;
+ this.send=(type,data)=>{
+  if(type==='body.inspect_result'&&data.spec?.tool==='body_goto')setTimeout(()=>send(type,data),150);
+  else send(type,data);
+ };
+ try{return inspectOriginal.apply(this,args);}finally{this.send=send;}
+};
 const original= MinecraftBody.prototype.movements;
 MinecraftBody.prototype.movements=function(...args){
  original.apply(this,args);
@@ -790,7 +799,7 @@ MinecraftBody.prototype.movements=function(...args){
         timeoutSec: 20,
       }),
     );
-    await command("tp MineBodyV1 14.5 -59.465 9.697");
+    await command("minecraft:tp MineBodyV1 14.5 -59.465 9.697");
     await wait(1500);
     assert.equal(
       (await state()).paused,

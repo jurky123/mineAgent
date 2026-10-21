@@ -17,6 +17,36 @@ export const wetFootSupport = (bot) =>
     bot.entity.position.y,
   );
 
+export function contactBackoff(bot) {
+  if (!bot.entity.isInWater) return null;
+  const p = bot.entity.position,
+    cell = [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)];
+  const normal = new Vec3(0, 0, 0);
+  for (const axis of [0, 2])
+    for (const side of [-1, 1]) {
+      const at = axis === 0 ? p.x : p.z;
+      if (Math.abs(at - cell[axis] - (side > 0 ? 0.7 : 0.3)) > 0.025) continue;
+      const next = [...cell];
+      next[axis] += side;
+      const b = bot.blockAt(new Vec3(...next));
+      if (
+        b?.shapes?.some(
+          (s) =>
+            s[0] === 0 &&
+            s[2] === 0 &&
+            s[3] === 1 &&
+            s[5] === 1 &&
+            s[1] <= p.y - cell[1] &&
+            s[4] > p.y - cell[1],
+        )
+      ) {
+        if (axis === 0) normal.x -= side;
+        else normal.z -= side;
+      }
+    }
+  return normal.norm() ? normal.normalize() : null;
+}
+
 // Recognize the client's 0.3/0.7 hitbox clamp versus the server's millimetre
 // collision margin. This is a stationary contact correction, not a general
 // allowance for idle movement; unknown positions and all other packets fail.

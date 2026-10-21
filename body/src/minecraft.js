@@ -9,6 +9,7 @@ import {
   surfaceAbove,
   wetFootSupport,
   contactPrecision,
+  contactBackoff,
 } from "./navigation.js";
 import {
   risk,
@@ -253,7 +254,12 @@ export class MinecraftBody {
       moved !== null &&
       contactPrecision(this.bot, from, to)
     ) {
-      this.prepared.clear();
+      // A fresh world/identity round-trip can span several precision packets.
+      // Movement still re-describes world, target, hands and position at call;
+      // never retain an edit, command, item or approval-bearing action here.
+      for (const [id, spec] of this.prepared)
+        if (!["body_goto", "body_look_at"].includes(spec.tool))
+          this.prepared.delete(id);
       this.event("forced_move", {
         from,
         to,
@@ -796,6 +802,53 @@ export class MinecraftBody {
       elapsedMs: Math.round(performance.now() - started),
     };
   }
+  async backOffContact(a) {
+    const b = this.bot,
+      normal = contactBackoff(b);
+    if (!normal) return;
+    const from = b.entity.position.clone(),
+      started = performance.now();
+    await this.step(a, () =>
+      b.lookAt(from.offset(normal.x, 1.62, normal.z), true),
+    );
+    await this.step(
+      a,
+      () =>
+        new Promise((resolve, reject) => {
+          let timer;
+          const done = (error) => {
+            clearInterval(timer);
+            a.abort.signal.removeEventListener("abort", aborted);
+            if (this.active === a) b.setControlState("forward", false);
+            error ? reject(error) : resolve();
+          };
+          const aborted = () =>
+            done(Object.assign(Error(a.reason), { code: a.reason }));
+          const tick = () => {
+            try {
+              this.ensure(a);
+              const p = b.entity.position;
+              if ((p.x - from.x) * normal.x + (p.z - from.z) * normal.z >= 0.22)
+                return done();
+              if (performance.now() - started > 1000)
+                fail("contact_clearance_blocked");
+              b.setControlState("jump", false);
+              b.setControlState("sprint", false);
+              b.setControlState("forward", true);
+            } catch (error) {
+              done(error);
+            }
+          };
+          a.abort.signal.addEventListener("abort", aborted, { once: true });
+          timer = setInterval(tick, 25);
+          tick();
+        }),
+    );
+    a.contactRecovery = {
+      distance: b.entity.position.distanceTo(from),
+      elapsedMs: Math.round(performance.now() - started),
+    };
+  }
   limit(key, n) {
     const now = performance.now();
     const recent = (this.limits.get(key) || []).filter((t) => now - t < 60000);
@@ -1044,6 +1097,7 @@ export class MinecraftBody {
       movedDistance: distance(start, current),
       path: a.path || null,
       ...(a.surfaceRecovery ? { surfaceRecovery: a.surfaceRecovery } : {}),
+      ...(a.contactRecovery ? { contactRecovery: a.contactRecovery } : {}),
     };
   }
   async perform(a, raw) {
@@ -1129,7 +1183,11 @@ export class MinecraftBody {
       this.movements(args.movement || "ground");
       a.origin = pos(b.entity.position);
       a.submitted = true;
-      if (args.movement === "swim") await this.surfaceForNavigation(a);
+      if (args.movement === "swim") {
+        await this.backOffContact(a);
+        await this.surfaceForNavigation(a);
+      }
+      this.ensure(a);
       const range = args.range || 2;
       const goal = new pathfinder.goals.GoalNear(...sp.target, range);
       // Search nodes and optimized path nodes use corners and centers respectively.
@@ -1161,9 +1219,29 @@ export class MinecraftBody {
         if (b.heldItem || b.inventory.slots[45]) fail("empty_hands_required");
         return activateBlock.call(b, block, ...rest);
       };
+      // This pinned 26.1 -> 26.2 proxy combination needs a conservative
+      // prediction margin: server contact planes differ by several millimetres.
+      // Only local collision prediction changes; never assign player position.
+      if (
+        args.movement === "swim" &&
+        this.config.minecraft.viaProxy &&
+        this.config.minecraft.targetVersion === "26.2" &&
+        Number.isFinite(b.physics?.playerHalfWidth)
+      ) {
+        const original =
+          this.predictionWidth?.bot === b
+            ? this.predictionWidth.original
+            : b.physics.playerHalfWidth;
+        this.predictionWidth = { bot: b, action: a, original };
+        b.physics.playerHalfWidth = Math.max(original, 0.32);
+      }
       try {
         await this.step(a, () => b.pathfinder.goto(goal));
       } finally {
+        if (this.predictionWidth?.action === a) {
+          b.physics.playerHalfWidth = this.predictionWidth.original;
+          this.predictionWidth = null;
+        }
         b.activateBlock = activateBlock;
         b.removeListener?.("path_update", pathUpdate);
       }

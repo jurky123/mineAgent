@@ -502,7 +502,14 @@ test("navigation failures preserve concrete cause, partial progress and listener
   ]) {
     const sent = [];
     const runtime = new MinecraftBody(
-      { minecraft: { username: "MineBodyTest" }, backend: { bodyId: "main" } },
+      {
+        minecraft: {
+          username: "MineBodyTest",
+          viaProxy: true,
+          targetVersion: "26.2",
+        },
+        backend: { bodyId: "main" },
+      },
       (type, data) => sent.push({ type, data }),
     );
     Object.assign(runtime, {
@@ -519,6 +526,7 @@ test("navigation failures preserve concrete cause, partial progress and listener
     const bot = Object.assign(new EventEmitter(), {
       entity: { position: { x: 0, y: 64, z: 0 } },
       game: { dimension: "overworld" },
+      physics: { playerHalfWidth: 0.3 },
       inventory: { slots: Array(46).fill(null) },
       blockAt(p) {
         return p.y === 63
@@ -545,6 +553,7 @@ test("navigation failures preserve concrete cause, partial progress and listener
     bot.pathfinder = {
       setGoal() {},
       async goto() {
+        assert.equal(bot.physics.playerHalfWidth, 0.32);
         bot.emit("path_update", {
           status: name === "Timeout" ? "timeout" : "noPath",
           visitedNodes: 42,
@@ -564,6 +573,7 @@ test("navigation failures preserve concrete cause, partial progress and listener
         y: 64,
         z: 0,
         range: 1,
+        movement: "swim",
       });
       runtime.prepared.set(spec.id, spec);
       await runtime.call({
@@ -578,6 +588,11 @@ test("navigation failures preserve concrete cause, partial progress and listener
       });
       const r = sent.findLast((e) => e.type === "body.result").data;
       assert.equal(r.ok, false);
+      assert.equal(
+        bot.physics.playerHalfWidth,
+        0.3,
+        "collision margin restored after failed/canceled paths",
+      );
       assert.equal(r.code, code);
       assert.equal(r.outcome, "confirmed");
       assert.equal(r.data.reached, false);
@@ -768,11 +783,13 @@ test("idle collision-plane precision does not relatch pause; ordinary idle moves
     deactivateItem() {},
   };
   try {
-    runtime.prepared.set("old", {});
+    runtime.prepared.set("old", { tool: "body_place" });
+    runtime.prepared.set("move", { tool: "body_goto" });
+    runtime.prepared.set("command", { tool: "body_command" });
     for (let i = 0; i < 20; i++)
       runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });
     assert.equal(runtime.paused, false);
-    assert.equal(runtime.prepared.size, 0);
+    assert.deepEqual([...runtime.prepared.keys()], ["move"]);
     assert.equal(runtime.recent.at(-1).data.precision, true);
     runtime.paused = true;
     runtime.forcedMove({ position: [0.5, 62.535, 9.7], at: Date.now() });

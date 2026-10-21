@@ -311,3 +311,54 @@ test("surfacing is action scoped, cancellable, and leaves no idle input timer", 
     clearInterval(runtime.stateTimer);
   }
 });
+
+test("water contact recovery backs into the same known cell and is cancellable", async () => {
+  const { contactBackoff } = await import("../src/navigation.js");
+  const runtime = new MinecraftBody({ minecraft: {}, backend: {} }, () => {});
+  const controls = [];
+  let forward = false;
+  runtime.bot = {
+    entity: { position: new Vec3(14.5, -59.465, 9.697), isInWater: true },
+    blockAt(p) {
+      return p.z === 10
+        ? { position: p, shapes: [[0, 0, 0, 1, 1, 1]] }
+        : { position: p, shapes: [] };
+    },
+    async lookAt() {},
+    setControlState(k, v) {
+      controls.push([k, v]);
+      if (k === "forward") forward = v;
+    },
+  };
+  runtime.ensure = (a) => {
+    if (a.abort.signal.aborted) throw Error("canceled");
+  };
+  assert.deepEqual(contactBackoff(runtime.bot).toArray(), [0, 0, -1]);
+  let ticks;
+  try {
+    const a = { abort: new AbortController(), reason: "action_canceled" };
+    runtime.active = a;
+    const pending = runtime.backOffContact(a);
+    await new Promise((r) => setTimeout(r, 10));
+    a.abort.abort();
+    await assert.rejects(pending);
+    assert.equal(forward, false);
+    const next = { abort: new AbortController() };
+    runtime.active = next;
+    ticks = setInterval(() => {
+      if (forward) runtime.bot.entity.position.z -= 0.08;
+    }, 20);
+    await runtime.backOffContact(next);
+    assert.ok(next.contactRecovery.distance >= 0.22);
+    assert.equal(
+      Math.floor(runtime.bot.entity.position.z),
+      9,
+      "backoff stays in original cell",
+    );
+    assert.equal(forward, false);
+  } finally {
+    clearInterval(ticks);
+    clearInterval(runtime.safetyTimer);
+    clearInterval(runtime.stateTimer);
+  }
+});

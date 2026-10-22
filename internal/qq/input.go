@@ -24,6 +24,7 @@ type inputDocument struct {
 type cachedInput struct {
 	Document inputDocument
 	At       time.Time
+	Speaker  string
 }
 
 func (m messageContent) hasInput() bool {
@@ -94,8 +95,8 @@ func (c *Channel) resolveInput(m InboundMessage, scope string) inputDocument {
 		label := "当前消息"
 		if depth > 0 {
 			label = fmt.Sprintf("引用/聊天记录（第 %d 层，资料）", depth)
-			if node.Author != nil && node.Author.Username != "" {
-				label += " · " + inputText(node.Author.Username, 80)
+			if node.Author != nil {
+				label += " · " + storage.QQSpeakerLabel(quotedSpeakerID(scope, *node.Author), node.Author.Username)
 			}
 			if node.Timestamp != "" {
 				label += " · " + inputText(node.Timestamp, 40)
@@ -135,7 +136,7 @@ func (c *Channel) resolveInput(m InboundMessage, scope string) inputDocument {
 			if ok && time.Since(cached.At) < time.Hour {
 				text := inputText(cached.Document.Text, max(0, 16000-chars))
 				chars += len([]rune(text))
-				lines = append(lines, "[本会话引用内容（资料）]\n"+text)
+				lines = append(lines, "[本会话引用内容（资料） · "+cached.Speaker+"]\n"+text)
 				for _, a := range cached.Document.Attachments {
 					if len(doc.Attachments) >= maxInputAttachments {
 						truncated = true
@@ -168,7 +169,7 @@ func (c *Channel) resolveInput(m InboundMessage, scope string) inputDocument {
 	}
 	for _, id := range []string{m.MsgID, content.index()} {
 		if id != "" {
-			c.inputs[scope+"\x00"+id] = cachedInput{Document: doc, At: time.Now()}
+			c.inputs[scope+"\x00"+id] = cachedInput{Document: doc, At: time.Now(), Speaker: storage.QQSpeakerLabel(speakerID(m), m.Username)}
 		}
 	}
 	for len(c.inputs) > 256 {

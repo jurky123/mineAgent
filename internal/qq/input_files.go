@@ -48,6 +48,7 @@ type inputBundle struct {
 	message       *schema.Message
 	err           error
 	client        *http.Client
+	speakerLabel  string
 }
 
 func (b *inputBundle) cleanup() {
@@ -74,7 +75,11 @@ func (b *inputBundle) load(ctx context.Context, doc inputDocument, display strin
 	if b.client == nil {
 		b.client = tools.PublicDownloadClient(35 * time.Second)
 	}
-	text := "[" + inputText(display, 100) + "]\n" + doc.Text
+	label := b.speakerLabel
+	if label == "" {
+		label = inputText(display, 100)
+	}
+	text := "[" + label + "]\n" + doc.Text
 	var parts []schema.MessageInputPart
 	remaining := int64(maxInputTotalBytes)
 	for i, a := range doc.Attachments {

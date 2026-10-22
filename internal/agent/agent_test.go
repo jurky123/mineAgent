@@ -425,7 +425,7 @@ func TestHistoryIsolatedBySession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(qqMsgs) != 1 || qqMsgs[0].Content != "[小明] qq消息" {
+	if len(qqMsgs) != 1 || qqMsgs[0].Content != "["+storage.QQSpeakerLabel("", "小明")+"] qq消息" {
 		t.Fatalf("qq history = %+v", qqMsgs)
 	}
 }

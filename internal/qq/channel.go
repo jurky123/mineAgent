@@ -27,8 +27,8 @@ import (
 // （qq:group:<group_openid>），MC 主会话（minecraft-main）保持全服共享不变。
 // QQ 消息不进 MC 会话，MC 聊天也不进 QQ 会话，天然隔离。
 //
-// 触发规则：C2C 全部触发（单聊本来就是找机器人说话）；群聊只有 @机器人的
-// 事件才会推过来（GROUP_AT_MESSAGE_CREATE），content 已去@前缀，直接触发。
+// 触发规则：C2C 和明确 @ 直接触发；平台下发全量群消息时，按群开启的
+// /auto 模式积累上下文并选择自然接话。是否能收到全量消息由 QQ 权限决定。
 //
 // 安全：
 //   - 入站去重 + 有界 FIFO；不因消息到达太快而静默丢弃。
@@ -56,11 +56,14 @@ type Channel struct {
 	inputClient *http.Client
 
 	routingMu sync.Mutex
-	mu        sync.Mutex
-	sessions  map[string]*session.Session
-	seen      map[string]time.Time
-	tasks     map[string][]*qqTask
-	inputs    map[string]cachedInput
+	// autoGroups and all timers are guarded by routingMu, like /new routing.
+	autoGroups map[string]*autoGroup
+	closing    bool
+	mu         sync.Mutex
+	sessions   map[string]*session.Session
+	seen       map[string]time.Time
+	tasks      map[string][]*qqTask
+	inputs     map[string]cachedInput
 }
 
 func NewChannel(log *slog.Logger, cfg config.Config, hub *session.Hub, store *storage.Store,
@@ -117,6 +120,12 @@ func (c *Channel) Name() string { return "qq" }
 func (c *Channel) Start() { c.gw.Start() }
 
 func (c *Channel) Stop() {
+	c.routingMu.Lock()
+	c.closing = true
+	for _, group := range c.autoGroups {
+		group.cancelPending()
+	}
+	c.routingMu.Unlock()
 	c.mu.Lock()
 	for _, tasks := range c.tasks {
 		for _, t := range tasks {
@@ -236,6 +245,9 @@ func (c *Channel) sendMedia(ctx context.Context, target, caption string, fileTyp
 func (c *Channel) onMessage(m InboundMessage) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	if m.MsgID == "" {
+		return
+	}
 
 	// 去重：平台可能重推同一 msg_id。
 	c.mu.Lock()
@@ -265,7 +277,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		sessionKey = "qq:c2c:" + m.UserOpenID
 		display = firstNonEmpty(m.Username, "QQ用户")
 		target = "c2c:" + m.UserOpenID + ":" + m.MsgID
-	case "group_at":
+	case "group_at", "group":
 		if m.GroupOpenID == "" {
 			return
 		}
@@ -278,13 +290,30 @@ func (c *Channel) onMessage(m InboundMessage) {
 
 	c.routingMu.Lock()
 	defer c.routingMu.Unlock()
+	if c.closing {
+		return
+	}
 	scope := sessionKey
+	if m.Kind == "group" {
+		c.autoState(scope).lastSeen = time.Now()
+	}
 	active, err := c.store.ActiveQQConversation(ctx, scope, time.Now().UnixMilli())
 	if err != nil {
 		c.log.Error("qq active conversation", "err", err)
 		return
 	}
 	sessionKey = active.SessionID
+	if c.autoCommand(ctx, m, scope, sessionKey, target, text) {
+		return
+	}
+	if m.Kind == "group" {
+		c.observeAuto(ctx, m, scope, sessionKey, display, target)
+		return
+	}
+	if group := c.autoGroups[scope]; group != nil {
+		group.cancelPending()
+		group.messages = 0
+	}
 	if cmd, arg := tools.MatchConversationCommand(text); cmd != "" {
 		c.conversationCommand(ctx, scope, target, cmd, arg, active)
 		return
@@ -326,6 +355,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 			Requester: tools.QQRequesterPrefix + qqID,
 		}, cmd, arg)
 		if cmd == "help" {
+			reply += "\n/auto 查看自然接话状态；QQ 管理员在群内用 /auto on 或 /auto off 开关。需在 QQ 群设置允许机器人获取全部消息。"
 			reply += "\n/tasks 或 /queue 查看任务；/stop 停止你的运行和排队任务。\n支持发送文件、GIF 动图、图片、语音、视频与 Unicode 表情（按 QQ 平台权限）。"
 			reply += "\n可以直接发送附件，或引用消息后提问；支持图片、文档、视频关键帧及平台提供的引用/聊天记录。引用缺失时请转发原文、导出文件或截图。"
 		}
@@ -349,7 +379,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 	stored, err := sess.Ingest(ctx, storage.Message{
 		Channel:    "qq",
 		AuthorKind: "player",
-		AuthorID:   sessionKey,
+		AuthorID:   speakerID(m),
 		AuthorName: display,
 		Text:       text,
 		Target:     target,
@@ -403,7 +433,8 @@ func (c *Channel) onMessage(m InboundMessage) {
 		instruction += "\n\n" + qqProtocolCapabilities
 	}
 	instruction += "\n\n" + qqInputCapabilities
-	bundle := &inputBundle{client: c.inputClient}
+	instruction += "\n\n" + qqConversationStyle
+	bundle := &inputBundle{client: c.inputClient, speakerLabel: storage.QQSpeakerLabel(speakerID(m), display)}
 	if isAdmin {
 		bundle.workspaceRoot = c.workspaceRoot
 	}
@@ -416,6 +447,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 				if len(msg.UserInputMultiContent) > 0 {
 					body = msg.UserInputMultiContent[0].Text
 				}
+				body = strings.TrimPrefix(body, "["+bundle.speakerLabel+"]\n")
 				body += "\n[历史保存说明：后续对话只保留上述预览和状态，不附原图/视频帧；附件编号和分页工具仅属于原任务，后续要继续读取请引用原消息或重发附件。]"
 				if updateErr := c.store.UpdateQQInput(ctx, sessionKey, stored.ID, body); updateErr != nil {
 					return ctx, nil, updateErr
@@ -546,7 +578,7 @@ Minecraft 服务器「jzk 的服务器」只是你能做的一件事（查状态
   非管理员调用会被直接拒绝，不要绕过。操作限制在 workspace 目录内，可被用户停止，有输出上限。
   装依赖用 $VENV_BIN/pip install（只进 workspace/.venv），下载用 curl/wget（仅公开 http(s) 到 workspace）；
   这两类先过静态约束再送 LLM 语义审查，被拒时如实转告。写文件前先 ls/read，重要操作先 dry-run。
-- 对话管理命令（/help /status /memory /usage /bind /unbind /myid /tasks /queue /stop /new /fork /resume /effort）由系统层直接回复，
+- 对话管理命令（/help /status /memory /usage /bind /unbind /myid /tasks /queue /stop /new /fork /resume /effort /auto）由系统层直接回复，
   你照着 help 文案介绍，不要自己编命令列表。`
 
 // Keep custom personalities/capability text, while correcting stale descriptions

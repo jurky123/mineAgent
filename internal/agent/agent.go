@@ -58,6 +58,9 @@ const systemInstruction = `你在 Minecraft 服务器「jzk 的服务器」里�
   如果玩家问起这些命令，你照着 help 文案介绍，不要自己编命令列表。`
 
 type Request struct {
+	// Social is a trusted QQ channel's optional group-chat turn. It uses one
+	// tool-free generation and may choose silence. Explicit tasks never set it.
+	Social        bool
 	BodyPrincipal *body.Principal
 	MaxIterations int
 	// Context is an optional per-request cancellation signal, independent of the HTTP request.
@@ -656,7 +659,9 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	if req.Context != nil && req.Context.Err() != nil {
 		return
 	}
-	req = a.withSkills(req)
+	if !req.Social {
+		req = a.withSkills(req)
+	}
 	if req.Started != nil {
 		req.Started()
 	}
@@ -691,6 +696,9 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 	msgs, cutoff, err := a.history(sessionKey, req.TriggerMessageID)
 	if err != nil {
 		a.log.Error("agent history", "err", err)
+		if req.Social {
+			return
+		}
 		_ = req.Session.Reply(rctx, "抱歉，读取聊天记录失败。", req.Player)
 		return
 	}
@@ -706,6 +714,11 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 
 	cpID := fmt.Sprintf("run-%d", time.Now().UnixNano())
 	a.log.Info("agent run", "session", sessionKey, "player", req.Player, "queryChars", len([]rune(req.Query)), "messages", len(msgs), "trigger", req.TriggerMessageID, "checkpoint", cpID)
+	if req.Social {
+		a.respondSocial(rctx, req, msgs)
+		a.log.Info("agent replied", "session", sessionKey, "backend", "social", "optional", true)
+		return
+	}
 
 	if a.dsh != nil {
 		if route, ok := a.dsh.Route(req.Model, a.modelCfg.Name); ok {
@@ -1310,7 +1323,11 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 		case "player":
 			// 只认网页通道的附件标记（其它通道的文本不做标记解析，防注入）。
 			withVision := i == lastPlayer && m.Channel == "web"
-			msgs = append(msgs, a.userMessage(m.AuthorName, m.Text, withVision))
+			name := m.AuthorName
+			if m.Channel == "qq" {
+				name = storage.QQSpeakerLabel(m.AuthorID, name)
+			}
+			msgs = append(msgs, a.userMessage(name, m.Text, withVision))
 		case "agent":
 			// Older releases persisted queue status as assistant output. Keep it
 			// visible in history, but never teach the model to repeat it.

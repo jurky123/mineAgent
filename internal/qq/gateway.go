@@ -50,6 +50,7 @@ type Gateway struct {
 
 	mu        sync.Mutex
 	sessionID string
+	botID     string
 	seq       int64
 
 	stopCh  chan struct{}
@@ -279,6 +280,9 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 			return
 		}
 		g.setSession(r.SessionID)
+		g.mu.Lock()
+		g.botID = r.User.ID
+		g.mu.Unlock()
 		g.log.Info("qq gateway ready", "session", r.SessionID, "bot", r.User.Username)
 	case "RESUMED":
 		g.log.Info("qq gateway resumed")
@@ -302,7 +306,7 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 			Text:        e.Content,
 			content:     e.messageContent,
 		})
-	case "GROUP_AT_MESSAGE_CREATE":
+	case "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
 		var e groupAtEvent
 		if err := json.Unmarshal(d, &e); err != nil {
 			g.log.Warn("qq gateway bad group event", "err", err)
@@ -314,15 +318,43 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 		if !e.messageContent.hasInput() {
 			return
 		}
+		kind := "group"
+		g.mu.Lock()
+		botID := g.botID
+		g.mu.Unlock()
+		directed, other := t == "GROUP_AT_MESSAGE_CREATE", false
+		text := e.Content
+		for _, mention := range e.Mentions {
+			if mention.IsYou || (botID != "" && mention.ID == botID) {
+				directed = true
+				for _, id := range []string{mention.ID, mention.MemberOpenID} {
+					if id != "" {
+						text = strings.ReplaceAll(text, "<@"+id+">", "")
+						text = strings.ReplaceAll(text, "<@!"+id+">", "")
+					}
+				}
+			} else {
+				other = true
+			}
+		}
+		if botID != "" && (strings.Contains(e.Content, "<@"+botID+">") || strings.Contains(e.Content, "<@!"+botID+">")) {
+			directed = true
+			text = strings.ReplaceAll(text, "<@"+botID+">", "")
+			text = strings.ReplaceAll(text, "<@!"+botID+">", "")
+		}
+		if directed {
+			kind = "group_at"
+		}
 		g.emit(InboundMessage{
-			Kind: "group_at", MsgID: e.ID, EventID: eventID,
-			GroupOpenID:  e.GroupOpenID,
-			MemberOpenID: firstNonEmpty(e.Author.MemberOpenID, e.Author.ID),
-			UnionOpenID:  e.Author.UnionOpenID,
-			Username:     e.Author.Username,
-			Text:         e.Content,
-			content:      e.messageContent,
-			MemberRole:   e.Author.MemberRole,
+			Kind: kind, MsgID: e.ID, EventID: eventID,
+			HasOtherMention: other,
+			GroupOpenID:     e.GroupOpenID,
+			MemberOpenID:    firstNonEmpty(e.Author.MemberOpenID, e.Author.ID),
+			UnionOpenID:     e.Author.UnionOpenID,
+			Username:        e.Author.Username,
+			Text:            strings.TrimSpace(text),
+			content:         e.messageContent,
+			MemberRole:      e.Author.MemberRole,
 		})
 	default:
 		// FRIEND_ADD/DEL、C2C_MSG_REJECT/RECEIVE、GROUP_ADD/DEL_ROBOT 等

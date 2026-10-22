@@ -65,6 +65,7 @@ type readyData struct {
 }
 
 type qqUser struct {
+	IsYou        bool   `json:"is_you"`
 	ID           string `json:"id"`
 	Username     string `json:"username"`
 	Bot          bool   `json:"bot"`
@@ -111,6 +112,7 @@ type messageContent struct {
 	ArkData      json.RawMessage   `json:"ark_data"`
 	Author       *qqUser           `json:"author"`
 	Timestamp    string            `json:"timestamp"`
+	Mentions     []qqUser          `json:"mentions"`
 }
 
 type messageReference struct {
@@ -125,7 +127,7 @@ type Attachment struct {
 
 // InboundMessage 是网关事件归一化后的内部消息，channel.go 消费它。
 type InboundMessage struct {
-	// Kind: "c2c" 或 "group_at"。
+	// Kind: "c2c", "group_at"（含全量事件中明确@自己）, "group"。
 	Kind string
 	// MsgID: 平台消息 id，被动回复用（C2C 60分钟/群 5分钟内有效）。
 	MsgID string
@@ -146,4 +148,6 @@ type InboundMessage struct {
 	content messageContent
 	// MemberRole: 群内角色 member/admin/owner。
 	MemberRole string
+	// HasOtherMention prevents unsolicited replies to messages addressed to others.
+	HasOtherMention bool
 }

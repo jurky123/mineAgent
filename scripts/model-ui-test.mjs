@@ -180,6 +180,19 @@ try {
   assert.equal(await page.locator('.reason-sparkles').evaluate(el=>getComputedStyle(el).display),'none');
   assert.equal(await high.getAttribute('aria-checked'),'true','reduced motion changed effort');
   await page.emulateMedia({reducedMotion:'no-preference'});
+  // A slow options read must not overwrite a more recent slider selection.
+  let releaseOptions, optionsArrived;
+  const optionsSeen = new Promise(resolve=>{optionsArrived=resolve;});
+  const optionsRelease = new Promise(resolve=>{releaseOptions=resolve;});
+  await page.route('**/api/options*',async route=>{
+    optionsArrived(); await optionsRelease;
+    await route.fulfill({json:{models,skills:[],model:selection,defaultModel:'old',effort:'high'}});
+  });
+  await page.evaluate(()=>{window.oldOptions=import('/static/preview/js/composer.js').then(c=>c.loadOptions(true,false));});
+  await optionsSeen;await page.getByRole('radio',{name:'低',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#intellabel').textContent.includes('低'));
+  releaseOptions();await page.evaluate(()=>window.oldOptions);
+  assert.match(await page.locator('#intellabel').textContent(),/低/,'stale options overwrote a newer preference');
   assert.deepEqual(errors, []);
   console.log('Model UI checks passed (catalog, preview isolation, restored aurora/particles, fractional drag and snap, cancel, optimistic feedback, save rollback, keyboard/focus, reduced motion).');
 } finally {

@@ -37,6 +37,8 @@ func (c *Channel) conversationCommand(ctx context.Context, u *storage.User, conv
 	haveSelection := conv != nil
 	reply := ""
 	switch cmd {
+	case "effort":
+		// Applied after the selected session (including a new draft) exists.
 	case "help":
 		reply = tools.ExecSystemCommand(tools.SysCtx{Ctx: ctx, Store: c.store, SessionID: webSessionKey(u.ID, current), Channel: "web", IsAdmin: u.IsAdmin}, "help", "")
 	case "new", "fork":
@@ -133,6 +135,13 @@ func (c *Channel) conversationCommand(ctx context.Context, u *storage.User, conv
 			return current, err
 		}
 		selected = id
+	}
+	if cmd == "effort" {
+		var err error
+		reply, err = tools.EffortCommand(ctx, c.store, webSessionKey(u.ID, selected), arg, c.prefsOf(u.Username).Effort)
+		if err != nil {
+			return selected, err
+		}
 	}
 	sess, err := c.session(webSessionKey(u.ID, selected))
 	if err != nil {

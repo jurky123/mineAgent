@@ -1,16 +1,20 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"mineagent/internal/storage"
 )
 
 // accountPrefs 是网页账号的偏好（+ 菜单里改）：模型与思考强度。
 // 存 data/webui/prefs.json，重启不掉；空字符串 = 用默认。
 type accountPrefs struct {
-	Model  string `json:"model,omitempty"`
-	Effort string `json:"effort,omitempty"`
+	Model         string `json:"model,omitempty"`
+	Effort        string `json:"effort,omitempty"`
+	SessionEffort bool   `json:"-"`
 }
 
 func (c *Channel) loadPrefs() {
@@ -79,4 +83,30 @@ func validEffort(v string) bool {
 		}
 	}
 	return false
+}
+
+// A session override is shared by the slash command and the existing slider.
+// The saved account preference remains the fallback for new/default sessions.
+func (c *Channel) effectivePrefs(ctx context.Context, name, key string) (accountPrefs, error) {
+	p := c.prefsOf(name)
+	value, err := c.store.SessionEffort(ctx, key)
+	if value != "" {
+		p.Effort = value
+		p.SessionEffort = true
+	}
+	return p, err
+}
+
+func (c *Channel) checkPrefsConversation(ctx context.Context, u *storage.User, conv *string) error {
+	if conv == nil || *conv == "" {
+		return nil
+	}
+	row, err := c.store.ConversationFor(ctx, u.ID, u.Username, *conv)
+	if err != nil {
+		return err
+	}
+	if row == nil {
+		return ErrConvNotFound
+	}
+	return nil
 }

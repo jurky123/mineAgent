@@ -25,7 +25,7 @@ import (
 // production identity or credentials are involved.
 func TestDSHBodyMergePreservesBudgetsAndPublicScope(t *testing.T) {
 	for _, provider := range []string{"deepseek-official", "opencode-go"} {
-		for _, mode := range []string{"body-default", "body-unlimited", "body-high", "public-mc"} {
+		for _, mode := range []string{"body-default", "body-unlimited", "body-high", "body-conversation-high", "public-mc"} {
 			t.Run(provider+"/"+mode, func(t *testing.T) {
 				isBody := mode != "public-mc"
 				type result struct {
@@ -54,7 +54,7 @@ func TestDSHBodyMergePreservesBudgetsAndPublicScope(t *testing.T) {
 					expectedSteps, expectedEffort := 12, "low"
 					if mode == "body-unlimited" {
 						expectedSteps = 0
-					} else if mode == "body-high" {
+					} else if mode == "body-high" || mode == "body-conversation-high" {
 						expectedEffort = "high"
 					} else if !isBody {
 						expectedSteps, expectedEffort = 8, "high"
@@ -140,6 +140,9 @@ func TestDSHBodyMergePreservesBudgetsAndPublicScope(t *testing.T) {
 				if isBody {
 					req.BodyPrincipal, req.Tools = core.Principal(1, 1, "owner"), core.Tools()
 					req.ReasoningEffort = "high" // Body configuration overrides general chat preferences.
+					if mode == "body-conversation-high" {
+						req.ConversationEffort = true
+					}
 				}
 				if !a.Submit(req) {
 					t.Fatal("submit failed")

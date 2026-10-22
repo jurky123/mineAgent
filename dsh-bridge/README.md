@@ -14,7 +14,7 @@
 
 QQ 排队和队满提示作为 `system` 通知保存，不进入模型上下文；兼容过滤旧版保存为助手消息的同类提示。QQ 请求历史纳入前一轮晚到的实际回答，但始终以本轮触发用户消息结尾，排除本轮通知、回复和后续输入。桥接发送前也校验最后一条为用户消息，避免把不合法上下文交给 DSH。修复不修改或删除既有聊天记录。
 
-普通聊天默认思考强度 `high`，任务无额外总时限；非 MC 轮次沿用 `qqMaxIterations=0` 无限，MC 公共聊天保留 8 次模型步骤。已授权身体任务优先使用 `body.maxSteps`（默认12，显式0不限）与 `body.reasoningEffort`（默认medium），沿用每轮连续只读3次的工具层限制。DeepSeek 官方适配器只有 off/low/high/max 档：none→off、minimal→low、xhigh→max；普通聊天 medium→high，身体任务 medium→low，显式身体 high 仍为high。`opencode-go` 的 `deepseek-v4.1-flash` 经适配器能力核对支持low/high/max，沿用minimal→low、xhigh→max、普通聊天medium→high及身体medium→low；该路由没有思考关闭档，不把none自动改成开启思考。其他适配器/模型直接接收所选值，不支持时明确失败。
+普通聊天默认思考强度 `high`，任务无额外总时限；非 MC 轮次沿用 `qqMaxIterations=0` 无限，MC 公共聊天保留 8 次模型步骤。已授权身体任务优先使用 `body.maxSteps`（默认12，显式0不限）与 `body.reasoningEffort`（默认medium），沿用每轮连续只读3次的工具层限制。DeepSeek 官方适配器只有 off/low/high/max 档：none→off、minimal→low、xhigh→max；普通聊天 medium→high，身体任务 medium→low，显式身体 high 仍为high。网页 `/effort` 或滑杆明确设置的会话覆盖值优先于默认身体思考档位，执行步数、审批和只读预算不受影响。`opencode-go` 的 `deepseek-v4.1-flash` 经适配器能力核对支持low/high/max，沿用minimal→low、xhigh→max、普通聊天medium→high及身体medium→low；该路由没有思考关闭档，不把none自动改成开启思考。其他适配器/模型直接接收所选值，不支持时明确失败。
 
 MineAgent 保留原队列；桥接客户端和 DSH 插件额外保证桥接任务一次一个。审批直接送到等待中的工具，不排入被占用的工作队列；等待审批期间该桥接任务占住 FIFO，状态、审批与停止入口不受阻。此队列只约束 MineAgent 桥接任务，用户在 DSH Web 原生发起的任务仍由 DSH 自己调度。
 

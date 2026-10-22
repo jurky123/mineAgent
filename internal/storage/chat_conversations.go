@@ -56,6 +56,10 @@ func copyConversationHistory(ctx context.Context, tx *sql.Tx, source, dest strin
  ) INSERT INTO summaries(session_id,up_to_message_id,text,created_at)
  SELECT ?,COALESCE((SELECT MAX(new_id) FROM mapping WHERE old_id<=s.up_to_message_id),0),s.text,s.created_at
  FROM summaries s WHERE s.session_id=? ORDER BY s.id`, source, dest, dest, source)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO session_efforts(session_id,effort) SELECT ?,effort FROM session_efforts WHERE session_id=?`, dest, source)
 	return err
 }
 

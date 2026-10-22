@@ -14,6 +14,13 @@ func (c *Channel) conversationCommand(ctx context.Context, scope, target, cmd, a
 	var err error
 	var reply string
 	switch cmd {
+	case "effort":
+		fallback := c.cfg.ReasoningEffort
+		if fallback == "" {
+			fallback = "high"
+		}
+		reply, err = tools.EffortCommand(ctx, c.store, current.SessionID, arg, fallback)
+
 	case "new", "fork":
 		if arg != "" {
 			reply = "用法：/" + cmd + "（不带参数）"
@@ -52,7 +59,7 @@ func (c *Channel) conversationCommand(ctx context.Context, scope, target, cmd, a
 		}
 	}
 	if err != nil {
-		reply = "会话操作失败，未切换。请用 /resume 核对当前可恢复的会话。"
+		reply = "会话设置或切换失败，本次未生效。请稍后重试。"
 		if err == storage.ErrConversationNotFound {
 			reply = err.Error() + "。用 /resume 查看当前范围的会话。"
 		}

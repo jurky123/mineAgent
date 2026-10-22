@@ -8,7 +8,7 @@ import { refresh as refreshConversations, switchTo } from './conversations.js';
 import { openViewer } from './viewer.js';
 
 // These commands remain available while an answer is running.
-function directCommand(text) { return /^\/(?:help|new|fork|resume)(?:\s|$)/i.test(text.trim()); }
+function directCommand(text) { return /^\/(?:help|new|fork|resume|effort)(?:\s|$)/i.test(text.trim()); }
 
 // ---------- 输入 ----------
 export function autoGrow() {
@@ -46,6 +46,7 @@ export async function sendMsg() {
       await refreshConversations();
       if (S.conv === originConv) await switchTo(res.conv);
     }
+    if (res?.conversationCommand) await loadOptions(true, false);
     sentPending.forEach((p) => p.url && URL.revokeObjectURL(p.url));
     if (res?.running && S.conv === res.conv) setTyping(true, res.running.text, res.running.startedAt);
     await syncAfter();
@@ -191,6 +192,7 @@ const CMDS = [
   { c: '/new', d: '开启空白对话，保留旧历史' },
   { c: '/fork', d: '复制当前历史进入新分支' },
   { c: '/resume', d: '列出会话或恢复指定编号' },
+  { c: '/effort', d: '查看或设置思考强度：low / medium / high / default' },
   { c: '/usage', d: '模型额度与用量' },
   { c: '/status', d: '服务 / 连接状态' },
   { c: '/memory', d: '记忆概况（clear 清空，summary 看摘要）' },
@@ -457,7 +459,7 @@ export function openIntelPopover() {
     '<div class="reason-dots" id="reason-dots"></div><div class="reason-thumb" id="reason-thumb"></div></div>' +
     '<div class="reason-labels" id="reason-labels" role="radiogroup" aria-label="思考强度">' +
     INTEL.map((item, i) => '<button type="button" role="radio" aria-checked="' + (i === idx) + '" tabindex="' + (i === idx ? 0 : -1) + '">' + item.name + '</button>').join('') +
-    '</div></div><p class="effort-note">高强度适合复杂任务，通常需要更长时间。默认沿用站点设置；实际支持情况取决于当前模型。</p>';
+    '</div></div><p class="effort-note">高强度适合复杂任务，通常需要更长时间。默认沿用账号或站点设置；实际支持情况取决于当前模型。</p>';
   const reason = $('reason'), track = $('reason-track'), thumb = $('reason-thumb'), fill = $('reason-fill');
   const labels = [...$('reason-labels').children];
   const dots = $('reason-dots'); dots.innerHTML = INTEL.map(() => '<div class="reason-dot"></div>').join('');
@@ -545,7 +547,10 @@ export function openIntelPopover() {
 
 async function setPrefs(patch) {
   try {
-    const r = await apiPost('/api/prefs', patch);
+    const origin = S.conv, token = S.token;
+    const r = await apiPost('/api/prefs', origin === null ? patch : { ...patch, conv: origin });
+    if (S.conv !== origin || S.token !== token) return true;
+    optionsRequest++;
     S.options.model = r.model; S.options.effort = r.effort;
     renderToolbar();
     if ('model' in patch) {
@@ -556,13 +561,33 @@ async function setPrefs(patch) {
   } catch (e) { showError(e.message); return false; }
 }
 
-export async function loadOptions(force) {
-  if (S.options && !force) { renderToolbar(); return S.options; }
-  if (S.token !== 'debug') S.options = await api('/api/options' + (force ? '?refresh=1' : ''));
-  catalogReadAt = Date.now();
-  renderToolbar();
-  return S.options;
+let optionsConv, optionsRequest = 0, optionsPending;
+export async function loadOptions(force, refreshCatalog = force) {
+  const conv = S.conv, token = S.token;
+  if (!force && optionsPending?.conv === conv && optionsPending.token === token && optionsPending.request === optionsRequest) return optionsPending.promise;
+  if (S.options && !force && optionsConv === conv) { renderToolbar(); return S.options; }
+  if (S.token === 'debug') { optionsConv = conv; renderToolbar(); return S.options; }
+  const pending = { conv, token, request: ++optionsRequest };
+  const query = new URLSearchParams();
+  if (refreshCatalog) query.set('refresh', '1');
+  if (conv !== null) query.set('conv', conv);
+  pending.promise = (async () => {
+    const options = await api('/api/options' + (query.size ? '?' + query : ''));
+    if (S.conv !== conv || S.token !== token) return S.options;
+    if (pending.request !== optionsRequest) {
+      // A caller waiting for initial options must wait for the newer read,
+      // rather than opening an empty model list while it is still in flight.
+      const newer = optionsPending;
+      return newer !== pending && newer?.conv === conv && newer.token === token && newer.request === optionsRequest ? newer.promise : S.options;
+    }
+    S.options = options; optionsConv = conv; catalogReadAt = Date.now();
+    renderToolbar(); return S.options;
+  })();
+  optionsPending = pending;
+  try { return await pending.promise; }
+  finally { if (optionsPending === pending) optionsPending = null; }
 }
+bus.on('conversation-selected', () => { closePopovers(); loadOptions().catch(() => {}); });
 
 // ---------- 事件绑定 ----------
 const isMobile = () => window.matchMedia('(max-width: 899px)').matches;

@@ -100,6 +100,9 @@ type Request struct {
 	// 网页通道按账号偏好填（+ 菜单里切模型/思考强度）。
 	Model           string
 	ReasoningEffort string
+	// Set only by a trusted channel when the user explicitly selected a
+	// conversation override. It changes reasoning, never body execution budgets.
+	ConversationEffort bool
 }
 
 // ToolEvent contains lifecycle metadata only; arguments and raw results may contain private data.
@@ -536,7 +539,9 @@ func (a *Agent) Submit(req Request) bool {
 		if req.MaxIterations == 0 {
 			req.MaxIterations = req.BodyPrincipal.MaxSteps()
 		}
-		req.ReasoningEffort = req.BodyPrincipal.ReasoningEffort()
+		if !req.ConversationEffort {
+			req.ReasoningEffort = req.BodyPrincipal.ReasoningEffort()
+		}
 	}
 	if !a.enabled {
 		return false

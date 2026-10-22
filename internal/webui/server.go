@@ -385,8 +385,25 @@ func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, u *stora
 	if r.URL.Query().Get("refresh") == "1" {
 		c.refreshModelCatalog()
 	}
+	var conv *string
+	if r.URL.Query().Has("conv") {
+		value := r.URL.Query().Get("conv")
+		conv = &value
+	}
+	if err := c.checkPrefsConversation(r.Context(), u, conv); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "会话不存在或不属于当前账号"})
+		return
+	}
 	catalog := c.modelCatalog(r.Context())
 	prefs := c.prefsOf(u.Username)
+	if conv != nil {
+		var err error
+		prefs, err = c.effectivePrefs(r.Context(), u.Username, webSessionKey(u.ID, *conv))
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": "读取思考强度失败"})
+			return
+		}
+	}
 	// Discovery can be partial or temporarily unavailable. GET must not erase preferences.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"skills":          c.skillsForUser(r.Context(), u),
@@ -410,9 +427,14 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, u *storage
 	var req struct {
 		Model  *string `json:"model"`
 		Effort *string `json:"effort"`
+		Conv   *string `json:"conv"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数不是合法 JSON"})
+		return
+	}
+	if err := c.checkPrefsConversation(r.Context(), u, req.Conv); err != nil {
+		writeJSON(w, 404, map[string]string{"error": "会话不存在或不属于当前账号"})
 		return
 	}
 	prefs := c.prefsOf(u.Username)
@@ -449,9 +471,33 @@ func (c *Channel) handlePrefs(w http.ResponseWriter, r *http.Request, u *storage
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "思考强度只能是 low/medium/high 或空"})
 			return
 		}
-		prefs.Effort = e
+		if req.Conv != nil {
+			key := webSessionKey(u.ID, *req.Conv)
+			if *req.Conv == "" {
+				if err := c.store.EnsureSession(r.Context(), key, time.Now().UnixMilli()); err != nil {
+					writeJSON(w, 500, map[string]string{"error": "保存思考强度失败"})
+					return
+				}
+			}
+			if err := c.store.SetSessionEffort(r.Context(), key, e); err != nil {
+				writeJSON(w, 500, map[string]string{"error": "保存思考强度失败"})
+				return
+			}
+		} else {
+			prefs.Effort = e
+		}
 	}
-	c.setPrefs(u.Username, prefs)
+	if req.Model != nil || req.Conv == nil {
+		c.setPrefs(u.Username, prefs)
+	}
+	if req.Conv != nil {
+		var err error
+		prefs, err = c.effectivePrefs(r.Context(), u.Username, webSessionKey(u.ID, *req.Conv))
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": "读取思考强度失败"})
+			return
+		}
+	}
 	c.log.Info("web prefs", "name", u.Username, "model", prefs.Model, "effort", prefs.Effort)
 	writeJSON(w, http.StatusOK, map[string]any{"model": prefs.Model, "effort": prefs.Effort})
 }

@@ -143,7 +143,7 @@ func MatchConversationCommand(text string) (string, string) {
 	}
 	name := strings.ToLower(fields[0])
 	switch name {
-	case "/new", "/fork", "/resume":
+	case "/new", "/fork", "/resume", "/effort":
 		return strings.TrimPrefix(name, "/"), strings.Join(fields[1:], " ")
 	}
 	return "", ""
@@ -180,7 +180,7 @@ func sysHelp(s SysCtx) string {
 	}
 	b.WriteString("/help —— 显示所有系统命令\n")
 	if s.Channel == "qq" || s.Channel == "web" {
-		b.WriteString("/new —— 开启空白对话，保留旧历史\n/fork —— 复制当前历史，进入独立分支\n/resume —— 列出会话；/resume <编号> 恢复；/resume page <页码> 翻页\n")
+		b.WriteString("/effort —— 查看思考强度；/effort low|medium|high|default 调整当前会话\n/new —— 开启空白对话，保留旧历史\n/fork —— 复制当前历史，进入独立分支\n/resume —— 列出会话；/resume <编号> 恢复；/resume page <页码> 翻页\n")
 	}
 	switch s.Channel {
 	case "qq":

@@ -580,7 +580,10 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 	c.log.Info("web trigger", "session", sessionKey, "author", name,
 		"files", len(files), "boundMC", mcName, "query", text, "messageId", stored.ID)
 
-	prefs := c.prefsOf(name)
+	prefs, err := c.effectivePrefs(ctx, name, sessionKey)
+	if err != nil {
+		return convID, fmt.Errorf("读取会话思考强度失败，本次未提交")
+	}
 	c.setRunning(sessionKey, "已提交，等待处理…")
 	if c.ag == nil {
 		return convID, fmt.Errorf("助手尚未就绪")
@@ -606,18 +609,19 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 			}
 			c.publishRaw(name, map[string]any{"type": "run_event", "conv": convID, "event": event})
 		},
-		Session:           sess,
-		SessionKey:        sessionKey,
-		Player:            "web:" + name,
-		RequesterID:       name,
-		MCRequester:       mcName,
-		Query:             body,
-		TriggerMessageID:  stored.ID,
-		ReplyTarget:       target,
-		Tools:             c.toolsForUser(ctx, u),
-		SystemInstruction: prompts.Resolve("web", name, webInstruction) + c.capabilityInstruction(ctx, u) + bodyInstruction,
-		Model:             prefs.Model,
-		ReasoningEffort:   prefs.Effort,
+		Session:            sess,
+		SessionKey:         sessionKey,
+		Player:             "web:" + name,
+		RequesterID:        name,
+		MCRequester:        mcName,
+		Query:              body,
+		TriggerMessageID:   stored.ID,
+		ReplyTarget:        target,
+		Tools:              c.toolsForUser(ctx, u),
+		SystemInstruction:  prompts.Resolve("web", name, webInstruction) + c.capabilityInstruction(ctx, u) + bodyInstruction,
+		Model:              prefs.Model,
+		ReasoningEffort:    prefs.Effort,
+		ConversationEffort: prefs.SessionEffort,
 		Progress: func(text string) {
 			if runCtx.Err() != nil {
 				return

@@ -1,5 +1,7 @@
 // 全局可变状态（Vanilla JS，小项目直接共享一个对象，避免过度设计）
 
+import { bus } from './ui.js';
+
 export const S = {
   token: localStorage.getItem('mineagent.token') || '',
   me: localStorage.getItem('mineagent.name') || '',
@@ -28,9 +30,11 @@ export function clearAuth() {
 }
 
 export function setConv(conv) {
+  const changed = S.conv !== conv;
   S.conv = conv;
   if (conv === null) localStorage.removeItem('mineagent.conv');
   else localStorage.setItem('mineagent.conv', conv);
+  if (changed) bus.emit('conversation-selected', conv);
 }
 
 // 请求参数：草稿不带 conv（服务端据此新建）

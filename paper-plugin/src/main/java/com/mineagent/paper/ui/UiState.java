@@ -10,11 +10,14 @@ import java.util.UUID;
 
 /** Main-thread, online-session-only history and callback guards. Never a second agent session. */
 public final class UiState {
+    public static final int PAGE_SIZE = 4;
+
     public record Message(String author, String text) {}
 
     private final Map<UUID, Deque<Message>> history = new HashMap<>();
     private final Map<UUID, UUID> screens = new HashMap<>();
     private final Map<UUID, Long> sentAt = new HashMap<>();
+    private final Map<UUID, String> chatDrafts = new HashMap<>(), taskDrafts = new HashMap<>();
 
     public UUID open(UUID player) {
         UUID token = UUID.randomUUID();
@@ -34,6 +37,8 @@ public final class UiState {
         screens.remove(player);
         history.remove(player);
         sentAt.remove(player);
+        chatDrafts.remove(player);
+        taskDrafts.remove(player);
     }
 
     public void record(UUID viewer, String author, String text) {
@@ -44,6 +49,25 @@ public final class UiState {
 
     public List<Message> history(UUID player) {
         return List.copyOf(history.getOrDefault(player, new ArrayDeque<>()));
+    }
+
+    public List<Message> historyPage(UUID player, int page) {
+        List<Message> entries = history(player);
+        int end = Math.max(0, entries.size() - Math.max(0, page) * PAGE_SIZE);
+        return entries.subList(Math.max(0, end - PAGE_SIZE), end);
+    }
+
+    public String draft(UUID player, boolean task) {
+        return (task ? taskDrafts : chatDrafts).getOrDefault(player, "");
+    }
+
+    public void draft(UUID player, boolean task, String text) {
+        if (text == null
+                || text.length() > 512
+                || text.codePoints().anyMatch(Character::isISOControl)) return;
+        Map<UUID, String> drafts = task ? taskDrafts : chatDrafts;
+        if (text.isEmpty()) drafts.remove(player);
+        else drafts.put(player, text);
     }
 
     public boolean maySend(UUID player, long now) {
@@ -71,6 +95,10 @@ public final class UiState {
 
     /** MineUI text is single-line. Wrap plain text before sending; never parse markup/actions. */
     public static List<String> lines(String text) {
+        return lines(text, false);
+    }
+
+    public static List<String> lines(String text, boolean newest) {
         List<String> out = new ArrayList<>();
         for (String paragraph : text.replace("\r", "").split("\n", -1)) {
             StringBuilder line = new StringBuilder();
@@ -87,6 +115,8 @@ public final class UiState {
             }
             out.add(line.isEmpty() ? " " : line.toString());
         }
-        return out.stream().limit(250).toList();
+        return newest
+                ? List.copyOf(out.subList(Math.max(0, out.size() - 250), out.size()))
+                : out.stream().limit(250).toList();
     }
 }

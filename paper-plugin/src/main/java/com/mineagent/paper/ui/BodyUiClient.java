@@ -69,6 +69,14 @@ final class BodyUiClient {
         return c == null ? "" : c.error;
     }
 
+    void poll(Player player, Runnable done) {
+        Connection c = connections.get(player.getUniqueId());
+        if (c != null && System.currentTimeMillis() - c.receivedAt < 2000) return;
+        if (pending.values().stream().anyMatch(p -> p.player().equals(player.getUniqueId())))
+            return;
+        request(player, "status", null, null, done);
+    }
+
     String chatSession(Player player) {
         checkGeneration();
         Connection c = connections.get(player.getUniqueId());

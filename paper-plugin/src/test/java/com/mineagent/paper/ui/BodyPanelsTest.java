@@ -8,6 +8,21 @@ import org.junit.jupiter.api.Test;
 
 class BodyPanelsTest {
     @Test
+    void privateConversationShowsRunningToolAndRetainsAnExplicitEmergencyStop() {
+        var data =
+                JsonParser.parseString(
+                                "{\"enabled\":true,\"linked\":true,\"running\":true,\"snapshot\":{\"state\":{\"task\":{\"tool\":\"body_goto\"}}}}")
+                        .getAsJsonObject();
+        var panel = BodyPanels.panel("body_task", data, "", true, "");
+        assertTrue(panel.status().contains("body_goto"));
+        assertTrue(panel.content().contains("不发送到全服"));
+        assertTrue(panel.choices().stream().anyMatch(c -> c.id().equals("body_stop")));
+        var ordinary = BodyPanels.panel("body_task", data, "", false, "");
+        assertFalse(ordinary.input());
+        assertFalse(ordinary.content().contains("body_goto"));
+    }
+
+    @Test
     void unlinkedPlayersGetSummaryAndPairingInsteadOfBodyControls() {
         var data =
                 JsonParser.parseString(

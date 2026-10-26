@@ -17,6 +17,7 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickCallback;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -39,7 +40,18 @@ public final class AgentUi implements Listener {
     public record Choice(String id, String label) {}
 
     public record Panel(
-            String title, String status, String content, List<Choice> choices, boolean input) {}
+            String title,
+            String status,
+            String content,
+            List<Choice> choices,
+            boolean input,
+            List<UiState.Message> turns,
+            String self) {
+        public Panel(
+                String title, String status, String content, List<Choice> choices, boolean input) {
+            this(title, status, content, choices, input, List.of(), "");
+        }
+    }
 
     private record View(UUID token, String page, int offset, String approvalId, boolean vanilla) {}
 
@@ -100,7 +112,7 @@ public final class AgentUi implements Listener {
     }
 
     public void open(Player player, boolean vanilla) {
-        show(player, "home", 0, "", vanilla);
+        show(player, "chat", 0, "", vanilla);
     }
 
     private void show(Player player, String page, int offset, String approvalId, boolean vanilla) {
@@ -144,17 +156,20 @@ public final class AgentUi implements Listener {
         boolean input = false;
         String title = "MineAgent · 助手";
         switch (view.page()) {
-            case "chat" -> {
-                title = "与助手对话";
+            case "home", "chat" -> {
+                title = "MineAgent · 对话";
                 input = true;
-                content = "MC 对话是全服共享的，问题和回复可能公开。\n不要输入密码或令牌。\n\n" + history(player, 0);
+                content = history(player, 0);
                 buttons.add(new Choice("refresh", "刷新回复"));
-                buttons.add(new Choice("history", "更多记录"));
+                buttons.add(new Choice("history", "本次在线记录"));
+                buttons.add(new Choice("body", "AI 玩家"));
+                buttons.add(new Choice("menu", "更多功能"));
             }
             case "history" -> {
                 title = "本次在线记录";
                 content = history(player, view.offset());
-                if (state.history(player.getUniqueId()).size() > (view.offset() + 1) * 3)
+                if (state.history(player.getUniqueId()).size()
+                        > (view.offset() + 1) * UiState.PAGE_SIZE)
                     buttons.add(new Choice("older", "更早记录"));
                 if (view.offset() > 0) buttons.add(new Choice("newer", "更新记录"));
                 buttons.add(new Choice("chat", "继续提问"));
@@ -229,12 +244,13 @@ public final class AgentUi implements Listener {
                             "直接输入 /agent 打开面板，/agent dialog 强制原版界面。\n"
                                     + "/agent <问题> 和聊天 @agent 仍可用。\n\n"
                                     + "增强界面在输入框按回车发送；原版对话框点击发送。\n"
-                                    + "原版对话框通过刷新查看新回复，也会收到聊天提示。\n"
+                                    + "原版对话框通过刷新查看新回复，按钮刷新会保留未发送草稿。\n"
                                     + "仅保存本次在线、本人实际收到的最近 30 条记录，离线即清除。\n\n"
                                     + "AI 玩家面板首次关联已验证网页管理员后可控制；离线或授权到期后失效，游戏内 OP 不能代替网页认证。";
             default -> {
-                content = "在游戏内提问、查询服务器，并处理你有权限审核的操作。\n\n对话为全服共享；高权限操作仍需原有权限与审批。";
-                buttons.add(new Choice("chat", "向助手提问"));
+                title = "MineAgent · 更多功能";
+                content = "查询服务器、查看审批与打开网页。\n返回对话即可继续输入，未发送的原版面板草稿会保留。";
+                buttons.add(new Choice("chat", "继续对话"));
                 buttons.add(new Choice("queries", "常用查询"));
                 buttons.add(new Choice("history", "本次在线记录"));
                 buttons.add(new Choice("body", "AI 玩家"));
@@ -250,22 +266,34 @@ public final class AgentUi implements Listener {
                 buttons.add(new Choice("help", "使用说明"));
             }
         }
-        if (!"home".equals(view.page())) buttons.add(new Choice("home", "返回主页"));
+        boolean conversation = "home".equals(view.page()) || "chat".equals(view.page());
+        if (!conversation) buttons.add(new Choice("home", "返回对话"));
+        List<UiState.Message> turns =
+                conversation || "history".equals(view.page())
+                        ? state.historyPage(player.getUniqueId(), conversation ? 0 : view.offset())
+                        : List.of();
         return new Panel(
                 title,
-                plugin.backend().isConnected() ? "后端已连接" : "后端未连接 · 可查看说明与记录",
+                plugin.backend().isConnected()
+                        ? conversation ? "全服共享 · 已连接 · 发送后可刷新回复" : "后端已连接"
+                        : "后端未连接 · 输入会保留，请稍后刷新",
                 content,
                 List.copyOf(buttons),
-                input);
+                input,
+                turns,
+                player.getName());
     }
 
     private String history(Player player, int page) {
-        List<UiState.Message> entries = state.history(player.getUniqueId());
-        int end = Math.max(0, entries.size() - page * 3), start = Math.max(0, end - 3);
-        if (start == end) return "暂无记录。这里只保存你本次在线收到的消息。";
+        List<UiState.Message> entries = state.historyPage(player.getUniqueId(), page);
+        if (entries.isEmpty())
+            return "想聊些什么？\n可以询问服务器状态、在线玩家，或描述需要 AI 完成的任务。\n\n这里只显示你本次在线收到的消息；对话内容可能向全服公开。";
         StringBuilder text = new StringBuilder();
-        for (UiState.Message m : entries.subList(start, end))
-            text.append(m.author()).append("：\n").append(m.text()).append("\n\n");
+        for (UiState.Message m : entries)
+            text.append(m.author().equals(player.getName()) ? "你" : m.author())
+                    .append("：\n")
+                    .append(m.text())
+                    .append("\n\n");
         return text.toString();
     }
 
@@ -282,12 +310,7 @@ public final class AgentUi implements Listener {
             buttons.add(button(player, view, choice.id(), choice.label()));
         DialogBase base =
                 DialogBase.builder(Component.text(panel.title()))
-                        .body(
-                                List.of(
-                                        DialogBody.plainMessage(
-                                                Component.text(panel.status()), 310),
-                                        DialogBody.plainMessage(
-                                                Component.text(panel.content()), 310)))
+                        .body(dialogBody(panel))
                         .inputs(
                                 panel.input()
                                         ? List.of(
@@ -301,6 +324,13 @@ public final class AgentUi implements Listener {
                                                                                 ? "任务（仅本人）"
                                                                                 : "问题（全服共享）"))
                                                         .width(310)
+                                                        .initial(
+                                                                state.draft(
+                                                                        player.getUniqueId(),
+                                                                        "body_task"
+                                                                                .equals(
+                                                                                        view
+                                                                                                .page())))
                                                         .maxLength(512)
                                                         .build())
                                         : List.of())
@@ -318,6 +348,28 @@ public final class AgentUi implements Listener {
                                                         buttons,
                                                         button(player, view, "close", "关闭"),
                                                         2))));
+    }
+
+    private List<DialogBody> dialogBody(Panel panel) {
+        List<DialogBody> body = new ArrayList<>();
+        body.add(DialogBody.plainMessage(Component.text(panel.status(), NamedTextColor.GRAY), 310));
+        if (panel.turns().isEmpty())
+            body.add(DialogBody.plainMessage(Component.text(panel.content()), 310));
+        else
+            for (UiState.Message turn : panel.turns()) {
+                boolean own = turn.author().equals(panel.self());
+                Component message =
+                        Component.text(
+                                        own ? "你" : turn.author(),
+                                        own ? NamedTextColor.GOLD : NamedTextColor.AQUA)
+                                .decorate(TextDecoration.BOLD)
+                                .append(Component.newline())
+                                .append(
+                                        Component.text(turn.text(), NamedTextColor.WHITE)
+                                                .decoration(TextDecoration.BOLD, false));
+                body.add(DialogBody.plainMessage(message, 310));
+            }
+        return List.copyOf(body);
     }
 
     private ActionButton button(Player player, View view, String action, String label) {
@@ -358,6 +410,7 @@ public final class AgentUi implements Listener {
             return;
         }
         Panel current = panel(player, view);
+        if (current.input()) state.draft(id, "body_task".equals(view.page()), input);
         if ("close".equals(action)) {
             close(player);
             return;
@@ -382,21 +435,24 @@ public final class AgentUi implements Listener {
                                 "");
                     } catch (IllegalArgumentException e) {
                         player.sendMessage(Component.text(e.getMessage()));
+                        if (enhanced == null || !enhanced.isOpen(id))
+                            show(player, "body_task", 0, "", view.vanilla());
                     }
                     break;
                 }
                 boolean sent = submit(player, input);
+                if (sent) state.draft(id, false, "");
                 // Do not rebuild a MineUI input on a rejected request; preserve the draft.
                 if (sent || enhanced == null || !enhanced.isOpen(id))
                     show(player, "chat", 0, "", view.vanilla());
             }
-            case "refresh" ->
-                    show(
-                            player,
-                            view.page(),
-                            "approval".equals(view.page()) ? view.offset() : 0,
-                            view.approvalId(),
-                            view.vanilla());
+            case "refresh" -> {
+                if (enhanced != null
+                        && enhanced.isOpen(id)
+                        && (view.page().equals("chat") || view.page().equals("home")))
+                    enhanced.update(player, panel(player, view));
+                else show(player, view.page(), view.offset(), view.approvalId(), view.vanilla());
+            }
             case "older" -> show(player, view.page(), view.offset() + 1, "", view.vanilla());
             case "newer" ->
                     show(player, view.page(), Math.max(0, view.offset() - 1), "", view.vanilla());
@@ -491,8 +547,17 @@ public final class AgentUi implements Listener {
                 text,
                 approval,
                 () -> {
-                    if (player.isOnline() && state.current(player.getUniqueId(), view.token()))
-                        show(player, page, 0, detail, view.vanilla());
+                    if (player.isOnline() && state.current(player.getUniqueId(), view.token())) {
+                        if ("task".equals(action) && bodyClient.error(player).isEmpty())
+                            state.draft(player.getUniqueId(), true, "");
+                        if ("status".equals(action)
+                                && "body_task".equals(page)
+                                && page.equals(view.page())
+                                && enhanced != null
+                                && enhanced.isOpen(player.getUniqueId()))
+                            enhanced.update(player, panel(player, view));
+                        else show(player, page, 0, detail, view.vanilla());
+                    }
                 });
     }
 
@@ -601,6 +666,16 @@ public final class AgentUi implements Listener {
                     continue;
                 }
                 try {
+                    View view = entry.getValue();
+                    if (enhanced.isOpen(entry.getKey())
+                            && ("body".equals(view.page()) || "body_task".equals(view.page())))
+                        bodyClient.poll(
+                                player,
+                                () -> {
+                                    if (state.current(player.getUniqueId(), view.token())
+                                            && enhanced.isOpen(player.getUniqueId()))
+                                        enhanced.update(player, panel(player, view));
+                                });
                     enhanced.update(player, panel(player, entry.getValue()));
                 } catch (LinkageError | RuntimeException e) {
                     enhanced.close(player.getUniqueId());

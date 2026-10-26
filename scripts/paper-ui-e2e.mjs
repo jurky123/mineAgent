@@ -42,6 +42,7 @@ const children = [],
   logs = { paper: "", proxy: "" };
 let paper, peer, server;
 const messages = [];
+let bodyTranscript = ["fixture-body-private-ui"], bodyRunning = false;
 const bodyLinked = new Set(),
   bodyOps = [],
   bodyApproved = new Set();
@@ -121,7 +122,7 @@ async function openDialog(bot, cmd = "/agent") {
     () =>
       bot.dialogs
         .slice(old)
-        .find((d) => JSON.stringify(d.data.title).includes("MineAgent · 助手")),
+        .find((d) => JSON.stringify(d.data.title).includes("MineAgent · 对话")),
     "dialog " + cmd,
   );
   assert.ok(
@@ -175,9 +176,9 @@ function clickDialog(bot, action, text) {
     ]),
   );
 }
-async function navigate(bot, dialog, label) {
+async function navigate(bot, dialog, label, text) {
   const count = bot.dialogs.length;
-  clickDialog(bot, dialogButton(dialog, label));
+  clickDialog(bot, dialogButton(dialog, label), text);
   return until(() => bot.dialogs[count], "click " + label);
 }
 function uiFrame(bot, type, session, revision, data) {
@@ -348,7 +349,8 @@ try {
                   source: "body",
                 },
               ];
-          data.messages = ["fixture-body-private-ui"];
+          data.messages = bodyTranscript;
+          data.running = bodyRunning;
           if (["task", "stop", "approve", "deny"].includes(r.action))
             bodyOps.push(r);
           if (r.action === "approve") {
@@ -439,14 +441,29 @@ try {
     admin = await connect("MineUiAdmin");
   await command("op MineUiAdmin");
   const home = await openDialog(guest);
-  assert.ok(JSON.stringify(home.data).includes("向助手提问"));
+  assert.ok(JSON.stringify(home.data).includes("发送问题"));
   assert.ok(!JSON.stringify(home.data).includes("待审批"));
-  const chat = await navigate(guest, home, "向助手提问");
+  assert.ok(home.data.inputs[0].width <= 310, "composer fits minimum-width vanilla window");
+  assert.ok(home.data.inputs?.length === 1, "default entry is a conversation with an input");
+  const refreshed = await navigate(guest, home, "刷新回复", "draft survives refresh");
+  assert.equal(refreshed.data.inputs[0].initial, "draft survives refresh");
+  const menuWithDraft = await navigate(guest, refreshed, "更多功能", "draft survives navigation");
+  const chat = await navigate(guest, menuWithDraft, "返回对话");
+  assert.equal(chat.data.inputs[0].initial, "draft survives navigation");
+  const beforeSend = guest.dialogs.length;
   clickDialog(guest, dialogButton(chat, "发送问题"), "native-ui-question");
   await until(
     () => messages.some((m) => m.message === "@agent native-ui-question"),
     "native input routed to backend",
   );
+  // Sending now returns the same conversation title. Wait for that response
+  // before issuing another /agent so a previous callback cannot masquerade as it.
+  await until(() => guest.dialogs.length > beforeSend, "submitted form returns to conversation");
+  const conversationSnapshot = await navigate(guest, guest.dialogs.at(-1), "刷新回复");
+  await fs.writeFile(path.join(temp, "conversation-dialog.json"), JSON.stringify(conversationSnapshot.data, null, 2));
+  assert.equal(conversationSnapshot.data.inputs[0].initial ?? "", "", "accepted input clears the draft");
+  assert.ok(JSON.stringify(conversationSnapshot.data.body).includes("gold"));
+  assert.ok(JSON.stringify(conversationSnapshot.data.body).includes("aqua"));
   const unlinkedBody = await navigate(
     guest,
     await openDialog(guest),
@@ -467,7 +484,7 @@ try {
   );
   approval("ap-native-1");
   await pause(200);
-  const list = await navigate(admin, await openDialog(admin), "待审批");
+  const list = await navigate(admin, await navigate(admin, await openDialog(admin), "更多功能"), "待审批");
   const detail = await navigate(admin, list, "查看请求");
   const approve = dialogButton(detail, "批准本次");
   clickDialog(admin, approve);
@@ -483,7 +500,7 @@ try {
   await pause(100);
   const forgedDetail = await navigate(
     admin,
-    await navigate(admin, await openDialog(admin), "待审批"),
+    await navigate(admin, await navigate(admin, await openDialog(admin), "更多功能"), "待审批"),
     "查看请求",
   );
   clickDialog(guest, dialogButton(forgedDetail, "批准本次"));
@@ -496,7 +513,7 @@ try {
   // A button displayed while authorized cannot be used after permission revocation.
   const revokedDetail = await navigate(
     admin,
-    await navigate(admin, await openDialog(admin), "待审批"),
+    await navigate(admin, await navigate(admin, await openDialog(admin), "更多功能"), "待审批"),
     "查看请求",
   );
   await command("deop MineUiAdmin");
@@ -508,7 +525,7 @@ try {
   await pause(150);
   const expiredDetail = await navigate(
     admin,
-    await navigate(admin, await openDialog(admin), "待审批"),
+    await navigate(admin, await navigate(admin, await openDialog(admin), "更多功能"), "待审批"),
     "查看请求",
   );
   const expiredButton = dialogButton(expiredDetail, "批准本次");
@@ -522,9 +539,10 @@ try {
   await pause(250);
   const reconnected = await openDialog(admin);
   assert.ok(
-    JSON.stringify(reconnected.data).includes("待审批 · 0"),
+    JSON.stringify((await navigate(admin, reconnected, "更多功能")).data).includes("待审批 · 0"),
     "reconnect clears prior backend requests",
   );
+  await fs.writeFile(path.join(temp, "conversation-dialog.json"), JSON.stringify(conversationSnapshot.data, null, 2));
   console.log(
     "PASS: vanilla dialog input, private history, approval replay/actor/permission guards",
   );
@@ -541,7 +559,7 @@ try {
   // MineUI is installed, but a vanilla client still gets the native dialog.
   assert.ok(
     JSON.stringify((await openDialog(enhancedGuest)).data).includes(
-      "向助手提问",
+      "发送问题",
     ),
   );
   for (const cmd of [
@@ -554,7 +572,7 @@ try {
   ])
     assert.ok(
       JSON.stringify((await openDialog(enhancedGuest, cmd)).data).includes(
-        "向助手提问",
+        "发送问题",
       ),
       cmd,
     );
@@ -574,7 +592,7 @@ try {
   );
   assert.ok(
     JSON.stringify((await openDialog(enhancedGuest)).data).includes(
-      "向助手提问",
+      "发送问题",
     ),
     "old MineUI clients must fall back",
   );
@@ -596,15 +614,15 @@ try {
   );
   assert.ok(
     JSON.stringify((await openDialog(enhancedGuest)).data).includes(
-      "向助手提问",
+      "发送问题",
     ),
     "default /agent stays native even for an enhanced client",
   );
   const enhancedHome = await openUi(enhancedGuest);
-  assert.equal(enhancedHome.state.title, "MineAgent · 助手");
-  await uiAction(enhancedGuest, "chat");
+  await fs.writeFile(path.join(temp, "conversation-mineui.json"), JSON.stringify(enhancedHome, null, 2));
+  assert.equal(enhancedHome.state.title, "MineAgent · 对话");
   await until(
-    () => currentUi(enhancedGuest)?.state.title === "与助手对话",
+    () => currentUi(enhancedGuest)?.state.title === "MineAgent · 对话",
     "enhanced chat",
   );
   await uiAction(enhancedGuest, "send", { text: "enhanced-ui-question" });
@@ -617,6 +635,12 @@ try {
       JSON.stringify(currentUi(enhancedGuest).state).includes("fixture reply:"),
     "live reply patch",
   );
+  const beforeRefresh = currentUi(enhancedGuest).session;
+  await uiAction(enhancedGuest, "refresh");
+  assert.equal(currentUi(enhancedGuest).session, beforeRefresh, "refresh patches state without replacing input");
+  assert.ok(currentUi(enhancedGuest).state.chatLines.some((line) => line.own && line.text === "你"));
+  assert.ok(currentUi(enhancedGuest).state.chatLines.some((line) => line.agent && line.text === "MineAgent"));
+  await fs.writeFile(path.join(temp, "conversation-mineui.json"), JSON.stringify(currentUi(enhancedGuest), null, 2));
   assert.ok(
     !JSON.stringify((await openUi(enhancedAdmin)).state).includes(
       "fixture reply:",
@@ -634,6 +658,7 @@ try {
   approval("ap-enhanced");
   await pause(150);
   await openUi(enhancedAdmin);
+  await uiAction(enhancedAdmin, "menu");
   await uiAction(enhancedAdmin, "approvals");
   await until(
     () => currentUi(enhancedAdmin)?.state.title === "操作审批",
@@ -698,6 +723,14 @@ try {
       ),
     "enhanced body task routed separately",
   );
+  const privateConversation = currentUi(enhancedAdmin).session;
+  bodyRunning = true;
+  await until(() => currentUi(enhancedAdmin)?.state.status.includes("正在处理"), "private running state refresh");
+  bodyTranscript = ["fixture-body-private-ui", "delayed-private-poll-reply"];
+  bodyRunning = false;
+  await until(() => JSON.stringify(currentUi(enhancedAdmin)?.state).includes("delayed-private-poll-reply"), "private reply fetched without reopening");
+  assert.equal(currentUi(enhancedAdmin).session, privateConversation, "polling keeps the active input session");
+  assert.ok(!JSON.stringify(currentUi(enhancedGuest)?.state).includes("delayed-private-poll-reply"));
   assert.ok(
     !messages.some((m) => m.message?.includes("private-enhanced-body-task")),
     "body task never enters shared chat protocol",
@@ -724,21 +757,22 @@ try {
       passed: true,
       checks: [
         "vanilla without MineUI",
-        "native form callbacks",
+        "native form callbacks, role-separated transcript and draft retention",
         "targeted history privacy",
         "one-use/actor/revoked approval guards",
         "vanilla with MineUI installed",
         "old MineUI client fallback",
-        "MineUI handshake/open/input/live patches",
+        "MineUI handshake/open/input/live patches without input replacement",
         "enhanced approvals",
         "stale sessions",
         "unknown privilege actions rejected",
-        "MineUI body pairing/state/private task/approval/stop",
+        "MineUI body pairing/state/private task/approval/stop and polled replies",
       ],
       artifacts: temp,
     }),
   );
 } catch (e) {
+  console.error("UI test artifacts: " + temp);
   for (const [k, v] of Object.entries(logs))
     console.error(
       k + ":\n" + v.slice(-4000).replaceAll(fixtureToken, "<fixture-token>"),

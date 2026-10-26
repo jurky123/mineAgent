@@ -83,12 +83,25 @@ final class BodyPanels {
             if (permission) choices.add(new AgentUi.Choice("body_pair_new", "关联管理员"));
             else content += "\n游戏内还需要 mineagent.body 权限。";
         } else if ("body_task".equals(page)) {
-            title = "向 AI 玩家下达任务";
+            title = "AI 玩家 · 私密对话";
             input = true;
-            content = "任务和回复仅在本人的身体面板显示。\n每次下达明确的短任务；高危动作须另行审批。\n碰撞或管理员暂停可恢复原任务；急停或重连使旧任务失效。\n\n";
+            boolean running = yes(data, "running");
+            String tool = text(object(state, "task"), "tool");
+            status =
+                    yes(snapshot, "paused")
+                            ? "私密任务 · 已暂停 · 可在身体控制中恢复"
+                            : running
+                                    ? "私密任务 · " + (tool.isEmpty() ? "正在处理" : "正在执行 " + tool)
+                                    : "私密任务 · 就绪";
+            content = "任务和回复仅在本人的身体面板显示，不发送到全服聊天。\n\n";
+            if (!data.has("messages")
+                    || !data.get("messages").isJsonArray()
+                    || data.getAsJsonArray("messages").isEmpty())
+                content += "告诉 AI 玩家你希望完成什么。\n例如：观察附近地形，报告适合建造的位置。\n";
             if (data.has("messages") && data.get("messages").isJsonArray())
                 for (JsonElement m : data.getAsJsonArray("messages"))
                     content += UiState.clip(m.getAsString(), 1600) + "\n\n";
+            choices.add(new AgentUi.Choice("body_stop", "急停并暂停"));
         } else if ("body_approvals".equals(page) || "body_approval".equals(page)) {
             title = "AI 玩家动作审批";
             content = "批准只适用于当前这一项动作；目标、控制状态或授权变化后失效。\n\n";
@@ -156,7 +169,7 @@ final class BodyPanels {
         if (!error(code).isEmpty()) content = error(code) + "\n\n" + content;
         choices.add(new AgentUi.Choice("body_refresh", "刷新身体状态"));
         if (!"body".equals(page)) choices.add(new AgentUi.Choice("body", "返回 AI 玩家"));
-        choices.add(new AgentUi.Choice("home", "返回助手主页"));
+        choices.add(new AgentUi.Choice("home", "返回共享对话"));
         return new AgentUi.Panel(title, status, content, List.copyOf(choices), input);
     }
 

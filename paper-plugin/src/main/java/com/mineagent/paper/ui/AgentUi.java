@@ -598,6 +598,9 @@ public final class AgentUi implements Listener {
         data.addProperty("uuid", player.getUniqueId().toString());
         data.addProperty("world", player.getWorld().getName());
         data.addProperty("message", "@agent " + question);
+        data.addProperty(
+                "canBody",
+                player.hasPermission("mineagent.use") && player.hasPermission("mineagent.body"));
         // Public in-game chat: do not attach the body-ui nonce. Body tasks use
         // the AI player panel/body action path and stay out of the public feed.
         if (!plugin.backend().send(Protocol.CHAT_MESSAGE, data)) {

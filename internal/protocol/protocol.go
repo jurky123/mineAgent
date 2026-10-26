@@ -65,6 +65,7 @@ type ChatMessage struct {
 	UUID    string `json:"uuid,omitempty"`
 	World   string `json:"world,omitempty"`
 	Message string `json:"message"`
+	CanBody bool   `json:"canBody,omitempty"` // Paper verified mineagent.body for this player
 }
 
 type AgentMessage struct {

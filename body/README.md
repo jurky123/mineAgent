@@ -250,7 +250,16 @@ Node 身体配置新增 `minecraft.viewDistance`，默认4，整数范围2–8�
 DSH 后端也沿用上述工具身份、审批、暂停恢复和只读预算；身体默认12步/medium，显式 `body.maxSteps=0` 仍不限。官方 DeepSeek 无medium档，身体medium映射到low以保留延迟预算，显式high不降档；普通聊天映射不变。面板直接输入 `/help` 显示网页会话指令并标记为“系统消息”；查询游戏命令请明确要求“以身体执行 /help”，仍由 body_command 检查权限和审批。
 
 
-### 2026-10-26 单人直接控制与保护区内审批
+### 2026-10-26 公共聊天身体控制与 TP
+
+`mineagent.body` 玩家在公共 MC 聊天里也会获得完整 `body_*` 工具（Paper 校验后随 `chat.message.canBody` 传入，未授权玩家仍只有 `body_profile`）：
+
+- 可直接 `body_status`、`body_goto`、`body_command` 等；TP 用 `body_command` 执行 `tp <玩家名>` 或 `tppos x y z`，身体已有 `mineagent_builder` 的 `essentials.tp`/`tppos` 权限。
+- 提示词明确区分“身体的自身传送”和“管理员传送审批”，不再回答“普通玩家不能指挥/做不到”。
+- 大位移仍会触发 Node 的 `forced_move` 暂停；已到达时提示用户在 AI 玩家面板恢复，不自动重试。
+- 其他玩家即使看到公共聊天，也不会获得身体工具。
+
+## 2026-10-26 单人直接控制与保护区内审批
 
 服主确认单人使用后，游戏内控制不再要求网页管理员关联：
 

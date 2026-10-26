@@ -577,14 +577,20 @@ func main() {
 					return
 				}
 				// 人设 + MC 内置能力组合（管理员改人设/系统提示词后即时生效）。
-				if !ag.Submit(agent.Request{
+				canBody := chat.CanBody && bodySvc.DirectControl()
+				req := agent.Request{
 					Session:           sess,
 					Player:            chat.Player,
 					RequesterID:       chat.UUID,
 					Query:             query,
 					TriggerMessageID:  msg.ID,
-					SystemInstruction: prompts.Resolve("minecraft", "", agent.DefaultCapabilities()) + bodySvc.MCInstruction(),
-				}) {
+					SystemInstruction: prompts.Resolve("minecraft", "", agent.DefaultCapabilities()) + bodySvc.MCInstructionFor(canBody, chat.Player),
+				}
+				if canBody {
+					req.BodyPrincipal = bodySvc.GamePrincipal(chat.Player, chat.UUID)
+					req.Tools = append(append([]tool.BaseTool{}, agentTools...), bodySvc.Tools()...)
+				}
+				if !ag.Submit(req) {
 					_ = sess.Reply(ctx, "MineAgent: 模型未配置，请在 config.json 填写 model.baseURL/name，Key 可放 MINEAGENT_MODEL_API_KEY", chat.Player)
 				}
 			}

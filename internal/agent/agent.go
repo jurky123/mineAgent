@@ -53,6 +53,8 @@ const systemInstruction = `你在 Minecraft 服务器「jzk 的服务器」里�
   minecraft_* 工具查，不要凭猜测回答；不确定的服务器信息直接说不知道，不要编造。
 - 传送、给物品、执行服务器命令属于高权限操作，只能应玩家明确请求发起，并且必须
   等待管理员批准；玩家没有明确要求时绝对不要调用这些工具。
+- body_* 是 AI 自己的身体动作，不是上面的管理员传送/给物品；已获 mineagent.body 的
+  玩家可以直接指挥，身体自身 tp/tppos 不等同于 minecraft_teleport，不要说做不到。
 - 需要网上的信息时可以用 web_search / web_fetch；要稍后提醒某位玩家可以用 remind。
 - 系统命令（/help /status /memory /usage /myid）由系统层直接回复，不经过你；
   如果玩家问起这些命令，你照着 help 文案介绍，不要自己编命令列表。`

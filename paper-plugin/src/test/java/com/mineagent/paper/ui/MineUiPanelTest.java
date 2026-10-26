@@ -32,6 +32,27 @@ final class MineUiPanelTest {
     }
 
     @Test
+    void chatUiLayoutUsesFlexWrapAndSubmit() {
+        AgentUi.Panel panel = new AgentUi.Panel(
+                "MineAgent",
+                "在线",
+                "",
+                List.of(new AgentUi.Choice("refresh", "刷新")),
+                true,
+                List.of(new UiState.Message("你", "第一条"), new UiState.Message("MineAgent", "第二条")),
+                "你");
+        JsonObject root = MineUiPanel.definition(panel, true);
+        String json = root.toString();
+        assertTrue(json.contains("\"grow\":1"));
+        assertTrue(json.contains("\"wrap\":true"));
+        assertTrue(json.contains("\"stickToBottom\":true"));
+        assertTrue(json.contains("\"submit\":true"));
+        assertTrue(json.contains("{state.messages}"));
+        assertTrue(json.contains("chat_ui_v1"));
+        assertTrue(json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 24 * 1024);
+    }
+
+    @Test
     void contentPageFallsBackToSystemCardAndKeepsButtons() {
         AgentUi.Panel panel = new AgentUi.Panel(
                 "AI 玩家",

@@ -25,7 +25,7 @@ repositories {
 dependencies {
     compileOnly "io.papermc.paper:paper-api:${paper_version}"
     compileOnly "com.google.code.gson:gson:${gson_version}"
-    compileOnly "com.mineui:mineui-paper:0.16.1"
+    compileOnly "com.mineui:mineui-paper:0.17.0"
     // Public WorldEdit API only; never bundle WorldEdit into MineAgent.
     if (project.hasProperty('worldedit_jar')) {
         compileOnly files(project.property('worldedit_jar'))

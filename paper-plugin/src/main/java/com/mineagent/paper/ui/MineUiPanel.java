@@ -38,9 +38,6 @@ final class MineUiPanel {
         if (api == null
                 || !api.supportsServerUi(player)
                 || SemVer.isOlder(api.modVersion(player), "0.16.1")) return false;
-        // A vanilla fallback must not receive a clear-dialog packet before its new dialog.
-        player.closeDialog();
-        close(player.getUniqueId());
         boolean chatUI = api.supportsChatUi(player);
         owner.getLogger().info("MineUI open: player=" + player.getName()
                 + " mod=" + api.modVersion(player)

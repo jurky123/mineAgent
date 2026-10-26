@@ -422,13 +422,21 @@ public final class AgentUi implements Listener {
             close(player);
             return;
         }
-        if (!("send".equals(action) && current.input())
+        boolean globalNav = switch (action) {
+            case "chat", "body", "approvals", "help", "home" -> true;
+            default -> false;
+        };
+        if (!globalNav
+                && !("send".equals(action) && current.input())
                 && current.choices().stream().noneMatch(c -> c.id().equals(action))) {
             player.sendMessage(Component.text("请求或权限已变化，已刷新界面"));
             show(player, view.page(), view.offset(), view.approvalId(), view.vanilla());
             return;
         }
         switch (action) {
+            case "chat" -> show(player, "chat", 0, "", view.vanilla());
+            case "help" -> show(player, "help", 0, "", view.vanilla());
+            case "approvals" -> show(player, "approvals", 0, "", view.vanilla());
             case "send" -> {
                 if ("body_task".equals(view.page())) {
                     try {

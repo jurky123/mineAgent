@@ -134,6 +134,13 @@ public final class AgentUi implements Listener {
             } catch (LinkageError | RuntimeException e) {
                 plugin.getLogger().warning("MineUI 打开失败，使用原版对话框");
             }
+            plugin.getLogger().warning("MineUI 未打开：player=" + player.getName()
+                    + " mod=" + (enhanced == null ? "none" : "present")
+                    + "；旧 MineUI 布局已删除，不回退旧聊天面板");
+            player.sendMessage(Component.text(
+                    "MineUI 客户端尚未连接或版本过旧。请安装 MineUI 0.17.0，等聊天栏出现 [MineUI] 已连接后再输入 /agent；如需原版对话框请输入 /agent dialog。",
+                    NamedTextColor.YELLOW));
+            return;
         }
         if (enhanced != null) enhanced.close(id);
         // A partially opened MineUI session may have run its close hook during fallback.

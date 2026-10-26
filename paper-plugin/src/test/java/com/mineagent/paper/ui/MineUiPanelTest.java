@@ -24,11 +24,11 @@ final class MineUiPanelTest {
         assertEquals("row", root.get("type").getAsString());
         assertEquals(2, root.getAsJsonArray("children").size());
         String json = root.toString();
-        assertTrue(json.contains("{state.chatItems}"));
+        assertTrue(json.contains("{state.messages}"));
         assertTrue(json.contains("全服对话"));
-        assertTrue(json.contains("item.h11"));
-        assertTrue(json.contains("vanilla:input"));
+        assertTrue(json.contains("chat_input"));
         assertTrue(json.contains("关闭"));
+        assertTrue(json.contains("\"grow\":1"));
     }
 
     @Test
@@ -41,7 +41,7 @@ final class MineUiPanelTest {
                 true,
                 List.of(new UiState.Message("你", "第一条"), new UiState.Message("MineAgent", "第二条")),
                 "你");
-        JsonObject root = MineUiPanel.definition(panel, true);
+        JsonObject root = MineUiPanel.definition(panel);
         String json = root.toString();
         assertTrue(json.contains("\"grow\":1"));
         assertTrue(json.contains("\"wrap\":true"));
@@ -62,7 +62,7 @@ final class MineUiPanelTest {
                 false);
         JsonObject root = MineUiPanel.definition(panel);
         String json = root.toString();
-        assertTrue(json.contains("{state.chatItems}"));
+        assertTrue(json.contains("{state.messages}"));
         assertTrue(json.contains("下达任务"));
         assertTrue(json.contains("AI 玩家"));
     }

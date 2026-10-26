@@ -6,7 +6,7 @@
 > 关联：[MineUI 组件文档](../mineUI/docs/COMPONENTS.md)、[MineUI 设计](../mineUI/docs/DESIGN.md)、`MINE_BODY_DESIGN.md`、`body/README.md`、`paper-plugin/src/main/java/com/mineagent/paper/ui/`
 
 > **2026-10-26 服主最终决策（优先于下文）**
-> 单人使用，权限直接放开；游戏内 Chat **全服公开**，不做私有会话/多会话；身体控制不再要求网页 nonce；512 格保护半径保留，**保护区内建造需要审批，区外免审批**。下文“私有会话 / Build Session / 多会话”为初版设计，未按此实施；MineUI 需求见 [MineUI 需求](../mineUI/docs/REQUIREMENTS_INGAME_CHAT.md)。实际实现见 `paper-plugin/.../MineUiPanel.java`、`AgentUi.java`、`BodyPanels.java`、`internal/bodyui/bridge.go` 与 `body/README.md` 的 2026-10-26 条目。
+> 单人使用，权限直接放开；游戏内 Chat **全服公开**，不做私有会话/多会话；身体控制不再要求网页 nonce；512 格保护半径保留，**保护区内建造需要审批，区外免审批**。下文“私有会话 / Build Session / 多会话”为初版设计，未按此实施；MineUI 需求见 [MineUI 需求](../mineUI/docs/REQUIREMENTS_INGAME_CHAT.md)。实际实现见 `paper-plugin/.../MineUiPanel.java`、`AgentUi.java`、`BodyPanels.java`、`internal/bodyui/bridge.go` 与 `body/README.md` 的 2026-10-26 条目。MineUI 0.17.0 已实现 `chat_ui_v1`，MineAgent 在客户端支持时使用 `grow + text.wrap + stickToBottom + button.submit`，否则回退 0.16 固定行布局；保护区内 WorldEdit 已按选区审批并短时放行。
 
 ---
 

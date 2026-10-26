@@ -40,6 +40,8 @@ Node 只接收身体工具动作。现有模型凭据失效会同时影响主助
 
 服主可用 LuckPerms 为身体玩家分配 `mineagent_builder` 专用组，精确节点见 [权限清单](permissions/builder.json)。该组开放自己的创造/生存切换、give/item、飞行开关、治疗/饱食、位置/物品查询，以及 WorldEdit 选区、填充/替换、基础形状、复制/剪切/粘贴、移动/堆叠、撤销/重做。不授予 OP、权限管理、停服、sudo、execute、原版 fill/clone/setblock、WorldEdit 脚本、区块删除、重生成或保护绕过。WorldEdit 不是无风险命令，只按已验证管理员的明确建造任务使用。
 
+2026-10-26 服主授权为专用组增加自身传送：`essentials.tp`、`essentials.tp.position` 和 `essentials.tppos`。通过 `body_command` 以机器人自身身份执行，例如 `tp Oathtory`、`tp 300 64 530` 或 `tppos 300 64 530`。Essentials 的 `/tp` 与原版语法不同，传送自己到玩家身边使用一个玩家名，不写 `@s`。没有开放传送他人、原版通用传送或选择器；QQ 外部高权限工具仍须原审批。清单需同步正式 LuckPerms 组后才实际生效，无需重启。大位移仍遵守身体原有 forced_move 暂停语义，不能借授权传送自动解除管理员暂停。
+
 正式批量编辑授权须在保护插件生效后进行：MineAgent 通过 WorldEdit 公共 `EditSessionEvent` 和 Extent API，在 BEFORE_HISTORY 和 BEFORE_CHANGE 两层拒绝身体对主世界出生点四周各 512 格（含边界、全部高度）的实际写入。保护随出生点变更更新，其他玩家不受此 AI 专用规则影响；配置无法确认时拒绝该 AI 的 WorldEdit 写入。跨界操作可能已在区外产生部分改动，但不能改动区内；需核查结果，不能自动重试。复制粘贴、移动、撤销、实体与生物群系写入同样受检查。
 
 在 Paper 的私有 MineAgent config.yml 启用（示例不含后端密钥）：

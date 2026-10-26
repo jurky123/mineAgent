@@ -222,6 +222,19 @@ func main() {
 		}
 		return body.CheckBlockProtection(sp, player.BlockProtection)
 	})
+	bodySvc.WithProtectedAllow(func(ctx context.Context, sp protocol.BodySpec) error {
+		if sp.Target == nil {
+			return fmt.Errorf("protection_unavailable")
+		}
+		args, _ := json.Marshal(map[string]any{
+			"player": cfg.Body.Name,
+			"x":      int(math.Round(sp.Target[0])),
+			"z":      int(math.Round(sp.Target[2])),
+			"ttlMs":  5000,
+		})
+		_, err := gw.Call(ctx, "internal_allow_protected", args)
+		return err
+	})
 	if bodySvc.Enabled() {
 		go bodySvc.Run(ctx)
 	}

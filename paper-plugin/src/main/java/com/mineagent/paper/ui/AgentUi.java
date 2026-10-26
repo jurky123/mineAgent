@@ -598,7 +598,8 @@ public final class AgentUi implements Listener {
         data.addProperty("uuid", player.getUniqueId().toString());
         data.addProperty("world", player.getWorld().getName());
         data.addProperty("message", "@agent " + question);
-        data.addProperty("session", bodyChatSession(player));
+        // Public in-game chat: do not attach the body-ui nonce. Body tasks use
+        // the AI player panel/body action path and stay out of the public feed.
         if (!plugin.backend().send(Protocol.CHAT_MESSAGE, data)) {
             player.sendMessage(Component.text("发送失败，问题未进入后端队列"));
             return false;

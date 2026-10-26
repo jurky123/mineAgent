@@ -24,3 +24,6 @@ __pycache__/
 /aiplayer/data/
 /aiplayer/*.token
 /aiplayer/*.password
+
+.gocache/
+.gradle-home/

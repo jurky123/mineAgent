@@ -3,8 +3,11 @@ package body
 import (
 	"errors"
 	"math"
+
 	"mineagent/internal/protocol"
 )
+
+var ErrSpawnProtected = errors.New("spawn_protected")
 
 // BlockProtection is reported by the authenticated Paper channel from its live
 // spawn guard. Never derive this geometry from model text or duplicate config.
@@ -31,7 +34,7 @@ func CheckBlockProtection(sp protocol.BodySpec, protection *BlockProtection) err
 		return errors.New("protection_unavailable")
 	}
 	if sp.WorldID == protection.World && math.Abs(sp.Target[0]-float64(protection.CenterX)) <= float64(protection.Radius) && math.Abs(sp.Target[2]-float64(protection.CenterZ)) <= float64(protection.Radius) {
-		return errors.New("spawn_protected")
+		return ErrSpawnProtected
 	}
 	return nil
 }

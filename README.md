@@ -8,12 +8,13 @@ QQ 群聊：`/auto` 查状态，已配置的 QQ 管理员用 `/auto on`、`/auto
 
 还可以直接开一个**网页入口**：浏览器里聊天、发文件/图片、收文件/图片，按名字隔离会话，页面可以嵌进别的网页。
 
-> **具身接入 V1**：通过独立 Node/Mineflayer 玩家执行 13 个 `body_*` 工具，网页管理员控制，门户 `/body` 提供状态、审批和急停。配置默认关闭；2026-10-20 已按服主授权启动生产试运行（无区域限制，首次连接仍暂停）。
+> **具身接入 V1**：通过独立 Node/Mineflayer 玩家执行 13 个 `body_*` 工具；网页管理员与游戏内 `mineagent.body`（2026-10-26 起 `body.directControl`）都可直接控制，门户 `/body` 提供状态、审批和急停。
 > **持续任务**：身体任务默认12轮、总时长不限，显式maxSteps=0不限轮数，限速时等待配额；`body_status` 独立诊断控制通道，停止/断线/撤权取消旧任务。普通聊天预算不变，详见 body/README.md。
-> **建造权限**：Paper 0.3.2 支持 AI 专用 LuckPerms 建造组，以及出生点四周各 512 格、全高度的方块破坏/放置与 WorldEdit 实际写入保护；保护区允许移动和观察，按目标方块拦截写入；须先启用保护再授权批量编辑，详见 body/README.md。
+> **建造权限**：Paper 0.3.2 支持 AI 专用 LuckPerms 建造组，以及出生点四周各 512 格、全高度的方块破坏/放置与 WorldEdit 实际写入保护；2026-10-26 起区外普通单方块建造免审批，区内单方块经审批后一次性放行（`internal_allow_protected`）；保护半径保留，详见 body/README.md。
 > 使用与验证：[body/README.md](body/README.md)；架构与实施记录：[MINE_BODY_DESIGN.md](MINE_BODY_DESIGN.md)（§18）。
 > **下一版导航设计**：[Navigation V2](MINE_BODY_NAVIGATION_DESIGN.md)：目标候选与分段寻路、路线修复，以及受控创造飞行/游泳/精确移动；已交付首轮目标区域解析和显式水面游泳，其余仍为分阶段设计。
 > **出城建造实测**：[农场与木屋验收及后续建议](BODY_FARM_FOLLOWUP_2026-10-22.md)：真实非 OP 身体完成 72 株灌溉农场和带床木屋，记录水边、梯子、木门修复及测试边界。
+> **游戏内 Chat 重构 / 权限放宽设计**：[MINE_INGAME_CHAT_UI_DESIGN.md](MINE_INGAME_CHAT_UI_DESIGN.md)（2026-10-26 设计提案，未实施；DSH 式会话界面、MineUI 映射、Build Session 与分级权限）。
 > AI 玩家入口位于 **Minecraft → AI 玩家 → 玩家资料**（`/minecraft` → `/ai` → `/ai/<id>`）。公开资料由独立服务提供；资料内的身体状态、任务/回复、审批和控制由浏览器直接访问主站，仍须主站已验证管理员。`/body` 保留旧书签、游戏 fragment 配对及急停兼容。论坛默认关闭，既有代码与数据保留，不接写作。见 [aiplayer/README.md](aiplayer/README.md) 和 [v1.3 需求 §12](AI_PLAYER_PORTAL_REQUIREMENTS.md#12-用户确认的信息架构调整2026-10-20当前实施依据)。
 
 

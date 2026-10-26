@@ -272,7 +272,7 @@ func (s *Service) policy(sp protocol.BodySpec) error {
 			}
 		}
 	}
-	if sp.Tool == "body_use_item" && !contains(safeFoods, sp.Args.Item) && !s.highRisk(sp) {
+	if sp.Tool == "body_use_item" && !contains(safeFoods, sp.Args.Item) && !s.cfg.Approval.ProtectedAreaOnly && !s.highRisk(sp) {
 		return errors.New("unsupported_item")
 	}
 	if sp.Target != nil && category(sp.Tool) == "build" {
@@ -287,6 +287,9 @@ func (s *Service) policy(sp protocol.BodySpec) error {
 	return nil
 }
 func (s *Service) highRisk(sp protocol.BodySpec) bool {
+	if s.cfg.Approval.ProtectedAreaOnly {
+		return sp.Protected
+	}
 	if isRead(sp.Tool) || category(sp.Tool) == "move" || category(sp.Tool) == "chat" || category(sp.Tool) == "command" {
 		return false
 	}

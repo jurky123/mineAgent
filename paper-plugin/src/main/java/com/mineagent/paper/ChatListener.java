@@ -39,7 +39,8 @@ public final class ChatListener implements Listener {
                             if (!player.isOnline()
                                     || plugin.getServer().getPlayer(player.getUniqueId()) != player
                                     || !backend.isConnected()) return;
-                            data.addProperty("session", plugin.ui().bodyChatSession(player));
+                            // Public in-game chat. Body tasks use the AI player
+                            // panel and keep their own private body-ui session.
                             backend.send(Protocol.CHAT_MESSAGE, data);
                         });
     }

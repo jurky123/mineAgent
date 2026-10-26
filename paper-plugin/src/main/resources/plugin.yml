@@ -22,7 +22,7 @@ permissions:
     description: 允许 /mineagent status|reconnect
     default: op
   mineagent.body:
-    description: 允许关联已验证网页管理员并在本次游戏会话控制 AI 玩家
+    description: 允许在游戏内直接查看/控制 AI 玩家（body.directControl=true 时不再需要网页关联）
     default: op
   mineagent.approve:
     description: 允许批准/拒绝 MineAgent 的高权限操作

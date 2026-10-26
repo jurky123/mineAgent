@@ -150,6 +150,10 @@
     "profile": {
       "enabled": false,
       "hideDimension": true
+    },
+    "directControl": false,
+    "approval": {
+      "protectedAreaOnly": true
     }
   }
 }

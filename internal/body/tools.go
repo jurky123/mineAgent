@@ -124,7 +124,11 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 			return fail("world_unknown")
 		}
 		if err = s.verifyWorld(ctx, sp); err != nil {
-			return fail(err.Error())
+			if errors.Is(err, ErrSpawnProtected) {
+				sp.Protected = true
+			} else {
+				return fail(err.Error())
+			}
 		}
 		grant = &protocol.BodyGrant{ApprovalID: decision.ApprovalID, SpecID: sp.ID, ControlEpoch: sp.ControlEpoch, ExpiresAt: time.Now().Add(time.Duration(s.cfg.Approval.GrantTTLMS) * time.Millisecond).UnixMilli()}
 	} else {
@@ -149,7 +153,7 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 			if s.approvals == nil {
 				return fail("approval_unavailable")
 			}
-			info, err := s.approvals.CreateForContext(ctx, tools.ApprovalInfo{Source: "body", TimeoutMS: int64(s.cfg.Approval.TimeoutSec) * 1000, Tool: t.name, Requester: fmt.Sprintf("web:%d", p.UserID), Prompt: fmt.Sprintf("%s 在 %s 对 %v 执行 %s，理由：%s", s.cfg.Name, sp.WorldID, sp.Target, t.name, sp.Args.Reason), Args: json.RawMessage(output(sp))})
+			info, err := s.approvals.CreateForContext(ctx, tools.ApprovalInfo{Source: "body", TimeoutMS: int64(s.cfg.Approval.TimeoutSec) * 1000, Tool: t.name, Requester: s.requester(p), Prompt: fmt.Sprintf("%s 在 %s 的保护区内对 %v 执行 %s，理由：%s", s.cfg.Name, sp.WorldID, sp.Target, t.name, sp.Args.Reason), Args: json.RawMessage(output(sp))})
 			if err != nil {
 				return fail("approval_unavailable")
 			}
@@ -262,7 +266,7 @@ func (s *Service) Decide(ctx context.Context, p *Principal, id string, approved 
 	if !valid {
 		return false
 	}
-	operator := fmt.Sprintf("web:%d", p.UserID)
+	operator := s.requester(p)
 	if err := s.audit(ctx, p, w.callID, w.spec.Tool, "approval", operator, map[string]any{"approvalId": id, "approved": approved}); err != nil {
 		return false
 	}

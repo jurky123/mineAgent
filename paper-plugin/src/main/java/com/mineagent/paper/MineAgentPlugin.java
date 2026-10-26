@@ -18,7 +18,7 @@ public final class MineAgentPlugin extends JavaPlugin {
     private ToolExecutor toolExecutor;
     private ApprovalHandler approvalHandler;
     private AgentUi ui;
-    private AutoCloseable worldEditProtection;
+    private WorldEditProtection worldEditProtection;
 
     @Override
     public void onEnable() {
@@ -91,6 +91,10 @@ public final class MineAgentPlugin extends JavaPlugin {
         return backend;
     }
 
+    public WorldEditProtection worldEditProtection() {
+        return worldEditProtection;
+    }
+
     public AgentUi ui() {
         return ui;
     }
@@ -101,7 +105,7 @@ public final class MineAgentPlugin extends JavaPlugin {
 
     public JsonObject blockProtection(Player player) {
         if (worldEditProtection != null) {
-            return ((WorldEditProtection) worldEditProtection).snapshot(player);
+            return worldEditProtection.snapshot(player);
         }
         JsonObject result = new JsonObject();
         result.addProperty(

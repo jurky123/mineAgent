@@ -15,6 +15,7 @@ import (
 type Body struct {
 	Enabled             bool         `json:"enabled"`
 	Mode                string       `json:"mode"`
+	DirectControl       bool         `json:"directControl"`
 	ID                  string       `json:"id"`
 	Name                string       `json:"name"`
 	Token               string       `json:"token"`
@@ -55,10 +56,11 @@ type BodyLimits struct {
 	ApprovalsPerMin int `json:"approvalsPerMin"`
 }
 type BodyApproval struct {
-	Source         string `json:"source"`
-	TimeoutSec     int    `json:"timeoutSec"`
-	GrantTTLMS     int    `json:"grantTTLms"`
-	ReasonMaxChars int    `json:"reasonMaxChars"`
+	Source            string `json:"source"`
+	TimeoutSec        int    `json:"timeoutSec"`
+	GrantTTLMS        int    `json:"grantTTLms"`
+	ReasonMaxChars    int    `json:"reasonMaxChars"`
+	ProtectedAreaOnly bool   `json:"protectedAreaOnly"`
 }
 type BodyProfile struct {
 	Enabled       bool   `json:"enabled"`
@@ -70,7 +72,7 @@ type BodyProfile struct {
 
 func DefaultBody() Body {
 	return Body{Mode: "off", ID: "main", Name: "MineAgentBot", ExpectedMcVersion: "26.2", MaxSteps: 12, MaxConsecutiveReads: 3, ReasoningEffort: "medium",
-		Zones: BodyZones{Mode: "allowlist"}, Limits: BodyLimits{60, 30, 6, 3, 5}, Approval: BodyApproval{"portal", 120, 5000, 60}}
+		Zones: BodyZones{Mode: "allowlist"}, Limits: BodyLimits{60, 30, 6, 3, 5}, Approval: BodyApproval{Source: "portal", TimeoutSec: 120, GrantTTLMS: 5000, ReasonMaxChars: 60}}
 }
 func (b Body) Validate(mainToken, listen string) error {
 	if !b.Enabled {

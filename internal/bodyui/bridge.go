@@ -37,6 +37,7 @@ type Request struct {
 
 type binding struct {
 	uuid, nonce, player, code string
+	game                      bool
 	codeUntil, until          time.Time
 	user, authSession         int64
 	admin                     string
@@ -94,6 +95,7 @@ func (b *Bridge) revokeLocked(v *binding) {
 	v.user = 0
 	v.authSession = 0
 	v.until = time.Time{}
+	v.game = false
 	v.messages = nil
 	if v.cancel != nil {
 		v.cancel()
@@ -152,8 +154,17 @@ func (b *Bridge) Handle(ctx context.Context, peer tools.Sender, env *protocol.En
 	}
 	v.seq = r.Seq
 	v.allowed = r.Allowed
+	if v.game && r.Allowed {
+		v.until = time.Now().Add(30 * time.Minute)
+	}
 	if !r.Allowed {
 		b.revokeLocked(v)
+	} else if b.core.DirectControl() {
+		v.game = true
+		v.user = 0
+		v.authSession = 0
+		v.admin = v.player
+		v.until = time.Now().Add(30 * time.Minute)
 	}
 	if r.Action == "leave" {
 		b.revokeLocked(v)
@@ -173,6 +184,15 @@ func (b *Bridge) Handle(ctx context.Context, peer tools.Sender, env *protocol.En
 
 func (b *Bridge) valid(ctx context.Context, peer tools.Sender, v *binding, expected ...uint64) bool {
 	b.mu.Lock()
+	if v.game {
+		valid := b.peer == peer && b.bindings[v.uuid] == v && v.allowed && time.Now().Before(v.until) && (len(expected) == 0 || v.generation == expected[0])
+		player, uuid := v.player, v.uuid
+		b.mu.Unlock()
+		if !valid {
+			return false
+		}
+		return b.core.Check(ctx, b.core.GamePrincipal(player, uuid), true) == nil
+	}
 	valid := b.peer == peer && b.bindings[v.uuid] == v && v.allowed && v.user > 0 && time.Now().Before(v.until) && (len(expected) == 0 || v.generation == expected[0])
 	user, sid, name := v.user, v.authSession, v.admin
 	generation := v.generation
@@ -194,12 +214,23 @@ func (b *Bridge) principal(ctx context.Context, peer tools.Sender, v *binding) (
 		return nil, errors.New("link_required")
 	}
 	b.mu.Lock()
-	p := b.core.Principal(v.user, v.authSession, v.admin)
+	game, player, uuid, user, sid, name, until := v.game, v.player, v.uuid, v.user, v.authSession, v.admin, v.until
 	generation := v.generation
-	if p.Deadline.IsZero() || v.until.Before(p.Deadline) {
-		p.Deadline = v.until
-	}
 	b.mu.Unlock()
+	var p *body.Principal
+	if game {
+		p = b.core.GamePrincipal(player, uuid)
+		// In-game direct control is still a bounded task; a stuck model must not
+		// hold the body forever. Thirty minutes is enough for normal UI tasks.
+		if p.Deadline.IsZero() {
+			p.Deadline = time.Now().Add(30 * time.Minute)
+		}
+	} else {
+		p = b.core.Principal(user, sid, name)
+		if p.Deadline.IsZero() || until.Before(p.Deadline) {
+			p.Deadline = until
+		}
+	}
 	p.Valid = func(ctx context.Context) bool { return b.valid(ctx, peer, v, generation) }
 	return p, nil
 }
@@ -220,6 +251,9 @@ func (b *Bridge) perform(ctx context.Context, peer tools.Sender, v *binding, r R
 	if r.Action == "pair" {
 		b.mu.Lock()
 		defer b.mu.Unlock()
+		if v.game {
+			return nil
+		}
 		if b.peer != peer || b.bindings[v.uuid] != v || !v.allowed {
 			return errors.New("permission_denied")
 		}
@@ -278,14 +312,17 @@ func (b *Bridge) view(ctx context.Context, peer tools.Sender, v *binding) map[st
 		b.mu.Unlock()
 		return out
 	}
-	out["canLink"] = v.allowed
-	if v.allowed && time.Now().Before(v.codeUntil) {
+	out["direct"] = v.game
+	out["canLink"] = v.allowed && !v.game
+	if v.allowed && !v.game && time.Now().Before(v.codeUntil) {
 		out["pairCode"] = v.code
 		out["pairExpiresAt"] = v.codeUntil.UnixMilli()
 	}
 	if linked {
 		out["operator"] = v.admin
-		out["expiresAt"] = v.until.UnixMilli()
+		if !v.game {
+			out["expiresAt"] = v.until.UnixMilli()
+		}
 		out["running"] = v.cancel != nil
 		out["messages"] = append([]string{}, v.messages...)
 	}
@@ -312,7 +349,9 @@ func (b *Bridge) respond(peer tools.Sender, r Request, data map[string]any, code
 func (b *Bridge) Chat(ctx context.Context, peer tools.Sender, chat protocol.ChatMessage, query string) bool {
 	b.mu.Lock()
 	v := b.bindings[chat.UUID]
-	matched := v != nil && chat.Session != "" && v.nonce == chat.Session && v.player == chat.Player && b.peer == peer
+	// Public in-game chat must never be routed into a direct body task; the
+	// body task panel is the only user of this path.
+	matched := v != nil && !v.game && chat.Session != "" && v.nonce == chat.Session && v.player == chat.Player && b.peer == peer
 	b.mu.Unlock()
 	if !matched {
 		return false
@@ -360,6 +399,11 @@ func (b *Bridge) submit(ctx context.Context, peer tools.Sender, v *binding, p *b
 		b.mu.Unlock()
 	}
 	key := fmt.Sprintf("bodyui:%d:%s", p.UserID, nonce)
+	player := "web:" + admin
+	if p.Game {
+		key = fmt.Sprintf("bodyui:game:%s:%s", p.GameUUID, nonce)
+		player = "mc:" + v.player
+	}
 	sess, err := b.hub.Session(ctx, key)
 	if err != nil {
 		done()
@@ -375,7 +419,7 @@ func (b *Bridge) submit(ctx context.Context, peer tools.Sender, v *binding, p *b
 	if len(chatReply) > 0 && chatReply[0] {
 		instruction += "\n这是MC私聊回复：最多80字两行，只答当前问题。"
 	}
-	ok := b.ag.Submit(agent.Request{Context: runCtx, Done: done, Session: sess, SessionKey: key, Player: "web:" + admin, RequesterID: uuid, Query: text, TriggerMessageID: msg.ID, ReplyTarget: nonce, BodyPrincipal: p, Tools: b.core.Tools(), MaxIterations: b.steps, SystemInstruction: instruction})
+	ok := b.ag.Submit(agent.Request{Context: runCtx, Done: done, Session: sess, SessionKey: key, Player: player, RequesterID: uuid, Query: text, TriggerMessageID: msg.ID, ReplyTarget: nonce, BodyPrincipal: p, Tools: b.core.Tools(), MaxIterations: b.steps, SystemInstruction: instruction})
 	if !ok {
 		done()
 		return errors.New("agent_unavailable")

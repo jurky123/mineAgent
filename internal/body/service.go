@@ -22,6 +22,8 @@ import (
 
 type Principal struct {
 	UserID, AuthSessionID int64
+	Game                  bool
+	GameUUID              string
 	Name, RunID           string
 	Epoch                 uint64
 	Deadline              time.Time
@@ -58,6 +60,7 @@ type Service struct {
 	approvals                     *tools.Approvals
 	authorize                     func(context.Context, int64, int64) bool
 	verifyWorld                   func(context.Context, protocol.BodySpec) error
+	allowProtected                func(context.Context, protocol.BodySpec) error
 	mu                            sync.Mutex
 	peer                          tools.Sender
 	connection                    string
@@ -87,6 +90,11 @@ func (s *Service) WithAuthorization(fn func(context.Context, int64, int64) bool)
 func (s *Service) WithWorldVerifier(fn func(context.Context, protocol.BodySpec) error) {
 	s.verifyWorld = fn
 }
+
+// WithProtectedAllow grants one approved protected-area write in the Paper guard.
+func (s *Service) WithProtectedAllow(fn func(context.Context, protocol.BodySpec) error) {
+	s.allowProtected = fn
+}
 func ID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -94,6 +102,20 @@ func ID() string {
 	}
 	return hex.EncodeToString(b[:])
 }
+func (s *Service) DirectControl() bool { return s != nil && s.cfg.DirectControl }
+
+// GamePrincipal is a Minecraft-authenticated operator. It intentionally has no
+// web user/session: directControl replaces the old web nonce for in-game use.
+func (s *Service) GamePrincipal(name, uuid string) *Principal {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := &Principal{Game: true, GameUUID: uuid, Name: name, RunID: ID(), Epoch: s.epoch, service: s, connection: s.connection, awaitingResume: s.paused}
+	if s.cfg.RunTimeoutSec > 0 {
+		p.Deadline = time.Now().Add(time.Duration(s.cfg.RunTimeoutSec) * time.Second)
+	}
+	return p
+}
+
 func (s *Service) Principal(userID, sessionID int64, name string) *Principal {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -111,7 +133,17 @@ func (s *Service) check(ctx context.Context, p *Principal, control, read bool) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if p == nil || p.UserID == 0 || p.AuthSessionID == 0 || s.authorize == nil || !s.authorize(ctx, p.UserID, p.AuthSessionID) || (p.Valid != nil && !p.Valid(ctx)) {
+	if p == nil {
+		return errors.New("not_operator")
+	}
+	if p.Game {
+		if !s.cfg.DirectControl {
+			return errors.New("not_operator")
+		}
+		if p.Valid != nil && !p.Valid(ctx) {
+			return errors.New("not_operator")
+		}
+	} else if p.UserID == 0 || p.AuthSessionID == 0 || s.authorize == nil || !s.authorize(ctx, p.UserID, p.AuthSessionID) || (p.Valid != nil && !p.Valid(ctx)) {
 		return errors.New("not_operator")
 	}
 	if control {
@@ -358,6 +390,19 @@ func (s *Service) Snapshot() map[string]any {
 	defer s.mu.Unlock()
 	return map[string]any{"enabled": s.Enabled(), "mode": s.cfg.Mode, "bodyId": s.cfg.ID, "name": s.cfg.Name, "controlConnected": s.peer != nil, "gameConnected": s.peer != nil && s.state.Connected, "stateStale": s.peer == nil || s.received.IsZero() || time.Since(s.received) > 10*time.Second, "policyRevision": s.revision, "pauseReason": s.state.PauseReason, "ready": s.ready, "paused": s.paused, "draining": s.draining, "busy": s.busy, "controlEpoch": s.epoch, "state": s.state, "stale": s.received.IsZero() || time.Since(s.received) > 10*time.Second, "receivedAt": s.received.UnixMilli(), "pendingApprovals": len(s.waiting), "events": append([]protocol.BodyEvent{}, s.events...)}
 }
+func (s *Service) requester(p *Principal) string {
+	if p == nil {
+		return "system"
+	}
+	if p.Game {
+		if p.GameUUID != "" {
+			return "mc:" + p.GameUUID
+		}
+		return "mc:" + p.Name
+	}
+	return fmt.Sprintf("web:%d", p.UserID)
+}
+
 func (s *Service) audit(ctx context.Context, p *Principal, id, tool, decision, operator string, data any) error {
 	if s.store == nil {
 		return errors.New("audit_unavailable")
@@ -380,10 +425,7 @@ func (s *Service) audit(ctx context.Context, p *Principal, id, tool, decision, o
 	if len(b) > 4000 {
 		b = []byte(`{"truncated":true}`)
 	}
-	requester := "system"
-	if p != nil {
-		requester = fmt.Sprintf("web:%d", p.UserID)
-	}
+	requester := s.requester(p)
 	_, err := s.store.SaveAudit(auditCtx, storage.AuditEntry{SessionID: tools.SessionFromContext(ctx), CallID: id, Tool: tool, Risk: "body:" + category(tool), Requester: requester, Args: string(b), Decision: decision, Operator: operator, CreatedAt: time.Now().UnixMilli()})
 	return err
 }
@@ -497,7 +539,11 @@ func (s *Service) inspect(ctx context.Context, p *Principal, tool string, args p
 			return protocol.BodySpec{}, errors.New("world_unknown")
 		}
 		if err := s.verifyWorld(ctx, sp); err != nil {
-			return protocol.BodySpec{}, err
+			if errors.Is(err, ErrSpawnProtected) {
+				sp.Protected = true
+			} else {
+				return protocol.BodySpec{}, err
+			}
 		}
 		return sp, nil
 	}
@@ -509,6 +555,17 @@ func (s *Service) execute(ctx context.Context, p *Principal, tool string, args p
 	ms := timeoutMS(tool, args)
 	if !p.Deadline.IsZero() && time.Until(p.Deadline) < time.Duration(ms+2000)*time.Millisecond {
 		return s.toolFailure(id, "timeout", p)
+	}
+	if sp != nil && sp.Protected && grant != nil {
+		if s.allowProtected == nil {
+			return s.toolFailure(id, "protection_unavailable", p)
+		}
+		gctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		err := s.allowProtected(gctx, *sp)
+		cancel()
+		if err != nil {
+			return s.toolFailure(id, "protection_unavailable", p)
+		}
 	}
 	s.mu.Lock()
 	peer := s.peer

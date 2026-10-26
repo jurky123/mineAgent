@@ -97,6 +97,7 @@ type BodySpec struct {
 	Slot           int         `json:"slot"`
 	Count          int         `json:"count"`
 	Hazards        []string    `json:"hazards"`
+	Protected      bool        `json:"protected,omitempty"`
 }
 type BodyInspect struct {
 	InspectID      string   `json:"inspectId"`

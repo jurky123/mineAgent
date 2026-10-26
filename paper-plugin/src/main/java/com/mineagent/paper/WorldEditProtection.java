@@ -21,7 +21,9 @@ import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class WorldEditProtection implements Listener, AutoCloseable {
     private final JavaPlugin plugin;
@@ -29,6 +31,7 @@ public final class WorldEditProtection implements Listener, AutoCloseable {
     private final UUID offlineId;
     private final int radius;
     private volatile SpawnProtectedExtent.Area area;
+    private final Map<String, Long> allowed = new ConcurrentHashMap<>();
 
     public WorldEditProtection(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -85,8 +88,30 @@ public final class WorldEditProtection implements Listener, AutoCloseable {
         return out;
     }
 
+    /** One approved protected-area block write; consumed by the next break/place event. */
+    public void allowBlock(int x, int z, long ttlMs) {
+        allowed.put(x + ":" + z, System.currentTimeMillis() + Math.max(1L, ttlMs));
+    }
+
+    private boolean consumeAllowed(Block block) {
+        String key = block.getX() + ":" + block.getZ();
+        Long expires = allowed.get(key);
+        if (expires == null) return false;
+        if (System.currentTimeMillis() > expires) {
+            allowed.remove(key);
+            return false;
+        }
+        allowed.remove(key);
+        return true;
+    }
+
+    public boolean protects(Player target) {
+        return applies(target);
+    }
+
     private boolean blocked(Player target, Block block) {
         if (!applies(target)) return false;
+        if (consumeAllowed(block)) return false;
         var current = area;
         return current == null
                 || current.contains(block.getWorld().getName(), block.getX(), block.getZ());

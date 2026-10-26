@@ -250,7 +250,20 @@ Node 身体配置新增 `minecraft.viewDistance`，默认4，整数范围2–8�
 DSH 后端也沿用上述工具身份、审批、暂停恢复和只读预算；身体默认12步/medium，显式 `body.maxSteps=0` 仍不限。官方 DeepSeek 无medium档，身体medium映射到low以保留延迟预算，显式high不降档；普通聊天映射不变。面板直接输入 `/help` 显示网页会话指令并标记为“系统消息”；查询游戏命令请明确要求“以身体执行 /help”，仍由 body_command 检查权限和审批。
 
 
-### 2026-10-21 配套版本
+### 2026-10-26 单人直接控制与保护区内审批
+
+服主确认单人使用后，游戏内控制不再要求网页管理员关联：
+
+- `body.directControl=true` 时，拥有 `mineagent.use` + `mineagent.body` 的游戏玩家通过 Paper WS 直接控制；`bodyui` 使用游戏 principal（`mc:<uuid>`）和 30 分钟任务上限，不再要求网页 nonce/密码/Passkey。网页 `/ai/main` 仍保留为远程/审计入口。
+- 游戏内 `@agent` 保持**全服公开**；不再附带 body-ui nonce，普通问答不会进入私密身体会话。身体面板任务只在该玩家面板内显示，不向全服广播。
+- `body.approval.protectedAreaOnly=true` 时，审批只看目标是否位于 Paper 上报的出生点保护区（半径仍为 512，全高度）：
+  - 区外普通 `body_dig`/`body_place` **不再逐条审批**；
+  - 区内单方块挖掘/放置进入现有 120s 审批；批准后 Paper 只放行该目标方块一次（`internal_allow_protected`，5s 过期），不关闭整个保护；
+  - 容器/PvP/WorldEdit 仍按原策略；保护区内 WorldEdit 写入仍由 Paper Extent 拦截（目前不随单方块 grant 放行）。
+- 硬拒绝、非 OP、LuckPerms、审计、急停、WorldEdit 双层保护不变。`mineagent_builder` 的自身传送/飞行权限仍按清单同步 LuckPerms。
+- 新增接口：Paper `internal_allow_protected {player,x,z,ttlMs}`，只在 Go 已完成审批的保护区单方块动作前调用；Node/后端协议 v1 不变。
+
+## 2026-10-21 配套版本
 
 身体UX修订已发布，后端代码a90cafc、Paper插件0.3.3与Node执行器需配套使用。新增essentials.help/list精确权限节点；审批、非OP/operator gate和出生点/WorldEdit保护保持。重连仍保留暂停，不自动恢复旧任务。默认身体预算12步、连续只读3次、medium（官方DeepSeek映射low），显式maxSteps=0仍不限，Node默认视距4。
 

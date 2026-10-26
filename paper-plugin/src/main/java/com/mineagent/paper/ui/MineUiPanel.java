@@ -10,6 +10,7 @@ import com.mineui.protocol.SemVer;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +50,8 @@ final class MineUiPanel {
                 });
         for (AgentUi.Choice choice : panel.choices())
             session.on(choice.id(), a -> action.accept(a.id(), ""));
+        for (String id : List.of("chat", "body", "approvals", "help"))
+            session.on(id, a -> action.accept(a.id(), ""));
         session.on("close", a -> action.accept("close", ""));
         if (panel.input()) session.on("send", a -> action.accept("send", a.string("text", "")));
         update(player, panel);
@@ -69,7 +72,9 @@ final class MineUiPanel {
                     session.state("title", panel.title());
                     session.state("status", panel.status());
                     session.state("lines", UiState.lines(panel.content()));
-                    session.state("chatLines", chatLines(panel));
+                    List<JsonObject> items = chatItems(panel);
+                    session.state("chatItems", items);
+                    session.state("chatHighlight", Math.max(0, items.size() - 1));
                 });
     }
 
@@ -79,81 +84,154 @@ final class MineUiPanel {
     }
 
     static JsonObject definition(AgentUi.Panel panel) {
-        // Conversation composer stays outside the scrollable transcript.
-        JsonObject root = node(panel.input() ? "column" : "scroll", "100%", "100%");
-        root.addProperty("background", "#E0161B22");
-        JsonObject column = node("column", "100%", panel.input() ? "100%" : "auto");
-        column.addProperty("padding", 8);
-        column.addProperty("gap", 4);
-        if (panel.input()) column.addProperty("justify", "space-between");
-        JsonArray columns = new JsonArray();
-        columns.add(column);
-        root.add("children", columns);
-        JsonArray children = new JsonArray();
-        column.add("children", children);
-        JsonObject header = node("column", "100%", "auto");
+        JsonObject root = node("row", "100%", "100%");
+        root.addProperty("background", "#E010141C");
+        root.addProperty("padding", 6);
+        root.addProperty("gap", 6);
+        JsonArray rootChildren = new JsonArray();
+        root.add("children", rootChildren);
+
+        // Left rail: same role as DSH's session sidebar, but for the single
+        // public Minecraft conversation plus body/approval entry points.
+        JsonObject side = node("column", "22%", "100%");
+        side.addProperty("background", "#C8121822");
+        side.addProperty("padding", 6);
+        side.addProperty("gap", 5);
+        side.addProperty("clip", true);
+        JsonArray sideChildren = new JsonArray();
+        side.add("children", sideChildren);
+        sideChildren.add(text("{state.title}", "100%", 18, "#FFFFFF", 1.25));
+        sideChildren.add(text("{state.status}", "100%", 11, "#9FB3C8", 1));
+        sideChildren.add(sideButton("chat", "全服对话"));
+        sideChildren.add(sideButton("body", "AI 玩家"));
+        sideChildren.add(sideButton("approvals", "动作审批"));
+        sideChildren.add(sideButton("help", "帮助"));
+        sideChildren.add(sideButton("close", "关闭"));
+        rootChildren.add(side);
+
+        // Main column: header, transcript, composer.
+        JsonObject main = node("column", "78%", "100%");
+        main.addProperty("gap", 5);
+        JsonArray mainChildren = new JsonArray();
+        main.add("children", mainChildren);
+        JsonObject header = node("row", "100%", 22);
         header.addProperty("gap", 4);
-        JsonArray heading = new JsonArray();
-        header.add("children", heading);
-        children.add(header);
-        JsonObject title = node("text", "100%", 16);
-        title.addProperty("text", "{state.title}");
-        title.addProperty("scale", 1.3);
-        heading.add(title);
-        JsonObject status = node("text", "100%", 12);
-        status.addProperty("text", "{state.status}");
-        status.addProperty("color", "#C1D6E6");
-        heading.add(status);
-        JsonObject list = node("list", "100%", panel.input() ? "54%" : "42vh");
-        list.addProperty("items", "{state.chatLines}");
-        list.addProperty("itemGap", 3);
-        list.addProperty("autoScroll", false);
-        JsonObject line = node("stack", "100%", 11);
-        JsonArray variants = new JsonArray();
-        for (String[] style :
-                new String[][] {{"body", "#EEEEEE"}, {"own", "#FFD275"}, {"agent", "#83D9DB"}}) {
-            JsonObject text = node("text", "100%", 11);
-            text.addProperty("text", "{item.text}");
-            text.addProperty("color", style[1]);
-            text.addProperty("visible", "item." + style[0]);
-            variants.add(text);
-        }
-        line.add("children", variants);
-        list.add("itemTemplate", line);
-        children.add(list);
-        JsonObject footer = node("column", "100%", "auto");
-        footer.addProperty("gap", 4);
-        JsonArray controls = new JsonArray();
-        footer.add("children", controls);
-        children.add(footer);
+        JsonArray headerChildren = new JsonArray();
+        header.add("children", headerChildren);
+        headerChildren.add(text("{state.title}", "70%", 15, "#FFFFFF", 1.1));
+        headerChildren.add(text("{state.status}", "30%", 11, "#9FB3C8", 1));
+        mainChildren.add(header);
+
+        JsonObject list = node("list", "100%", panel.input() ? "54%" : "70%");
+        list.addProperty("items", "{state.chatItems}");
+        list.addProperty("itemGap", 4);
+        list.addProperty("autoScroll", true);
+        list.addProperty("highlightIndex", "{state.chatHighlight}");
+        list.add("itemTemplate", chatCardTemplate());
+        mainChildren.add(list);
+
+        JsonObject composer = node("column", "100%", "auto");
+        composer.addProperty("gap", 4);
+        JsonArray composerChildren = new JsonArray();
+        composer.add("children", composerChildren);
         if (panel.input()) {
-            JsonObject input = node("input", "100%", 22);
+            JsonObject input = node("input", "100%", 20);
             input.addProperty("skin", "vanilla:input");
-            input.addProperty("placeholder", "输入消息，按回车发送");
+            input.addProperty("placeholder", panel.title().contains("身体") ? "输入身体任务，按回车发送" : "输入消息，按回车发送（全服可见）");
             input.addProperty("action", "send");
             input.addProperty("id", "question");
             input.addProperty("maxLength", 512);
-            controls.add(input);
+            composerChildren.add(input);
         }
         JsonArray buttons = new JsonArray();
         for (AgentUi.Choice choice : panel.choices())
-            buttons.add(button(choice.id(), choice.label()));
-        buttons.add(button("close", "关闭"));
-        // Rows instead of a client-specific grid extension: works with older server_ui clients too.
-        int count = panel.input() ? 3 : 2;
-        for (int i = 0; i < buttons.size(); i += count) {
+            if (!choice.id().equals("body")) buttons.add(button(choice.id(), choice.label()));
+        for (int i = 0; i < buttons.size(); i += 3) {
             JsonObject row = node("row", "100%", 20);
             row.addProperty("gap", 4);
             JsonArray cells = new JsonArray();
-            for (int j = i; j < Math.min(buttons.size(), i + count); j++) {
+            for (int j = i; j < Math.min(buttons.size(), i + 3); j++) {
                 JsonObject cell = buttons.get(j).getAsJsonObject();
-                cell.addProperty("width", count == 3 ? "31%" : "48%");
+                cell.addProperty("width", "32%");
                 cells.add(cell);
             }
             row.add("children", cells);
-            controls.add(row);
+            composerChildren.add(row);
         }
+        mainChildren.add(composer);
+        rootChildren.add(main);
         return root;
+    }
+
+    private static JsonObject chatCardTemplate() {
+        JsonObject stack = node("stack", "100%", "auto");
+        JsonArray cards = new JsonArray();
+        String[][] styles = {
+            {"own", "#FF2B4C6F", "#FFD275"},
+            {"agent", "#FF24343F", "#83D9DB"},
+            {"system", "#FF3A2F2F", "#C1D6E6"},
+        };
+        for (String[] style : styles) {
+            JsonObject card = node("column", "100%", "auto");
+            card.addProperty("background", style[1]);
+            card.addProperty("radius", 6);
+            card.addProperty("padding", 5);
+            card.addProperty("gap", 2);
+            card.addProperty("visible", "item." + style[0]);
+            JsonArray rows = new JsonArray();
+            card.add("children", rows);
+            rows.add(text("{item.author}", "100%", 11, style[2], 1));
+            for (int i = 0; i < 12; i++) {
+                JsonObject line = text("{item.l" + i + "}", "100%", 10, "#E6EDF3", 1);
+                line.addProperty("visible", "item.h" + i);
+                rows.add(line);
+            }
+            cards.add(card);
+        }
+        stack.add("children", cards);
+        return stack;
+    }
+
+    private static List<JsonObject> chatItems(AgentUi.Panel panel) {
+        List<JsonObject> out = new ArrayList<>();
+        if (panel.turns().isEmpty()) {
+            out.add(chatItem("系统", "system", UiState.lines(panel.content(), panel.input())));
+            return out;
+        }
+        for (UiState.Message turn : panel.turns()) {
+            boolean own = turn.author().equals(panel.self());
+            out.add(chatItem(own ? "你" : turn.author(), own ? "own" : "agent", UiState.lines(turn.text())));
+        }
+        return out;
+    }
+
+    private static JsonObject chatItem(String author, String role, List<String> lines) {
+        JsonObject item = new JsonObject();
+        item.addProperty("author", author);
+        for (String kind : new String[] {"own", "agent", "system"})
+            item.addProperty(kind, kind.equals(role));
+        for (int i = 0; i < 12; i++) {
+            String line = i < lines.size() ? lines.get(i) : " ";
+            item.addProperty("l" + i, line);
+            item.addProperty("h" + i, i < lines.size());
+        }
+        return item;
+    }
+
+    private static JsonObject sideButton(String id, String label) {
+        JsonObject button = node("button", "100%", 20);
+        button.addProperty("skin", "vanilla:button");
+        button.addProperty("text", label);
+        button.addProperty("action", id);
+        return button;
+    }
+
+    private static JsonObject text(String content, Object width, Object height, String color, double scale) {
+        JsonObject text = node("text", width, height);
+        text.addProperty("text", content);
+        text.addProperty("color", color);
+        text.addProperty("scale", scale);
+        return text;
     }
 
     static List<JsonObject> chatLines(AgentUi.Panel panel) {

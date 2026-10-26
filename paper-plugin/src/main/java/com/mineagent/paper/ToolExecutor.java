@@ -64,9 +64,28 @@ public final class ToolExecutor {
                 return checkCommandPermission(args, requester, requesterUuid);
             case "internal_check_permission":
                 return checkPermission(args, requester, requesterUuid);
+            case "internal_allow_protected":
+                return allowProtected(args);
             default:
                 throw new IllegalArgumentException("未知工具: " + tool);
         }
+    }
+
+    private JsonObject allowProtected(JsonObject args) {
+        Player target = requirePlayer(args, "player");
+        WorldEditProtection protection = plugin.worldEditProtection();
+        if (protection == null || !protection.protects(target)) {
+            throw new IllegalArgumentException("protection_unavailable");
+        }
+        if (!args.has("x") || !args.has("z")) {
+            throw new IllegalArgumentException("缺少坐标");
+        }
+        long ttl = args.has("ttlMs") ? args.get("ttlMs").getAsLong() : 5000L;
+        ttl = Math.max(1L, Math.min(15000L, ttl));
+        protection.allowBlock(args.get("x").getAsInt(), args.get("z").getAsInt(), ttl);
+        JsonObject out = new JsonObject();
+        out.addProperty("ok", true);
+        return out;
     }
 
     private JsonObject listPlayers() {

@@ -46,7 +46,8 @@ final class BodyPanels {
         List<AgentUi.Choice> choices = new ArrayList<>();
         String title = "AI 玩家", content = "";
         boolean input = false,
-                linked = permission && yes(data, "linked"),
+                direct = yes(data, "direct"),
+                linked = permission && (yes(data, "linked") || direct),
                 enabled = yes(data, "enabled");
         JsonObject profile = object(data, "profile"),
                 snapshot = object(data, "snapshot"),
@@ -83,7 +84,7 @@ final class BodyPanels {
             if (permission) choices.add(new AgentUi.Choice("body_pair_new", "关联管理员"));
             else content += "\n游戏内还需要 mineagent.body 权限。";
         } else if ("body_task".equals(page)) {
-            title = "AI 玩家 · 私密对话";
+            title = direct ? "AI 玩家 · 身体任务" : "AI 玩家 · 私密对话";
             input = true;
             boolean running = yes(data, "running");
             String tool = text(object(state, "task"), "tool");
@@ -155,16 +156,17 @@ final class BodyPanels {
                             + position
                             + "\n当前任务："
                             + text(object(state, "task"), "tool")
-                            + "\n\n授权管理员："
-                            + text(data, "operator")
-                            + "\n授权到期后须重新关联。";
+                            + "\n\n"
+                            + (direct
+                                    ? "控制方式：游戏内直接控制（mineagent.body）"
+                                    : "授权管理员：" + text(data, "operator") + "\n授权到期后须重新关联。");
             choices.add(new AgentUi.Choice("body_task", "下达任务 / 查看回复"));
             choices.add(new AgentUi.Choice("body_approvals", "动作审批"));
             choices.add(new AgentUi.Choice("body_stop", "急停并暂停"));
             choices.add(new AgentUi.Choice("body_pause", "暂停"));
             choices.add(new AgentUi.Choice("body_confirm_resume", "恢复"));
             choices.add(new AgentUi.Choice("body_confirm_disconnect", "断开"));
-            choices.add(new AgentUi.Choice("body_unlink", "解除本次授权"));
+            if (!direct) choices.add(new AgentUi.Choice("body_unlink", "解除本次授权"));
         }
         if (!error(code).isEmpty()) content = error(code) + "\n\n" + content;
         choices.add(new AgentUi.Choice("body_refresh", "刷新身体状态"));

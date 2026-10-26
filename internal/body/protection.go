@@ -36,6 +36,20 @@ func WorldEditWrite(command string) bool {
 	return !worldEditSafe[name]
 }
 
+// TeleportCommand identifies an explicit self-teleport. Such a command is
+// intentional, so a forced_move pause can be cleared immediately after it.
+func TeleportCommand(command string) bool {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return false
+	}
+	name := strings.ToLower(strings.TrimLeft(fields[0], "/"))
+	if i := strings.LastIndex(name, ":"); i >= 0 {
+		name = name[i+1:]
+	}
+	return name == "tp" || name == "tppos"
+}
+
 // BlockProtection is reported by the authenticated Paper channel from its live
 // spawn guard. Never derive this geometry from model text or duplicate config.
 type BlockProtection struct {

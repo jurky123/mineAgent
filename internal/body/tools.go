@@ -178,6 +178,16 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 	}
 	result := s.execute(ctx, p, t.name, args, id, &sp, grant)
 	release() // resume must not wait behind the completed action's busy lock
+	if result.Code == "forced_move" && t.name == "body_command" && TeleportCommand(sp.Args.Command) {
+		// An explicit authorized tp/tppos is the requested destination, not an
+		// unknown forced move. Clear the pause so the next chat turn can act.
+		if _, resumeErr := s.Control(context.WithoutCancel(ctx), "resume", p); resumeErr == nil {
+			result.OK, result.Code, result.Error, result.Outcome = true, "confirmed", "", "confirmed"
+			if result.Summary == "" {
+				result.Summary = "teleported and resumed"
+			}
+		}
+	}
 	if err := s.WaitForResume(ctx, p); err != nil && result.Code == "forced_move" {
 		return fail(err.Error())
 	}

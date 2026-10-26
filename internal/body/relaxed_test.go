@@ -101,3 +101,16 @@ func TestProtectedCommandDoesNotRequireReason(t *testing.T) {
 		t.Fatalf("protected command rejected without reason: %v", err)
 	}
 }
+
+func TestTeleportCommandClassifier(t *testing.T) {
+	for _, command := range []string{"tp Oathtory", "/tp Oathtory", "tppos 328 64 529", "essentials:tp Oathtory"} {
+		if !TeleportCommand(command) {
+			t.Fatalf("%q should be a teleport", command)
+		}
+	}
+	for _, command := range []string{"give stone", "//set stone", "tpaccept"} {
+		if TeleportCommand(command) {
+			t.Fatalf("%q should not be a teleport", command)
+		}
+	}
+}

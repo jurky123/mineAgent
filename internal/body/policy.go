@@ -307,7 +307,9 @@ func (s *Service) highRisk(sp protocol.BodySpec) bool {
 	return false
 }
 func (s *Service) reason(sp protocol.BodySpec) error {
-	if s.highRisk(sp) && strings.TrimSpace(sp.Args.Reason) == "" {
+	// Commands have no reason parameter in their tool schema; the approval card
+	// shows the actual command instead, so do not reject them for a blank reason.
+	if s.highRisk(sp) && sp.Tool != "body_command" && strings.TrimSpace(sp.Args.Reason) == "" {
 		return fmt.Errorf("reason_required")
 	}
 	return nil

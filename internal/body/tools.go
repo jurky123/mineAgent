@@ -153,7 +153,15 @@ func (t *bodyTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Optio
 			if s.approvals == nil {
 				return fail("approval_unavailable")
 			}
-			info, err := s.approvals.CreateForContext(ctx, tools.ApprovalInfo{Source: "body", TimeoutMS: int64(s.cfg.Approval.TimeoutSec) * 1000, Tool: t.name, Requester: s.requester(p), Prompt: fmt.Sprintf("%s 在 %s 的保护区内对 %v 执行 %s，理由：%s", s.cfg.Name, sp.WorldID, sp.Target, t.name, sp.Args.Reason), Args: json.RawMessage(output(sp))})
+			subject := fmt.Sprintf("%v", sp.Target)
+			if sp.Tool == "body_command" {
+				subject = sp.Args.Command
+			}
+			reason := sp.Args.Reason
+			if strings.TrimSpace(reason) == "" {
+				reason = "保护区内建造"
+			}
+			info, err := s.approvals.CreateForContext(ctx, tools.ApprovalInfo{Source: "body", TimeoutMS: int64(s.cfg.Approval.TimeoutSec) * 1000, Tool: t.name, Requester: s.requester(p), Prompt: fmt.Sprintf("%s 在 %s 的保护区内对 %v 执行 %s，理由：%s", s.cfg.Name, sp.WorldID, subject, t.name, reason), Args: json.RawMessage(output(sp))})
 			if err != nil {
 				return fail("approval_unavailable")
 			}

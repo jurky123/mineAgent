@@ -259,9 +259,10 @@ DSH 后端也沿用上述工具身份、审批、暂停恢复和只读预算；�
 - `body.approval.protectedAreaOnly=true` 时，审批只看目标是否位于 Paper 上报的出生点保护区（半径仍为 512，全高度）：
   - 区外普通 `body_dig`/`body_place` **不再逐条审批**；
   - 区内单方块挖掘/放置进入现有 120s 审批；批准后 Paper 只放行该目标方块一次（`internal_allow_protected`，5s 过期），不关闭整个保护；
-  - 容器/PvP/WorldEdit 仍按原策略；保护区内 WorldEdit 写入仍由 Paper Extent 拦截（目前不随单方块 grant 放行）。
+  - 保护区内 WorldEdit 写入：若当前选区与保护范围相交，进入审批；批准后 Paper 为该次命令开一个 5 秒短时区域放行窗口（`internal_allow_protected_area`），命令结束/超时即恢复保护。选区不覆盖保护区时仍免审批。
+  - 容器/PvP/未覆盖的 WorldEdit 侧效仍按原策略；Paper Extent 仍是最终写入边界。
 - 硬拒绝、非 OP、LuckPerms、审计、急停、WorldEdit 双层保护不变。`mineagent_builder` 的自身传送/飞行权限仍按清单同步 LuckPerms。
-- 新增接口：Paper `internal_allow_protected {player,x,z,ttlMs}`，只在 Go 已完成审批的保护区单方块动作前调用；Node/后端协议 v1 不变。
+- 新增接口：Paper `internal_allow_protected {player,x,z,ttlMs}`（单方块）与 `internal_check_protected_selection` / `internal_allow_protected_area`（WorldEdit 选区/短时区域），只在 Go 已完成审批的动作前调用；Node/后端协议 v1 不变。
 
 ## 2026-10-21 配套版本
 

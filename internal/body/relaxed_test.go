@@ -73,3 +73,31 @@ func TestProtectedOnlyAllowsUnsafeItemOutside(t *testing.T) {
 		t.Fatalf("unsafe item outside protection rejected: %v", err)
 	}
 }
+
+func TestWorldEditWriteClassifier(t *testing.T) {
+	for _, command := range []string{"//set stone", "//paste", "//move 1 0 0", "//undo", "//walls stone", "//sphere stone 5"} {
+		if !WorldEditWrite(command) {
+			t.Fatalf("%q should be treated as a write", command)
+		}
+	}
+	for _, command := range []string{"//pos1", "//pos2 1,64,1", "//copy", "//size", "//expand 1", "//rotate 90", "give stone", "/help"} {
+		if WorldEditWrite(command) {
+			t.Fatalf("%q should not be treated as a world write", command)
+		}
+	}
+}
+
+func TestProtectedCommandDoesNotRequireReason(t *testing.T) {
+	s, _, _, _ := setup(t)
+	s.cfg.Approval.ProtectedAreaOnly = true
+	sp := protocol.BodySpec{
+		Tool: "body_command", WorldID: "yard", Dimension: "minecraft:overworld",
+		Pos: [3]float64{0, 64, 0}, Args: protocol.BodyArgs{Command: "//set stone"}, Protected: true,
+	}
+	if !s.highRisk(sp) {
+		t.Fatal("protected command not approval-gated")
+	}
+	if err := s.reason(sp); err != nil {
+		t.Fatalf("protected command rejected without reason: %v", err)
+	}
+}

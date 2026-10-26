@@ -66,6 +66,10 @@ public final class ToolExecutor {
                 return checkPermission(args, requester, requesterUuid);
             case "internal_allow_protected":
                 return allowProtected(args);
+            case "internal_check_protected_selection":
+                return checkProtectedSelection(args);
+            case "internal_allow_protected_area":
+                return allowProtectedArea(args);
             default:
                 throw new IllegalArgumentException("未知工具: " + tool);
         }
@@ -83,6 +87,27 @@ public final class ToolExecutor {
         long ttl = args.has("ttlMs") ? args.get("ttlMs").getAsLong() : 5000L;
         ttl = Math.max(1L, Math.min(15000L, ttl));
         protection.allowBlock(args.get("x").getAsInt(), args.get("z").getAsInt(), ttl);
+        JsonObject out = new JsonObject();
+        out.addProperty("ok", true);
+        return out;
+    }
+
+    private JsonObject checkProtectedSelection(JsonObject args) {
+        Player target = requirePlayer(args, "player");
+        WorldEditProtection protection = plugin.worldEditProtection();
+        JsonObject out = new JsonObject();
+        out.addProperty("protected", protection != null && protection.protects(target) && protection.selectionProtected(target));
+        return out;
+    }
+
+    private JsonObject allowProtectedArea(JsonObject args) {
+        Player target = requirePlayer(args, "player");
+        WorldEditProtection protection = plugin.worldEditProtection();
+        if (protection == null || !protection.protects(target)) {
+            throw new IllegalArgumentException("protection_unavailable");
+        }
+        long ttl = args.has("ttlMs") ? args.get("ttlMs").getAsLong() : 5000L;
+        protection.allowArea(ttl);
         JsonObject out = new JsonObject();
         out.addProperty("ok", true);
         return out;

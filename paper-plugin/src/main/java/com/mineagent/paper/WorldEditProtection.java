@@ -2,7 +2,10 @@ package com.mineagent.paper;
 
 import com.google.gson.JsonObject;
 import com.sk89q.worldedit.EditSession;
+import com.sk89q.worldedit.IncompleteRegionException;
+import com.sk89q.worldedit.LocalSession;
 import com.sk89q.worldedit.WorldEdit;
+import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.event.extent.EditSessionEvent;
 import com.sk89q.worldedit.util.eventbus.EventHandler.Priority;
 import com.sk89q.worldedit.util.eventbus.Subscribe;
@@ -32,6 +35,7 @@ public final class WorldEditProtection implements Listener, AutoCloseable {
     private final int radius;
     private volatile SpawnProtectedExtent.Area area;
     private final Map<String, Long> allowed = new ConcurrentHashMap<>();
+    private volatile long areaAllowUntil;
 
     public WorldEditProtection(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -93,6 +97,36 @@ public final class WorldEditProtection implements Listener, AutoCloseable {
         allowed.put(x + ":" + z, System.currentTimeMillis() + Math.max(1L, ttlMs));
     }
 
+    /** A short window for one approved WorldEdit command (including its region). */
+    public void allowArea(long ttlMs) {
+        areaAllowUntil = System.currentTimeMillis() + Math.max(1L, Math.min(15000L, ttlMs));
+    }
+
+    private boolean areaAllowed() {
+        return System.currentTimeMillis() < areaAllowUntil;
+    }
+
+    /** Whether the body's current WorldEdit selection overlaps the spawn guard. */
+    public boolean selectionProtected(Player target) {
+        if (!applies(target)) return false;
+        SpawnProtectedExtent.Area current = area;
+        if (current == null) return true;
+        try {
+            LocalSession session = WorldEdit.getInstance().getSessionManager().findByName(target.getName());
+            if (session == null || !session.isSelectionDefined(session.getSelectionWorld())) return false;
+            Region region = session.getSelection();
+            var min = region.getMinimumPoint();
+            var max = region.getMaximumPoint();
+            // The body operates in its current Bukkit world; compare the
+            // selection bbox against that world's live spawn guard. A selection
+            // in another world is conservatively treated as protected.
+            return current.intersects(
+                    target.getWorld().getName(), min.x(), min.z(), max.x(), max.z());
+        } catch (IncompleteRegionException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
     private boolean consumeAllowed(Block block) {
         String key = block.getX() + ":" + block.getZ();
         Long expires = allowed.get(key);
@@ -111,7 +145,7 @@ public final class WorldEditProtection implements Listener, AutoCloseable {
 
     private boolean blocked(Player target, Block block) {
         if (!applies(target)) return false;
-        if (consumeAllowed(block)) return false;
+        if (areaAllowed() || consumeAllowed(block)) return false;
         var current = area;
         return current == null
                 || current.contains(block.getWorld().getName(), block.getX(), block.getZ());
@@ -151,6 +185,7 @@ public final class WorldEditProtection implements Listener, AutoCloseable {
 
     @Subscribe(priority = Priority.VERY_LATE)
     public void editSession(EditSessionEvent event) {
+        if (areaAllowed()) return;
         var actor = event.getActor();
         if (actor == null
                 || (!offlineId.equals(actor.getUniqueId()) && !player.equals(actor.getName())))

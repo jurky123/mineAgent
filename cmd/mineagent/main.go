@@ -220,9 +220,37 @@ func main() {
 				return fmt.Errorf("stale")
 			}
 		}
-		return body.CheckBlockProtection(sp, player.BlockProtection)
+		if err := body.CheckBlockProtection(sp, player.BlockProtection); err != nil {
+			return err
+		}
+		if sp.Tool == "body_command" && body.WorldEditWrite(sp.Args.Command) && player.BlockProtection != nil {
+			if !player.BlockProtection.Ready {
+				return fmt.Errorf("protection_unavailable")
+			}
+			if player.BlockProtection.Enabled {
+				raw, err := gw.Call(cctx, "internal_check_protected_selection", args)
+				if err != nil {
+					return fmt.Errorf("protection_unavailable")
+				}
+				var selection struct {
+					Protected bool `json:"protected"`
+				}
+				if json.Unmarshal([]byte(raw), &selection) != nil {
+					return fmt.Errorf("protection_unavailable")
+				}
+				if selection.Protected {
+					return body.ErrSpawnProtected
+				}
+			}
+		}
+		return nil
 	})
 	bodySvc.WithProtectedAllow(func(ctx context.Context, sp protocol.BodySpec) error {
+		if sp.Tool == "body_command" {
+			args, _ := json.Marshal(map[string]any{"player": cfg.Body.Name, "ttlMs": 5000})
+			_, err := gw.Call(ctx, "internal_allow_protected_area", args)
+			return err
+		}
 		if sp.Target == nil {
 			return fmt.Errorf("protection_unavailable")
 		}

@@ -22,4 +22,14 @@
 
 中途保留两次失败证据：门户测试因默认项新增说明而定位到了默认行，已使用明确模型标记修正定位且原断言保持；AI 玩家回归出现上一轮已记录的偶发 Chromium `ViewTransition opt-in disabled`，原样复测通过，未忽略异常或修改转场运行时。静态设计检测仅提示6项既有弹簧动效，属于已确认的纸墨设计。
 
-日志为 `checks.log`、`remaining.log`、`final-checks.log`；截图和机器验收数据位于 `visual/`。正式发布结果后续补记。
+日志为 `checks.log`、`remaining.log`、`final-checks.log`；截图和机器验收数据位于 `visual/`。
+
+## 正式发布
+
+2026-11-15 按用户授权上线 `ea8e362`。主分支先核对 origin 无并发提交，再快进合并；他人的未跟踪评审文件保留，参考分支未覆盖。
+
+发布前检查：Forge 在线0/20、网页对局0、身体无动作 / 无任务 / 审批0，暂停且处于维护 drain，未发现迁移或备份进程。两个旧二进制和独立门户一致性数据库备份保存于证据目录 `release/backups/`。先在 Forge 控制台发全服维护通告，再执行 `scripts/deploy.sh` 的暂存构建、对局 / drain 检查、原子替换和重启；AI 玩家门户单独更新镜像资源后二进制重启。未使用 force，未重启 Minecraft 或其他服务。身体暂停与原维护标志保持。
+
+主站与 `aiplayer-portal.service` 均 active，运行版本为 `ea8e362`。上线后通过本机解析到现有 TLS 入口，以真实域名 / 证书检查14个页面组合（390浅色、1440深色），无溢出或脚本错误；包含带明确演示标识的模型弹层，确认唯一选中态、14px名称、点阵以及实际返回的 tokens / composer 与源码一致。未登录身体和对局管理接口仍403，论坛仍404。未发送真实模型请求、任务或审批。
+
+发布用时约15秒，构建临时单元峰值588.3MiB；上线浏览器核查约17秒。`release/publish.log`、`release/verify.log` 与 `release/online-verification.json` 保留证据。该检查不代表各公网网络或真机交互均已验证。

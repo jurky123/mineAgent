@@ -90,7 +90,7 @@
   padding: 8px 16px; border-radius: 12px; border: var(--bw) solid rgba(255,255,255,.35); color: #fff;
   text-decoration: none; font-weight: 600;
 }
-.launch-example:hover { background: #fff; color: var(--on-accent); border-color: var(--ink); }
+.launch-example:hover { background: #fff; color: var(--on-accent); border-color: var(--ink); box-shadow: 2px 2px 0 #18171F; }
 .launch-agent .launch-cta { margin-top: auto; align-self: flex-start; background: var(--tone-sun); color: var(--on-accent); }
 .launch-agent .launch-cta:hover { margin-top: auto; align-self: flex-start; background: var(--tone-sun); color: var(--on-accent); }
 .launch-status {
@@ -117,7 +117,7 @@
 .launch-game-art { width: 44px; height: 44px; display: grid; place-items: center; flex: none; border-radius: 10px; border: var(--bw) solid var(--line); }
 .launch-game-art img { width: 30px; height: 30px; }
 .launch-game-chess .launch-game-art { background: repeating-conic-gradient(var(--tone-games-soft) 0 25%,var(--surface) 0 50%) 0 0/14px 14px; }
-.launch-game-gomoku .launch-game-art { background: #E9C98F; }
+.launch-game-gomoku .launch-game-art { background: var(--board-wood); }
 .launch-game-text { flex: 1; }
 .portal-recent { margin: 32px 0; }
 .portal-recent h2 { font-size: 18px; margin: 0 0 12px; }
@@ -142,6 +142,9 @@
   border: var(--bw) solid var(--line); border-radius: 18px; box-shadow: var(--shadow-hard-lg);
   color: var(--on-accent);
 }
+.server-connect .btn:not(.primary) { color: #18171F; border-color: #18171F; background: #FFFDF9; box-shadow: 2px 2px 0 #18171F; }
+.server-connect .btn:not(.primary):hover { background: #EFE9DC; }
+.server-connect .copy-feedback { color: var(--on-accent); }
 .server-connect > div:first-child { flex: 1; display: grid; gap: 6px; min-width: 0; border-right: var(--bw) dashed var(--ink); padding-right: 24px; }
 .server-connect span { color: var(--on-accent); font-size: 13px; font-family: var(--font-mono); font-weight: 700; }
 .server-connect code { font-size: 28px; color: var(--on-accent); overflow-wrap: anywhere; user-select: all; font-family: var(--font-mono); font-weight: 800; }
@@ -160,7 +163,7 @@
 .minecraft-player-entry h2 { margin: 0; }
 .download-card {
   display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding: 24px;
-  box-shadow: var(--shadow-hard); background: var(--tone-sun-soft);
+  box-shadow: var(--shadow-hard); background: var(--surface);
 }
 .release-facts > div { padding: 10px 12px; border: var(--bw) dashed var(--line-soft); border-radius: 10px; }
 .install-steps { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; margin: 32px 0; }

@@ -518,7 +518,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   const create = h('button', 'btn primary cta', '创建房间');
   create.onclick = () => withPending(create, async () => {
     if (demoCreate) { onRoom(demoCreate()); return; }
-    try { const guest = !shell.user; if (guest) await requireLogin(); onRoom(await createRoom(gameId)); if (guest) location.reload(); } catch (e) { toast(e.message, { warn: true }); }
+    try { const guest = !shell.user; if (guest) await requireLogin(); onRoom(await createRoom(gameId)); if (guest) await shell.RefreshUser?.(); } catch (e) { toast(e.message, { warn: true }); }
   });
   createCard.appendChild(create);
   grid.appendChild(createCard);
@@ -544,7 +544,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
       const guest = !shell.user; if (guest) await requireLogin();
       const res = await joinRoom(gameId, code);
       if (res.redirect && res.redirect !== '/games/' + gameId) { location.href = res.redirect; return; }
-      onRoom(res.room); if (guest) location.reload();
+      onRoom(res.room); if (guest) await shell.RefreshUser?.();
     } catch (e) { error.textContent = e.message; input.setAttribute('aria-invalid', 'true'); }
   };
   join.onclick = () => withPending(join, doJoin);
@@ -572,7 +572,7 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
       if (!shell.user && !demoRooms) { const empty = h('div', 'empty'); empty.append(h('p', null, '登录后查看房间，或先观看演示回放。')); const demo = h('a', 'btn', '观看演示回放'); demo.href = '/account/history?demo=' + gameId; empty.appendChild(demo); list.replaceChildren(empty); return; }
       const rooms = demoRooms ? demoRooms() : (await apiGet('/api/games/' + gameId + '/rooms')).rooms;
       list.innerHTML = '';
-      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂无开放房间。可以创建房间，或观看演示回放。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?demo=gomoku'; empty.appendChild(replay); list.appendChild(empty); return; }
+      if (!rooms.length) { const empty = h('div', 'empty'); empty.appendChild(h('p', null, '暂无开放房间。可以创建房间，或观看演示回放。')); const replay = h('a', 'btn', '观看演示回放'); replay.href = '/account/history?demo=' + gameId; empty.appendChild(replay); list.appendChild(empty); return; }
       for (const r of rooms) {
         const item = h('div', 'list-row');
         item.appendChild(h('span', 'avatar', (r.host[0] || '?')));
@@ -605,4 +605,12 @@ function fmtAgo(ms) {
   if (s < 60) return '刚刚';
   if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
   return Math.floor(s / 3600) + ' 小时前';
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (e) => {
+    document.querySelectorAll('details.game-more[open]').forEach((d) => {
+      if (!d.contains(e.target)) d.removeAttribute('open');
+    });
+  });
 }

@@ -254,6 +254,7 @@ body.agent-page { padding-bottom: 0; }
 }
 @media (hover: none) {
   .conv-menu summary { min-width: 44px; min-height: 44px; }
+  .conv-item .conv-acts { display: flex; }
 }
 @media (max-width: 960px) {
   #collapse { display: none; }

@@ -1,7 +1,7 @@
 /* 弹层与账号人设设置；纸墨外观，焦点、权限和查看器行为保持。 */
 .ws-card { max-width: 620px; max-height: 76vh; }
 .ap-card { max-width: 460px; }
-.ws-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.ws-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: var(--bw) solid var(--line); }
 .ws-path { flex: 1; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-path a { color: var(--text-2); text-decoration: none; cursor: pointer; }
 .ws-path a:hover { color: var(--text); text-decoration: underline; }
@@ -39,11 +39,6 @@
 }
 .dlg-input:focus { border-color: var(--interactive-border); background: var(--surface); }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.btn:hover { background: var(--control-hover); }
-.btn.primary { background: var(--interactive); border-color: var(--interactive); color: #fff; }
-.btn.primary:hover { filter: brightness(.95); background: var(--interactive); }
-.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-.btn.danger:hover { filter: brightness(.95); background: var(--danger); }
 .ap-title { font-weight: 600; font-size: 14.5px; }
 .ap-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 16px; }
 .ap-row .ap-label { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
@@ -91,12 +86,6 @@
   transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease,
     filter var(--motion-ui) ease, transform 160ms var(--ease-out);
 }
-.btn {
-  padding: 8px 15px; border-radius: 10px; border: 1px solid var(--border-control); background: var(--surface);
-  color: var(--text); font-size: 13.5px; font-weight: 500;
-  transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease,
-    filter var(--motion-ui) ease, transform 160ms var(--ease-out);
-}
 .nav-item {
   transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease,
     filter var(--motion-ui) ease, transform 160ms var(--ease-out);
@@ -116,7 +105,6 @@
 .icon-btn:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
 .icon-button:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
 .tool-btn:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
-.btn:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
 .nav-item:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
 .suggests button:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
 #loadolder:active { transform: scale(var(--press-scale)); transition-duration: var(--motion-press); }
@@ -129,13 +117,24 @@
 .ws-path button { border: 0; padding: 6px; background: none; color: var(--link); font: inherit; min-height: 36px; cursor: pointer; }
 .modal-card {
   width: 100%; display: flex; flex-direction: column; background: var(--surface);
-  border: var(--bw) solid var(--line); border-radius: 22px; box-shadow: var(--shadow-hard-lg);
+  border: var(--bw) solid var(--line); border-radius: var(--radius-large); box-shadow: var(--shadow-hard-lg);
   overflow: hidden; animation: pop .15s ease-out;
 }
 .modal {
-  position: fixed; inset: 0; background: rgba(20,19,26,.42); display: none; align-items: center;
+  position: fixed; inset: 0; background: rgba(20,19,26,.42); backdrop-filter: blur(3px); display: none; align-items: center;
   justify-content: center; z-index: 35; padding: 20px; overscroll-behavior: contain;
 }
+#toasts {
+  position: fixed; right: 20px; bottom: 20px; z-index: 60;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+#toasts .toast {
+  background: var(--surface); color: var(--text); border: var(--bw) solid var(--line);
+  border-radius: 999px; box-shadow: var(--shadow-hard);
+  padding: 9px 14px; font-size: 13px; font-weight: 700; pointer-events: auto;
+}
+#toasts .toast.ok { border-color: var(--ok); }
+#toasts .toast.err { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
 @keyframes modal-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
 @media (max-width: 640px) {

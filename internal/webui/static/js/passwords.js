@@ -23,7 +23,7 @@ export function passwordForm(onSuccess) {
     form.append(label, input);
     let password, confirm;
     if (mode !== 'name') {
-      root.appendChild(h('p', 'login-sub', mode === 'setup' ? (isNewAccount ? '设置密码后创建账号，可在其他设备使用同一账号登录。' : '这个账号尚未设置密码。创建后，其他设备也需使用此密码登录；原有对话和战绩会保留。') : '请输入这个账号的密码。'));
+      root.appendChild(h('p', 'login-sub', mode === 'setup' ? (isNewAccount ? '未找到同名账号「' + name + '」，首次登录将创建新账号；如已有账号请点“换个账号”检查拼写。' : '这个账号尚未设置密码。创建后，其他设备也需使用此密码登录；原有对话和战绩会保留。') : '请输入这个账号的密码。'));
       const passLabel = h('label', 'field-label', mode === 'setup' ? '创建密码' : '密码');
       password = h('input', 'input'); password.id = 'login-password'; password.name = 'password'; password.type = 'password'; password.autocomplete = mode === 'setup' ? 'new-password' : 'current-password'; password.minLength = 12; password.maxLength = 128; password.required = true; passLabel.htmlFor = password.id;
       form.append(passLabel, password);

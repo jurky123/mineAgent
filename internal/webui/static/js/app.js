@@ -63,7 +63,7 @@ async function startChat() {
   $('myavatar').textContent = (S.me[0] || '?').toUpperCase();
   $('myrole').textContent = S.admin ? '管理员' : '';
   $('myrole').className = 'badge' + (S.admin ? ' admin' : '');
-  $('menu-ws').hidden = !S.admin; $('rail-workspace').hidden = false;
+  $('menu-ws').hidden = !S.admin; $('rail-workspace').hidden = !S.admin;
   if (agentSection) { await mountAgentSection(); return; }
   chat.clearMessages();
   await conversations.refresh();
@@ -209,6 +209,12 @@ async function applyURLTarget() {
     composer.autoGrow();
     composer.updateSendBtn();
     box.focus();
+    const wrap = box.closest('.composer-box');
+    if (wrap) {
+      wrap.classList.remove('draft-flash');
+      void wrap.offsetWidth;
+      wrap.classList.add('draft-flash');
+    }
   }
   if (wantNew || wantConv || ask) {
     const clean = new URL(location.href); ['new', 'conv', 'q'].forEach((key) => clean.searchParams.delete(key)); history.replaceState(null, '', clean.pathname + clean.search + clean.hash);

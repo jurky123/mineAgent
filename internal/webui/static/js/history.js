@@ -134,6 +134,12 @@ function openReplay(run, meta) {
   const game = run.gameId;
   const steps = game === 'chess' ? chessSteps(meta.movelist || []) : gomokuSteps(meta.movelist || []);
   replay = { run, meta, steps, index: steps.length - 1, game };
+  const hint = document.getElementById('replay-hint');
+  if (hint) {
+    hint.textContent = game === 'chess'
+      ? '← / → 逐步查看，Home / End 跳到首末；黄框标出最近一步着法。'
+      : '← / → 逐步查看，Home / End 跳到首末；末手有标记，终局连线表示五连。';
+  }
   document.getElementById('list-view').hidden = true;
   document.getElementById('replay-view').hidden = false;
   const side = SIDE_NAME[meta.side] || meta.side || '';
@@ -290,10 +296,11 @@ document.addEventListener('keydown', (event) => {
 });
 // ---------- demo ----------
 function demoRuns() {
-  return [
+  const list = [
     { id: 3, gameId: 'gomoku', result: 'win', metadata: JSON.stringify({ opponent: '演示玩家 B', side: 'black', moves: 9, reason: 'five', movelist: ['h8', 'i9', 'h9', 'i8', 'h10', 'i7', 'h11', 'i6', 'h12'], display: ['h8', 'i9', 'h9', 'i8', 'h10', 'i7', 'h11', 'i6', 'h12'] }), createdAt: Date.now() - 3600e3 },
     { id: 2, gameId: 'chess', result: 'lose', metadata: JSON.stringify({ opponent: '演示玩家 B', side: 'white', moves: 4, reason: 'checkmate', movelist: ['f2f3', 'e7e5', 'g2g4', 'd8h4'], display: ['f3', 'e5', 'g4', 'Qh4#'] }), createdAt: Date.now() - 86400e3 },
   ];
+  return qs.get('demo') === 'chess' ? list.reverse() : list;
 }
 
 (async () => {
@@ -320,14 +327,14 @@ function demoRuns() {
     renderReplay(); play.textContent = '暂停';
     playback = setInterval(() => { if (!replay || document.hidden) { stopPlayback(); return; } replay.index = Math.min(replay.index + 1, replay.steps.length - 1); renderReplay(); if (replay.index === replay.steps.length - 1) stopPlayback(); }, Number(speed.value));
   }; speed.onchange = stopPlayback; controls.append(play, speed);
-  const hint = h('p', 'field-hint', '← / → 逐步查看，Home / End 跳到首末；末手有标记，终局连线表示五连。'); controls.after(hint);
+  const hint = h('p', 'field-hint', '← / → 逐步查看，Home / End 跳到首末；末手有标记，终局连线表示五连。'); hint.id = 'replay-hint'; controls.after(hint);
   document.addEventListener('visibilitychange', () => { if (document.hidden) stopPlayback(); });
 
   if (DEMO) {
     await boot({ active: '/account', requireLogin: false });
     const banner = h('aside', 'demo-banner'); banner.setAttribute('role', 'status');
     banner.appendChild(h('strong', null, '演示回放，不影响真实战绩'));
-    const exit = h('a', 'btn', '退出演示'); exit.href = '/games/gomoku'; banner.appendChild(exit);
+    const exit = h('a', 'btn', '退出演示'); exit.href = '/games/' + (qs.get('demo') === 'chess' ? 'chess' : 'gomoku'); banner.appendChild(exit);
     document.querySelector('main').prepend(banner);
     const badge = h('span', 'badge', '演示数据 · 非真实对局'); document.querySelector('.crumb').appendChild(badge);
     runs = demoRuns();

@@ -11,6 +11,19 @@ for (const id of ['rail-conversations', 'rail-workspace', 'rail-tools']) {
   };
   if (link.pathname === location.pathname) link.setAttribute('aria-current', 'page');
 }
-byId('rail-conversations').onclick = event => { if (location.pathname === '/agent') { event.preventDefault(); document.body.classList.remove('collapsed'); localStorage.setItem('mineagent.sidebar',''); byId('conv-search').focus(); } };
+byId('rail-conversations').onclick = event => {
+  if (location.pathname === '/agent') {
+    event.preventDefault();
+    if (window.innerWidth > 960) {
+      const collapsed = document.body.classList.toggle('collapsed');
+      localStorage.setItem('mineagent.sidebar', collapsed ? '1' : '');
+      if (!collapsed) byId('conv-search').focus();
+    } else {
+      document.body.classList.remove('collapsed');
+      localStorage.setItem('mineagent.sidebar', '');
+      byId('conv-search').focus();
+    }
+  }
+};
 const leaveDrawer = () => { if (byId('sidebar').classList.contains('open')) byId('menu').click(); };
 byId('rail-usage').onclick = () => { leaveDrawer(); byId('menu-usage').click(); };

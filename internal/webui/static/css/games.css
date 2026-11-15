@@ -188,7 +188,7 @@ body.game-live .room-layout { animation: none; }
   align-items: center; justify-content: center; border: var(--bw) solid var(--line);
   box-shadow: var(--shadow-hard-sm); color: var(--on-accent);
 }
-.stage-gomoku .lobby-icon { background: #E9C98F; }
+.stage-gomoku .lobby-icon { background: var(--board-wood); }
 .lobby-card:first-child { background: var(--tone-games-soft); }
 .code-input {
   letter-spacing: 6px; text-transform: uppercase; font-variant-numeric: tabular-nums; max-width: 12rem;
@@ -210,10 +210,9 @@ html[data-theme="dark"] .sq.dark { background: #4F4C86; }
 .sq.sel::before { content: ''; position: absolute; inset: 0; background: rgba(91,99,240,.45); animation: fadein 160ms ease; }
 .sq.target::after { content: ''; position: absolute; width: 26%; height: 26%; border-radius: 50%; background: rgba(24,23,31,.28); }
 .gomoku-board {
-  position: relative; width: 100%; max-width: var(--board-max); aspect-ratio: 1 / 1; background-color: #E9C98F;
+  position: relative; width: 100%; max-width: var(--board-max); aspect-ratio: 1 / 1; background-color: var(--board-wood);
   border: var(--bw) solid var(--line); border-radius: 12px; box-shadow: var(--shadow-hard-lg);
 }
-html[data-theme="dark"] .gomoku-board { background-color: #B89B66; }
 .gomoku-grid line { stroke: rgba(24,23,31,.55); stroke-width: 1; }
 .stone.b { background: #18171F; box-shadow: inset 2px 2px 0 rgba(255,255,255,.25); }
 .stone.w { background: #FFFDF7; box-shadow: inset 2px 2px 0 #FFFFFF; border: var(--bw) solid #18171F; }

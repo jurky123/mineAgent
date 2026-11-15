@@ -74,7 +74,8 @@ function renderShell() {
   head.append(menu,collapse,el('h1',null,agentSection==='library'?choices.find(([key])=>key===category)[1]:toolsTab==='skills'?'插件与技能':'工具'));
   const search=el('input','section-search');search.type='search';search.placeholder=agentSection==='library'?'搜索当前目录':'搜索名称或说明';search.setAttribute('aria-label',agentSection==='library'?'搜索资料':'搜索插件与工具');search.value=query;
   search.oninput=()=>{query=search.value;renderResults();};
-  head.append(search,button('刷新',load));board.append(head);
+  const home=el('a','section-button section-home-link','回门户');home.href='/';home.setAttribute('aria-label','回门户');
+  head.append(search,button('刷新',load),home);board.append(head);
   const controls=el('div','section-controls');
   if(agentSection==='library') {
     const path=el('nav','section-breadcrumbs');path.setAttribute('aria-label','目录路径');

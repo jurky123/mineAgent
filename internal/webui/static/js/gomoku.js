@@ -1,6 +1,6 @@
 // gomoku.js — 五子棋：大厅 → 房间（等待/对局/终局）；15 路棋盘 + 落子交互。
 // 房间/大厅/SSE 等公共部分在 gameroom.js。
-import { boot, apiPost } from './shell.js';
+import { boot, apiPost, shell } from './shell.js';
 import { h, icon, toast, gameIcon, copyText, swapView } from './ds.js';
 import * as room from './gameroom.js';
 
@@ -162,9 +162,26 @@ function paint() {
   }
 }
 
+let eventsStarted = false;
+function startEvents() {
+  if (DEMO || eventsStarted || !shell.token) return;
+  eventsStarted = true;
+  room.connectRoomEvents({
+    gameId: GAME,
+    onRoom: apply,
+    onComment: (ply, text) => {
+      if (state.room) {
+        state.room.comments = Object.assign({}, state.room.comments, { [ply]: text });
+      }
+      room.danmaku(text);
+    },
+  });
+}
+
 function apply(r) {
   const switching = !state.room !== !r;   // 大厅 ↔ 房间是整屏切换：淡出淡入；房间内更新直接重画
   state.room = r;
+  if (r) startEvents();
   if (switching) swapView(paint); else paint();
 }
 
@@ -280,16 +297,7 @@ function runMotion() {
   } else {
     paint();
   }
-  room.connectRoomEvents({
-    gameId: GAME,
-    onRoom: apply,
-    onComment: (ply, text) => {
-      if (state.room) {
-        state.room.comments = Object.assign({}, state.room.comments, { [ply]: text });
-      }
-      room.danmaku(text);
-    },
-  });
+  startEvents();
   // 解说异步返回：合并到当前房间再重绘（请求期间可能已经换过 snapshot 对象）
   document.addEventListener('mine:comment', (e) => {
     const d = e.detail || {};

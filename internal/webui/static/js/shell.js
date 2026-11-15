@@ -29,7 +29,28 @@ export const shell = {
   user: null,
   apps: [],
   preview: false,
+  RefreshUser: null,
 };
+let shellActive = '';
+
+export async function refreshUser(active = shellActive || location.pathname) {
+  if (!shell.token) return shell.user;
+  try {
+    const [appsRes, me] = await Promise.all([
+      apiGet('/api/portal/apps').catch(() => null),
+      apiGet('/api/auth/me'),
+    ]);
+    if (appsRes && Array.isArray(appsRes.apps)) shell.apps = appsRes.apps;
+    saveAuth(me);
+    localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify({
+      apps: shell.apps,
+      user: shell.user && { id: shell.user.id, name: shell.user.name, admin: !!shell.user.admin },
+    }));
+    paintTop(active);
+  } catch (e) { /* keep current user on transient failure */ }
+  return shell.user;
+}
+shell.RefreshUser = refreshUser;
 
 // 预览模式（?ui=1）：走正式 Shell 渲染路径，只把数据源换成假的——
 // 这样截图/录屏里顶部导航、账号菜单、空间尺寸都与线上一致。
@@ -334,8 +355,12 @@ function togglePop(el) {
 function openPalette() {
   const actions = [
     { icon: 'sparkle', label: '新建 Agent 对话', hint: 'Agent', run: () => { location.href = '/agent?new=1'; } },
+    { icon: 'settings', label: '插件与工具', hint: 'Agent', run: () => { location.href = '/agent/tools'; } },
+    ...(shell.user?.admin ? [{ icon: 'server', label: '资料空间', hint: 'Agent', run: () => { location.href = '/agent/library'; } }] : []),
     { el: () => gameIconEl('chess', 'palette-icon'), label: '打开国际象棋', hint: '游戏', run: () => { location.href = '/games/chess'; } },
     { el: () => gameIconEl('gomoku', 'palette-icon'), label: '打开五子棋', hint: '游戏', run: () => { location.href = '/games/gomoku'; } },
+    { icon: 'pickaxe', label: 'Minecraft 加入指南', hint: 'Minecraft', run: () => { location.href = '/minecraft'; } },
+    { icon: 'users', label: 'AI 玩家', hint: '目录', run: () => { location.href = '/ai'; } },
     { icon: 'megaphone', label: '查看最新动态', hint: '门户', run: () => { location.href = '/'; } },
     { icon: 'user', label: '我的账号', hint: '设置', run: () => { location.href = '/account'; } },
     { icon: 'clock', label: '对局历史与回放', hint: '设置', run: () => { location.href = '/account/history'; } },
@@ -405,6 +430,7 @@ if (typeof window !== 'undefined') {
 // ---------- boot ----------
 // active: 顶部导航高亮；requireLogin=false 时未登录也继续（?ui=1 演示模式）。
 export async function boot({ active = '', requireLogin = true, preview = false } = {}) {
+  shellActive = active;
   shell.preview = preview;
   applyTheme();
   const main = document.querySelector('main'); if (main) { if (!main.id) main.id = 'main-content'; main.tabIndex = -1; const skip = h('a', 'skip-link', '跳到正文'); skip.href = '#' + main.id; document.body.prepend(skip); }

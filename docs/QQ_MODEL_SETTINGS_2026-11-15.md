@@ -23,3 +23,13 @@ QQ `/help` 增加 `/settings` 入口（中文 `/设置`），集中展示当前�
 隔离SQLite和模拟模型/QQ投递覆盖：队列忙时设置仍直接生效；下一请求使用新模型、原请求保持旧模型；其他私聊/群隔离；错误选择不保存；列表去重和参数错误；额外提供商ID；帮助与中文设置入口；fork/new/resume、恢复默认、重启持久化；自然接话沿用模型且不获得工具；网页目录排除不可用/缺密钥/白名单外条目。
 
 测试日志位于 `/home/ubuntu/.local/share/zkun-qq-models-20261115/`。未向真实QQ发送消息，未调用收费模型或更改生产会话选择；真实QQ客户端操作由用户使用上述入口验收。
+
+## 发布与结果
+
+2026-11-15 通过 `scripts/deploy.sh` 正式发布 `e75dcbe`。发布前复核棋局0、身体动作0、待审批0、当前服务启动以来无Agent运行；无已知备份/迁移工具。最终核查Minecraft 25565未监听、无tmux控制台，唯一Java为ViaProxy，因此没有全服通告目标，也没有启动或重启MC/代理。身体原状态 `paused=true, draining=false` 在重启后保持。
+
+相关 `go test -p 1`、`go vet -p 1` 覆盖 `internal/qq`、`internal/storage`、`internal/tools`、`internal/webui`、`cmd/mineagent`；`go test -race -p 1 ./internal/qq ./internal/storage ./internal/webui` 最终全部通过。最初850MiB限制下的冷编译持续触发内存回收，主动终止未声称通过；确认当前可用内存超过5GiB后，在独立1.8GiB硬上限且禁止swap的临时单元重跑通过。没有修改生产服务资源配置。见 `final-tests.log` 与 `race-final.log`。
+
+发布后 `/api/version=e75dcbe`；门户、聊天、资料空间、插件/工具入口均200；QQ gateway ready且未见启动失败；模型表已存在。线上验证见 `online-verification.json`。未发送真实QQ测试消息，用户可通过 `/settings`、`/model list`、`/model <完整ID>` 验收客户端交互。
+
+发布前生产SQLite一致性备份和旧二进制保存在上述私有证据目录的 `database.before.sqlite` 与 `mineagent.before`，未提交仓库。

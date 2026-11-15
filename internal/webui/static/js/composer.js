@@ -350,10 +350,12 @@ export function openModelPopover(back, query = '') {
     b.disabled = !usable(m);
     const released = new Date((m.created || 0) * 1000);
     const date = m.created && Number.isFinite(released.getTime()) ? released.toISOString().slice(0, 10) : '';
-    const detail = [m.providerLabel || m.provider, m.id, date ? '发布 ' + date : '', m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
+    const providerName = m.providerLabel || m.provider;
+    const modelId = m.id && m.id !== m.label ? m.id : '';
+    const detail = [providerName, modelId, date, m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
       m.unavailableReason || '', m.stale ? '缓存目录' : ''].filter(Boolean).join(' · ');
     b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">' + esc(m.label) +
-      (m.provider === 'default' && m.id === defaultModel ? ' <span class="po-desc">默认</span>' : '') + badge(m) +
+      (m.provider === 'default' && m.id === defaultModel ? '<span class="po-badge default">默认</span>' : '') + badge(m) +
       '</span><span class="po-modeldetail">' + esc(detail) + '</span></span><span class="check">' + ICON.check + '</span>';
     b.title = detail;
     b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: m.id }); };
@@ -371,15 +373,14 @@ export function openModelPopover(back, query = '') {
       return a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' });
     });
     const freeCount = all.filter((m) => usable(m) && m.free).length;
-    const unknownDates = matches.some((m) => !m.created);
-    $('po-modelstatus').textContent = matches.length + ' 个模型 · ' + freeCount + ' 个免费可选' +
-      (modelSort === 'newest' && unknownDates ? ' · 无发布日期的按名称排序' : '') +
-      (all.some((m) => m.stale) ? ' · 刷新失败，显示缓存' : '') + (modelCapability ? ' · 仅显示已公布或验证的能力' : '') + (catalogReadAt ? ' · 列表读取于 ' + new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit'}).format(catalogReadAt) : '') + ' · 额度以提供商为准';
+    $('po-modelstatus').textContent = matches.length + ' 个可用 · ' + freeCount + ' 个免费' +
+      (all.some((m) => m.stale) ? ' · 显示缓存' : '') + (modelCapability ? ' · 按能力筛选' : '') +
+      (catalogReadAt ? ' · ' + new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit'}).format(catalogReadAt) : '') + ' · 额度以提供商为准';
     const def = all.find((m) => m.provider === 'default' && m.id === defaultModel);
     if (!q && !modelFreeOnly && !modelCapability && (!def || usable(def) || modelShowUnavailable)) {
       const b = document.createElement('button');
       b.className = 'po-item model' + (cur === '' ? ' on' : '');
-      b.innerHTML = '<span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="check">' + ICON.check + '</span>';
+      b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="po-modeldetail">自动使用站点当前默认模型</span></span><span class="check">' + ICON.check + '</span>';
       b.disabled = !!def && !usable(def);
       b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: '' }); };
       list.appendChild(b);

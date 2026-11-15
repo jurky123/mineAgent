@@ -1,7 +1,9 @@
+/* downloads.css — 下载卡片、文件票据和滚动表格；列表不叠加硬投影。 */
 .download-page { padding-top: clamp(32px, 10vh, 100px); }
 .download-brand { display: inline-block; font-size: 24px; font-weight: 650; text-decoration: none; margin-bottom: 24px; color: var(--text); }
-.download-card { padding: 24px; overflow-wrap: anywhere; }
-.download-card h1, .download-card h2, .download-card h3 { margin: 0 0 16px; }
+.download-card h1 { margin: 0 0 16px; }
+.download-card h2 { margin: 0 0 16px; }
+.download-card h3 { margin: 0 0 16px; }
 .download-card p { line-height: 1.65; }
 .download-card details { margin: 20px 0; }
 .download-card code { display: block; margin-top: 12px; word-break: break-all; }
@@ -13,7 +15,32 @@
 #share-link { display: block; width: 100%; margin: 10px 0; }
 .download-table-wrap { overflow-x: auto; }
 .download-table { border-collapse: collapse; width: 100%; text-align: left; font-size: 14px; }
-.download-table th, .download-table td { padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.download-table td:nth-child(2) { font-family: monospace; overflow-wrap: anywhere; }
-.download-card [hidden], #download-admin[hidden], #events-panel[hidden] { display: none; }
-@media (max-width: 500px) { .download-card { padding: 18px; } .download-table { min-width: 580px; } }
+.download-card [hidden] { display: none; }
+#download-admin[hidden] { display: none; }
+#events-panel[hidden] { display: none; }
+.download-card {
+  padding: 24px;
+  overflow-wrap: anywhere;
+  border: var(--bw) solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow-hard);
+  background: var(--surface);
+}
+.download-table th { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
+.download-table td { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
+.download-table td:first-child::before {
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+  width: 16px;
+  height: 20px;
+  border: var(--bw) solid var(--line);
+  border-radius: 4px;
+  background: var(--tone-sun);
+}
+.download-table td:nth-child(2) { font-family: var(--font-mono); overflow-wrap: anywhere; }
+@media (max-width: 500px) {
+  .download-card { padding: 18px; }
+  .download-table { min-width: 580px; }
+}

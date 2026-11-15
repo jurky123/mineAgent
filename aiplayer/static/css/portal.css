@@ -1,11 +1,9 @@
+/* AI 玩家站：同步纸墨颜色与线条，保留既有布局与路由。 */
 @view-transition {
   navigation: none;
 }
 body.ds {
   overflow-x: hidden;
-  --text: #172033;
-  --interactive: #2563eb;
-  --link: #2563eb;
 }
 .player-crumb {
   display: flex;
@@ -57,8 +55,6 @@ body.ds {
   }
 }
 html[data-theme="dark"] body.ds {
-  --text: #ececec;
-  --link: #9ac5ff;
 }
 a,
 button,
@@ -171,11 +167,11 @@ p {
 }
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--bw) solid var(--line);
   border-radius: 16px;
   padding: 24px;
   min-width: 0;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-hard);
 }
 .agent-card {
   display: flex;
@@ -754,10 +750,10 @@ footer {
   overflow-wrap: anywhere;
 }
 
-.topbar { background: var(--surface); border-bottom: 1px solid var(--border); }
+.topbar { background: var(--surface); border-bottom: var(--bw) solid var(--line); }
 .topbar nav a[aria-current="page"] { box-shadow: none; background: var(--brand-soft); border-radius: 8px; }
 h1 { font-size: 32px; }
-.card { box-shadow: none; }
+.card { box-shadow: var(--shadow-hard); }
 .directory-filters { border-block: 1px solid var(--border); padding-block: 8px; margin-bottom: 24px; }
 .directory-filters > summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; color: var(--text-secondary); font-size: 14px; }
 .directory-filters .filters { margin-block: 16px; }

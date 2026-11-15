@@ -29,3 +29,7 @@
 证据目录：`/home/ubuntu/.local/share/zkun-channel-models-20261115/`。`final-tests.log`、`ui-final.log`、`screenshots/` 为最终验证；早期日志保留排查过程，不将失败的诊断假设当作通过结果。
 
 最终相关Go测试、vet、agent/prompts/portal/qq/webui的race及 `test:prompts`、`test:models` 全部通过。已检查桌面与320深色实际截图。发布前确认对局0、身体动作/审批0、2次AI运行均结束、无备份/迁移任务；MC端口未监听且无控制台，因此没有全服通告目标，不启动MC或代理。数据库、人设文件和旧二进制备份均在上述私有目录。
+
+## 正式上线
+
+`bcc5e84` 已通过 `scripts/deploy.sh` 上线。发布后版本匹配，门户/聊天/资料/插件入口均200，QQ gateway ready且未见启动错误；管理员渠道模型字段与新版控件资源可读取，原群Haiku覆盖仍保留，身体暂停/非drain状态保持。没有修改实际渠道默认模型，留给管理员从页面选择。结果见 `online-verification.json`，部署日志见 `publish.log`。只核验本机实际服务与真实API合成输入，不声称已代用户向真实QQ群发消息。

@@ -117,45 +117,65 @@ async function publishDialog() {
 }
 
 // ---------- 渲染 ----------
+function mcState(data) {
+  const mc = (data.apps || []).find(app => app.id === 'minecraft');
+  if (data.loading) return { kind: 'loading', text: '正在读取服务器状态…' };
+  if (!mc?.error && mc?.card?.online === true) return { kind: 'online', text: '服务器在线' + (Number.isFinite(mc.card.count) ? ' · ' + mc.card.count + ' 人' : '') };
+  if (!mc?.error && mc?.card?.online === false) return { kind: 'offline', text: '服务器离线' };
+  return { kind: 'unknown', text: '状态暂不可用' };
+}
+
 function paint(data) {
   const host = home();
   host.replaceChildren(); host.setAttribute('aria-busy', 'false');
   const apps = data.apps || [];
   const recent = apps.find(a => a.id === 'agent')?.card;
   const hasRecent = !!recent?.lastTitle || recent?.count > 0;
-  const head = h('header', 'portal-heading');
-  head.append(h('h1', null, 'zkun'), h('p', null, 'Agent、在线游戏与 Minecraft。'));
-  host.appendChild(head);
+  const state = mcState(data);
+  const head = h('header', 'portal-hero');
+  const copy = h('div', 'hero-copy');
+  const name = shell.user?.name || data.account?.name;
+  copy.appendChild(h('p', 'eyebrow hero-eyebrow', name ? '欢迎回来，' + name : 'zkun.art'));
+  const title = h('h1', 'hero-title', '你好，这里是 '); title.appendChild(h('span', 'hero-mark', 'zkun')); copy.appendChild(title);
+  const actions = h('div', 'hero-actions');
+  const start = h('a', 'btn primary cta', hasRecent ? '继续对话' : '开始对话'); start.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
+  const join = h('a', 'btn cta', '加入服务器'); join.href = '/minecraft'; actions.append(start, join); copy.appendChild(actions);
+  const art = h('div', 'hero-art'); art.setAttribute('aria-hidden', 'true');
+  const sticker = h('img', 'hero-sticker'); sticker.src = '/static/' + document.querySelector('meta[name="mineagent-version"]').content + '/img/logo.png'; sticker.alt = ''; sticker.width = 280; sticker.height = 280;
+  const mcChip = h('span', 'hero-chip chip-mc'); mcChip.append(h('span', 'status-dot ' + state.kind), h('span', null, state.text));
+  const gameChip = h('span', 'hero-chip chip-games'); gameChip.append(gameIcon('chess'), h('span', null, '来一局？'));
+  const aiChip = h('span', 'hero-chip chip-agent'); aiChip.append(icon('sparkle'), h('span', null, 'Agent'));
+  art.append(h('span', 'hero-blob'), sticker, mcChip, gameChip, aiChip); head.append(copy, art); host.appendChild(head);
   const entries = h('section', 'portal-launchpad entry-grid'); entries.setAttribute('aria-label', '快速入口');
-  const agent = h('article', 'launch-agent');
-  const agentHead = h('div', 'launch-heading'); agentHead.append(icon('sparkle', 'lg'), h('h2', null, 'Agent'));
-  agent.append(agentHead, h('p', 'launch-description', '对话、处理文件与使用工具。'));
+  const agent = h('article', 'launch-card launch-agent');
+  const agentHead = h('div', 'launch-heading'); const aiIcon = h('span', 'launch-icon'); aiIcon.appendChild(icon('sparkle', 'lg'));
+  agentHead.append(aiIcon, h('h2', null, 'Agent'), h('span', 'launch-tag', 'AI 助手')); agent.appendChild(agentHead);
   const examples = h('div', 'launch-examples');
-  for (const [label, query] of [['查询服务器状态', '看看服务器现在的运行状态'], ['整理一份文档', '帮我整理一份文档，先确认需要哪些材料']]) {
-    const a = h('a', 'launch-example', label); a.href = '/agent?new=1&q=' + encodeURIComponent(query); a.appendChild(icon('right', 'sm')); examples.appendChild(a);
+  for (const [label, query] of [['查询服务器状态', '看看服务器现在的运行状态'], ['整理一份文档', '帮我整理一份文档，先确认需要哪些材料'], ['解释一段代码', '帮我解释一段代码，先确认需要哪段代码']]) {
+    const link = h('a', 'launch-example', label); link.href = '/agent?new=1&q=' + encodeURIComponent(query); link.appendChild(icon('right', 'sm')); examples.appendChild(link);
   }
-  const open = h('a', 'btn primary cta', hasRecent ? '继续对话' : '打开 Agent'); open.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
+  const open = h('a', 'btn primary cta launch-cta', '打开 Agent'); open.href = hasRecent ? recent.continuePath || '/agent' : '/agent';
   agent.append(examples, open); entries.appendChild(agent);
-  const games = h('article', 'launch-secondary launch-games');
-  const gameHead = h('div', 'launch-heading'); gameHead.append(icon('gamepad', 'lg'), h('h2', null, '在线游戏'));
-  games.append(gameHead, h('p', null, '国际象棋与五子棋，创建房间即可开始。'));
-  const gameLinks = h('div', 'launch-game-links');
-  for (const [id, name] of [['chess', '国际象棋'], ['gomoku', '五子棋']]) { const a = h('a', 'launch-game', name); a.href = '/games/' + id; a.prepend(gameIcon(id)); gameLinks.appendChild(a); }
-  games.appendChild(gameLinks); entries.appendChild(games);
-  const mc = apps.find(a => a.id === 'minecraft');
-  const minecraft = h('article', 'launch-secondary launch-minecraft'); minecraft.id = 'minecraft';
-  const mcHead = h('div', 'launch-heading'); mcHead.append(icon('pickaxe', 'lg'), h('h2', null, 'Minecraft'));
-  const state = data.loading ? '正在读取服务器状态…' : mc?.error ? '状态暂不可用' : mc?.card?.online === true ? '服务器在线' + (Number.isFinite(mc.card.count) ? ' · ' + mc.card.count + ' 人' : '') : mc?.card?.online === false ? '服务器离线' : '状态暂不可用';
-  const status = h('p', 'launch-status', state); status.setAttribute('role', 'status');
-  minecraft.append(mcHead, status);
+  const minecraft = h('article', 'launch-card launch-secondary launch-minecraft'); minecraft.id = 'minecraft';
+  const mcHead = h('div', 'launch-heading'); const mcIcon = h('span', 'launch-icon'); mcIcon.appendChild(icon('pickaxe', 'lg'));
+  const status = h('p', 'launch-status'); status.setAttribute('role', 'status'); status.dataset.state = state.kind;
+  status.append(h('span', 'status-dot ' + state.kind), h('span', null, state.text)); mcHead.append(mcIcon, h('h2', null, 'Minecraft'), status); minecraft.appendChild(mcHead);
   if (releaseData?.serverAddress) {
     const address = h('div', 'portal-address'); address.append(h('code', null, releaseData.serverAddress), copyButton(releaseData.serverAddress, '复制地址')); minecraft.appendChild(address);
   }
-  const guide = h('a', 'text-link', '客户端与加入指南'); guide.href = '/minecraft'; guide.appendChild(icon('right', 'sm')); minecraft.appendChild(guide);
-  entries.appendChild(minecraft); host.appendChild(entries);
+  const guide = h('a', 'text-link', '客户端与加入指南'); guide.href = '/minecraft'; guide.appendChild(icon('right', 'sm')); minecraft.appendChild(guide); entries.appendChild(minecraft);
+  const games = h('article', 'launch-card launch-secondary launch-games');
+  const gameHead = h('div', 'launch-heading'); const gamesIcon = h('span', 'launch-icon'); gamesIcon.appendChild(icon('gamepad', 'lg')); gameHead.append(gamesIcon, h('h2', null, '在线游戏')); games.appendChild(gameHead);
+  const gameLinks = h('div', 'launch-game-links');
+  for (const [id, name] of [['chess', '国际象棋'], ['gomoku', '五子棋']]) {
+    const link = h('a', 'launch-game launch-game-' + id); link.href = '/games/' + id;
+    const tile = h('span', 'launch-game-art'); tile.appendChild(gameIcon(id));
+    const text = h('span', 'launch-game-text'); text.appendChild(h('strong', null, name)); link.append(tile, text, icon('right', 'sm')); gameLinks.appendChild(link);
+  }
+  games.appendChild(gameLinks); entries.appendChild(games); host.appendChild(entries);
   if (hasRecent) {
     const section = h('section', 'portal-recent'); section.appendChild(h('h2', null, '最近对话'));
-    const link = h('a', 'recent-row'); link.href = recent.continuePath || '/agent';
+    const link = h('a', 'recent-row card'); link.href = recent.continuePath || '/agent';
     const title = h('div'); title.append(h('strong', null, recent.lastTitle || '未命名会话'));
     if (recent.lastSummary) title.appendChild(h('p', 'recent-summary', recent.lastSummary));
     link.append(title, h('span', 'recent-date', fmtTime(recent.lastUpdated)), icon('right')); section.appendChild(link); host.appendChild(section);

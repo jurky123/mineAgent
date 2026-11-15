@@ -239,7 +239,7 @@ export function placePopover(box) {
   const below = window.innerHeight - rect.bottom - 18;
   const useBelow = centered && below >= above;
   box.classList.toggle('below', useBelow);
-  if (box.id === 'popover') box.style.maxHeight = Math.max(160, Math.min(560, useBelow ? below : above)) + 'px';
+  if (box.id === 'popover') box.style.maxHeight = Math.max(160, Math.min(460, useBelow ? below : above)) + 'px';
 }
 
 export function closePopovers(except) {
@@ -327,8 +327,9 @@ export function openModelPopover(back, query = '') {
     '<div class="po-toolrow po-modelcontrols">' +
     '<button class="po-chip' + (modelFreeOnly ? ' on' : '') + '" id="po-freeonly" aria-pressed="' + modelFreeOnly + '">只看免费</button>' +
     '<button class="po-chip' + (modelShowUnavailable ? ' on' : '') + '" id="po-showall" aria-pressed="' + modelShowUnavailable + '">显示不可用</button>' +
-    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option><option value="provider">按提供商分组</option></select></div>' +
-    '<div class="po-toolrow"><select id="po-capability" class="po-sort" aria-label="模型能力筛选"><option value="">全部能力</option><option value="vision">支持图片</option><option value="reasoning">支持思考</option><option value="tools">支持工具</option></select></div><div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
+    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option><option value="provider">按提供商分组</option></select>' +
+    '<select id="po-capability" class="po-sort" aria-label="模型能力筛选"><option value="">全部能力</option><option value="vision">支持图片</option><option value="reasoning">支持思考</option><option value="tools">支持工具</option></select></div>' +
+    '<div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
     '<div id="po-providerstatus" class="po-providerstatus"></div>' +
     '<div class="po-scroll" id="po-list"></div>';
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
@@ -346,7 +347,7 @@ export function openModelPopover(back, query = '') {
   };
   const mk = (m) => {
     const b = document.createElement('button');
-    b.className = 'po-item model' + ((cur || defaultModel) === m.id ? ' on' : '') + (!usable(m) ? ' off' : '');
+    b.className = 'po-item model' + (cur === m.id ? ' on' : '') + (!usable(m) ? ' off' : '');
     b.disabled = !usable(m);
     const released = new Date((m.created || 0) * 1000);
     const date = m.created && Number.isFinite(released.getTime()) ? released.toISOString().slice(0, 10) : '';

@@ -19,28 +19,17 @@
 #download-admin[hidden] { display: none; }
 #events-panel[hidden] { display: none; }
 .download-card {
-  padding: 24px;
-  overflow-wrap: anywhere;
-  border: var(--bw) solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--shadow-hard);
-  background: var(--surface);
+  padding: 24px; overflow-wrap: anywhere; border: var(--bw) solid var(--line); border-radius: 18px;
+  box-shadow: var(--shadow-hard); background: var(--surface);
 }
 .download-table th { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
 .download-table td { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
 .download-table td:first-child::before {
-  content: '';
-  display: inline-block;
-  vertical-align: middle;
-  margin-right: 8px;
-  width: 16px;
-  height: 20px;
-  border: var(--bw) solid var(--line);
-  border-radius: 4px;
-  background: var(--tone-sun);
+  content: ''; display: inline-block; vertical-align: middle; margin-right: 8px; width: 16px; height: 20px;
+  border: var(--bw) solid var(--line); border-radius: 4px; background: var(--tone-sun);
 }
 .download-table td:nth-child(2) { font-family: var(--font-mono); overflow-wrap: anywhere; }
-@media (max-width: 500px) {
+@media (max-width: 640px) {
   .download-card { padding: 18px; }
   .download-table { min-width: 580px; }
 }

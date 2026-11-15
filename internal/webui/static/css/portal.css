@@ -1,4 +1,4 @@
-/* portal.css — 纸墨登录、目录、账号、历史与错误页。 */
+/* portal.css — 登录、游戏目录、账号、历史和错误页；移除废弃首页规则。 */
 .login-mark { width: 44px; height: 44px; border-radius: 14px; margin: 0 auto 6px; }
 .login-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.3px; }
 .login-sub { margin: 0 0 6px; color: var(--text-secondary); font-size: 14px; }
@@ -10,14 +10,8 @@
 .hero .sub { margin: 0; color: var(--text-secondary); font-size: 14.5px; }
 .status-head { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; }
 .app-icon-tile {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 30px; height: 30px; border-radius: 9px; background: var(--surface-muted);
+  color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center;
 }
 .status-count { font-size: 20px; font-weight: 650; }
 .status-sub { color: var(--text-secondary); font-size: 13px; }
@@ -27,14 +21,8 @@
 .status-empty { color: var(--text-secondary); font-size: 13.5px; }
 .game-stats { color: var(--text-tertiary); font-size: 12.5px; }
 .game-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 34px; height: 34px; border-radius: 10px; background: var(--brand-soft); color: var(--brand);
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .game-icon .game-icon-img { width: 20px; height: 20px; }
 .feed { padding: 6px 0; }
@@ -54,60 +42,28 @@
 .setting-row .right { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); }
 .seg { display: inline-flex; background: var(--surface-muted); border-radius: 10px; padding: 3px; gap: 2px; }
 .seg-item {
-  border: 0;
-  background: transparent;
-  color: var(--text-secondary);
-  padding: 6px 12px;
-  border-radius: 8px;
-  font: inherit;
-  font-size: 13.5px;
-  cursor: pointer;
+  border: 0; background: transparent; color: var(--text-secondary); padding: 6px 12px; border-radius: 8px;
+  font: inherit; font-size: 13.5px; cursor: pointer;
   transition: color var(--motion-ui) ease, transform var(--motion-fast) var(--ease-out);
 }
 .seg-item:hover { color: var(--text); }
 .catalog-title { font-size: 17px; font-weight: 650; }
 .catalog-actions { margin-top: auto; display: flex; gap: 10px; align-items: center; }
-.catalog-card.clickable { cursor: pointer; transition: border-color var(--motion-ui) ease, transform 220ms var(--ease-out), box-shadow 220ms var(--ease-out); }
-.catalog-card.clickable:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(16, 24, 40, .07); }
+.catalog-card.clickable { cursor: pointer; }
 .catalog-card.clickable:active { transform: translateY(0) scale(.99); transition-duration: var(--motion-press); }
-.catalog-card.clickable:hover .catalog-art-piece { transform: translateY(-2px) scale(1.04); }
-.art-chess::before {
-  content: '';
-  position: absolute;
-  inset: -20%;
-  background: repeating-conic-gradient(rgba(10, 132, 255, .10) 0% 25%, transparent 0% 50%) 0 0 / 48px 48px;
-  opacity: .8;
-}
-.art-gomoku::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 1px 1px, rgba(24, 24, 27, .16) 1.2px, transparent 1.4px) 0 0 / 22px 22px;
-}
 .catalog-card .catalog-head { display: flex; align-items: center; gap: 8px; }
 .catalog-card.clickable:hover .catalog-go { transform: translateX(3px); }
 .settings .list-row { padding: 12px 2px; }
-.settings .list-row + .list-row { border-top: 1px solid var(--border); }
+.settings .list-row + .list-row { border-top: var(--bw) dashed var(--line-soft); }
 .settings .list-row.action { padding: 12px 8px; border-radius: 10px; cursor: pointer; transition: background var(--motion-ui) ease; }
 .settings .list-row.action .right { transition: transform 200ms var(--ease-out), color var(--motion-ui) ease; }
 .settings .list-row.action:hover .right { transform: translateX(2px); color: var(--text-secondary); }
 .settings .list-row.action:hover { background: var(--surface-muted); }
 .section-head .section-title { font-size: 15px; color: var(--text-secondary); font-weight: 600; }
-.presence { display: inline-flex; align-items: center; gap: 7px; margin-left: 10px; color: var(--text-tertiary); font-size: 12.5px; vertical-align: middle; }
-.presence-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .14); }
-.presence .player-faces { margin-left: 2px; }
-.presence .face { width: 22px; height: 22px; font-size: 11px; margin-right: -7px; }
 .feed-dot.game { background: #f59e0b; }
 .demo-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 16px;
-  margin: 0 0 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  padding: 16px; margin: 0 0 24px; border: 1px solid var(--border); border-radius: 12px;
   background: var(--surface);
 }
 .wrap { max-width: var(--content-width); margin: 0 auto; padding: 40px 24px 64px; }
@@ -116,27 +72,13 @@
 .catalog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
 .catalog-head { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .catalog-go {
-  margin-top: auto;
-  color: var(--link);
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  transition: transform 200ms var(--ease-out);
-  align-self: flex-start;
-  min-height: 44px;
-  display: inline-flex;
+  margin-top: auto; color: var(--link); font-size: 14px; font-weight: 600; text-decoration: none;
+  transition: transform 200ms var(--ease-out); align-self: flex-start; min-height: 44px; display: inline-flex;
   align-items: center;
 }
 .login-view {
-  position: fixed;
-  inset: var(--shell-height) 0 0;
-  z-index: 70;
-  display: flex;
-  align-items: safe center;
-  justify-content: center;
-  background: var(--page);
-  padding: 24px;
-  overflow-y: auto;
+  position: fixed; inset: var(--shell-height) 0 0; z-index: 70; display: flex; align-items: safe center;
+  justify-content: center; background: var(--page); padding: 24px; overflow-y: auto;
 }
 .login-home { display: inline-flex; min-height: 44px; align-items: center; color: var(--link); font-size: 14px; text-decoration: none; }
 .login-recovery { border-top: 1px solid var(--border); padding-top: 8px; font-size: 13px; }
@@ -151,104 +93,62 @@
 .error-page h1 { font-size: 32px; margin-block: 12px; }
 .error-page p { color: var(--text-secondary); margin-bottom: 24px; }
 .error-page .btn { margin: 0 8px 12px 0; }
-.presence-dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: #22c55e; animation: none; }
 .account-recovery summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; }
 .account-recovery p { max-width: 65ch; }
 .page-head { margin: 6px 0 32px; }
 .page-head h1 { margin: 0; font-size: clamp(36px,5vw,56px); font-weight: 850; letter-spacing: -.035em; line-height: 1.1; }
 .wrap.games-wrap { max-width: 60rem; }
 .catalog-card {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow: hidden;
-  min-width: 0;
-  box-shadow: var(--shadow-hard);
-  border: var(--bw) solid var(--line);
+  padding: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; min-width: 0;
+  box-shadow: var(--shadow-hard); border: var(--bw) solid var(--line);
   transition: transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out);
 }
 .catalog-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hard-lg); }
 .catalog-art {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 160px;
-  position: relative;
-  overflow: hidden;
-  text-decoration: none;
-  border-bottom: var(--bw) solid var(--line);
+  display: flex; align-items: center; justify-content: center; height: 160px; position: relative;
+  overflow: hidden; text-decoration: none; border-bottom: var(--bw) solid var(--line);
 }
 .art-chess { background: repeating-conic-gradient(var(--tone-games-soft) 0 25%,var(--surface) 0 50%) 0 0/40px 40px; }
 .catalog-art-piece {
-  transition: transform 200ms var(--ease-spring);
-  width: 88px;
-  height: 88px;
-  opacity: .9;
-  position: relative;
-  z-index: 1;
-  filter: drop-shadow(3px 3px 0 var(--shadow-ink));
+  transition: transform 200ms var(--ease-spring); width: 88px; height: 88px; opacity: .9; position: relative;
+  z-index: 1; filter: drop-shadow(3px 3px 0 var(--shadow-ink));
 }
 .catalog-card:hover .catalog-art-piece { transform: rotate(-6deg); }
 .art-gomoku {
-  background: var(--surface-muted);
-  background-color: #E9C98F;
+  background: var(--surface-muted); background-color: #E9C98F;
   background-image: linear-gradient(rgba(24,23,31,.35) 1px,transparent 1px),linear-gradient(90deg,rgba(24,23,31,.35) 1px,transparent 1px);
   background-size: 24px 24px;
 }
 .catalog-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
 .account-head .avatar.lg {
-  width: 64px;
-  height: 64px;
-  background: var(--tone-sun);
-  color: var(--on-accent);
-  border: var(--bw) solid var(--line);
-  box-shadow: var(--shadow-hard);
+  width: 64px; height: 64px; background: var(--tone-sun); color: var(--on-accent);
+  border: var(--bw) solid var(--line); box-shadow: var(--shadow-hard);
 }
 .account-head h1 { margin: 0; font-size: 28px; font-weight: 850; }
 .account-head .meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-tertiary);
-  font-size: 13px;
-  margin-top: 4px;
+  display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 13px; margin-top: 4px;
   font-family: var(--font-mono);
 }
 .settings {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: var(--bw) solid var(--line);
-  box-shadow: var(--shadow-hard);
-  border-radius: 18px;
-  padding: 4px 18px;
+  display: flex; flex-direction: column; background: var(--surface); border: var(--bw) solid var(--line);
+  box-shadow: var(--shadow-hard); border-radius: 18px; padding: 4px 18px;
 }
 .account-head ~ .section .section-title { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; }
 .list-row.action:hover { background: var(--surface-muted); }
 .list-row .right { transition: transform 180ms var(--ease-out); }
 .list-row.action:hover .right { transform: translateX(3px); }
 .settings #logout-row .list-title { color: var(--danger); }
-.seg-item.on { background: var(--text); color: var(--page); box-shadow: none; font-weight: 600; }
 .login-box {
-  width: min(100%, 400px);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 12px;
-  text-align: left;
-  animation: none;
-  padding: 32px;
-  background: var(--surface);
-  border: var(--bw) solid var(--line);
-  border-radius: 22px;
-  box-shadow: var(--shadow-hard-lg);
+  width: min(100%, 400px); display: flex; flex-direction: column; align-items: stretch; gap: 12px;
+  text-align: left; animation: none; padding: 32px; background: var(--surface);
+  border: var(--bw) solid var(--line); border-radius: 22px; box-shadow: var(--shadow-hard-lg);
 }
 .login-box h1 { font-size: 30px; font-weight: 800; }
 .error-code { color: var(--text); font-size: 14px; position: relative; isolation: isolate; display: inline-block; font: 900 96px/1 var(--font-mono); }
 .error-code::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: .24em; background: var(--tone-sun); z-index: -1; }
+.seg-item.on { background: var(--ink); color: var(--paper); box-shadow: none; font-weight: 600; }
 @keyframes live-ping { 0% { opacity: .45; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(2.6); } }
-@media (max-width: 860px) {
+@media (max-width: 960px) {
   .wrap { padding: 26px 16px 56px; }
   .hero h1 { font-size: 23px; }
   .topbar { padding: 0 14px; }

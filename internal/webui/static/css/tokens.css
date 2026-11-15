@@ -127,8 +127,7 @@ time { font-variant-numeric: tabular-nums; }
   --ease-out: cubic-bezier(.16,1,.3,1);
   --ease-in: cubic-bezier(.4,0,1,1);
   --press-scale: .97;
-  --col: 48rem;
-  color-scheme: light;
+  --col: 48rem; color-scheme: light;
 }
 html[data-theme="dark"] {
   --page: #15141B;
@@ -155,8 +154,7 @@ html[data-theme="dark"] {
   --code-inline: #343140;
   --link: #AAAFFF;
   --danger: #FFABA0;
-  --ok: #B9EC4F;
-  color-scheme: dark;
+  --ok: #B9EC4F; color-scheme: dark;
 }
 body { height: 100%; margin: 0; background: var(--bg); color: var(--text); overflow: hidden; font: 15.5px/1.75 var(--font-sans); }
 code { font-family: var(--font-mono); }
@@ -181,27 +179,18 @@ samp { font-family: var(--font-mono); }
   ::view-transition-old(*) { animation: none !important; }
   ::view-transition-new(*) { animation: none !important; }
   * {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
-    scroll-behavior: auto !important;
-    animation: none !important;
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important; animation: none !important;
     transition: none !important;
   }
   *::before {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
-    scroll-behavior: auto !important;
-    animation: none !important;
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important; animation: none !important;
     transition: none !important;
   }
   *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
-    scroll-behavior: auto !important;
-    animation: none !important;
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important; animation: none !important;
     transition: none !important;
   }
   @view-transition { navigation: none; }

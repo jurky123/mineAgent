@@ -51,7 +51,7 @@ try {
   await mkdir('/tmp/zkun-community-ui', { recursive: true });
   const checkWidth = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow');
   await page.goto(base);
-  await page.getByRole('heading', { name: 'zkun', exact:true }).waitFor();
+  await page.getByRole('heading', { name: '你好，这里是 zkun', exact:true }).waitFor();
   assert.equal(await page.locator('.login-view').count(), 0, 'public home forced login');
   assert.equal(await page.getByRole('button', { name: '整合包准备中' }).count(), 0);
   assert.equal(await page.locator('a[download]').count(), 0);
@@ -117,14 +117,14 @@ try {
     await page.setViewportSize({ width, height: 900 });
     for (const url of ['/', '/minecraft', '/account/history?ui=1']) {
       await page.goto(base + url); await page.locator('.topbar').waitFor();
-      if (url === '/') await page.getByRole('heading', { name: 'zkun', exact:true }).waitFor();
+      if (url === '/') await page.getByRole('heading', { name: '你好，这里是 zkun', exact:true }).waitFor();
       if (url.includes('history')) { await page.getByRole('button', { name: '回放', exact: true }).first().click(); }
       await checkWidth();
       if (width === 390) await page.screenshot({ path: '/tmp/zkun-community-ui/' + (url.includes('history') ? 'replay' : url.includes('minecraft') ? 'minecraft' : 'home') + '-mobile.png', fullPage: true });
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(base + '/?ui=1&theme=dark'); await page.getByRole('heading', { name: 'zkun', exact:true }).waitFor();
+  await page.goto(base + '/?ui=1&theme=dark'); await page.getByRole('heading', { name: '你好，这里是 zkun', exact:true }).waitFor();
   await page.screenshot({ path: '/tmp/zkun-community-ui/home-dark.png', fullPage: true });
   assert.deepEqual(errors, []);
   console.log('PASS: public home/guide, honest release states, retries, shared identity, prompt drafts, replay coordinates/jump/keyboard/winning line, responsive widths and dark/reduced-motion rendering.');

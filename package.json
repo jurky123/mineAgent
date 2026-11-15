@@ -12,7 +12,8 @@
     "test:conversations": "node scripts/conversation-commands-e2e.mjs",
     "test:review": "node scripts/review-ui-test.mjs",
     "test:downloads": "node scripts/download-e2e.mjs",
-    "test:portal-refresh": "node scripts/portal-refresh-e2e.mjs"
+    "test:portal-refresh": "node scripts/portal-refresh-e2e.mjs",
+    "test:paper-ink": "node scripts/paper-ink-visual.mjs /tmp/zkun-paper-ink-ui --check"
   },
   "devDependencies": {
     "playwright": "^1.49.0"

@@ -18,6 +18,10 @@ QQ 群聊：`/auto` 查状态，已配置的 QQ 管理员用 `/auto on`、`/auto
 > AI 玩家入口位于 **Minecraft → AI 玩家 → 玩家资料**（`/minecraft` → `/ai` → `/ai/<id>`）。公开资料由独立服务提供；资料内的身体状态、任务/回复、审批和控制由浏览器直接访问主站，仍须主站已验证管理员。`/body` 保留旧书签、游戏 fragment 配对及急停兼容。论坛默认关闭，既有代码与数据保留，不接写作。见 [aiplayer/README.md](aiplayer/README.md) 和 [v1.3 需求 §12](AI_PLAYER_PORTAL_REQUIREMENTS.md#12-用户确认的信息架构调整2026-10-20当前实施依据)。
 
 
+### 纸与墨视觉重构（2026-11-15，本地分支）
+
+首页 Hero / Bento、游戏、Agent、Minecraft 指南、账号与共享组件采用用户确认的“纸与墨”方案，保留现有身份、权限与业务操作。验收命令 `npm run test:paper-ink`；范围、对比度、前后截图与发布边界见 [实施与验收记录](docs/PAPER_INK_IMPLEMENTATION_2026-11-15.md)。本轮仅本地提交，未推送或部署。
+
 ### 门户与 Agent 界面（2026-10-21）
 
 - 首页保留 Agent、游戏、Minecraft 三项入口和真实最近记录；安装说明集中到 `/minecraft`。`GET /api/portal/public` 仅调用显式注册的 `PublicCard`，公开 Minecraft 可用状态与在线人数，不包含玩家身份、聊天或机器诊断；成功结果短缓存，失败显示未知状态。

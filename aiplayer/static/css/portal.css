@@ -273,8 +273,8 @@ p {
   gap: 12px;
   flex-wrap: wrap;
 }
-.agent-card .card-end .btn { color: var(--brand); }
-html[data-theme="dark"] .agent-card .card-end .btn { color: var(--link); }
+.agent-card .card-end .btn:not(.primary) { color: var(--brand); }
+html[data-theme="dark"] .agent-card .card-end .btn:not(.primary) { color: var(--link); }
 .filters {
   display: flex;
   gap: 12px;
@@ -314,12 +314,12 @@ html[data-theme="dark"] .agent-card .card-end .btn { color: var(--link); }
   color: var(--text-secondary);
 }
 .btn.primary {
-  background: var(--brand);
+  background: var(--brand-fill);
   color: white;
   border-color: var(--brand);
 }
 .btn.primary:hover {
-  background: var(--brand-hover);
+  background: var(--brand-fill);
 }
 .btn.danger {
   color: var(--danger);

@@ -3,12 +3,8 @@
 .body-player-panel { min-width: 0; scroll-margin-top: 88px; }
 .body-player-panel .body-card { border-color: var(--border-strong); }
 .body-player-panel .body-control {
-  border-color: var(--border-strong);
-  position: sticky;
-  top: 68px;
-  align-items: flex-start;
-  flex-direction: column;
-  margin-bottom: 20px;
+  border-color: var(--border-strong); position: sticky; top: 68px; align-items: flex-start;
+  flex-direction: column; margin-bottom: 20px;
 }
 .body-player-panel .body-private>*+* { margin-top: 20px; }
 .body-player-panel .body-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -33,10 +29,8 @@
 .body-approval .body-buttons { margin-top: 12px; }
 .body-error { padding: 16px; border: 1px solid var(--danger); border-radius: 12px; color: var(--danger); background: var(--surface); }
 .body-events { padding: 0; list-style: none; margin: 0; }
-.body-events li { padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.body-events li { padding: 10px 0; border-top: var(--bw) dashed var(--line-soft); overflow-wrap: anywhere; }
 .body-events time { opacity: 0.6; margin-right: 12px; }
-html[data-theme="dark"] .body-control { background: var(--surface); border-color: var(--line-soft); }
-html[data-theme="dark"] .body-card { background: var(--surface); border-color: var(--line-soft); }
 html[data-theme="dark"] .body-error { background: var(--surface-muted); color: var(--danger); }
 .body-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; width: 100%; }
 #body-status { display: inline-flex; gap: 8px; align-items: center; }
@@ -47,70 +41,36 @@ html[data-theme="dark"] .body-error { background: var(--surface-muted); color: v
 .body-pair-form label { grid-column: 1 / -1; }
 #body-game-revoke { grid-column: 1 / -1; }
 .body-pair-form input {
-  min-width: 0;
-  width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
+  min-width: 0; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border-strong);
+  border-radius: 10px; background: var(--surface); color: var(--text); font: inherit;
 }
 .body-pair-form #body-game-revoke { justify-self: start; }
 .body-player-panel :is(button, a, input, textarea):focus-visible { outline: 3px solid var(--link); outline-offset: 3px; }
 .body-player-panel :is(button, a, input, textarea) { scroll-margin-block: 220px 24px; }
 .body-control {
-  background: var(--surface);
-  border: var(--bw) solid var(--line);
-  border-radius: 18px;
-  padding: 22px;
-  position: sticky;
-  top: 68px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  box-shadow: var(--shadow-hard);
+  background: var(--surface); border: var(--bw) solid var(--line); border-radius: 18px; padding: 22px;
+  position: sticky; top: 68px; z-index: 5; display: flex; align-items: center; justify-content: space-between;
+  gap: 18px; box-shadow: var(--shadow-hard);
 }
 .body-card { background: var(--surface); border: var(--bw) solid var(--line); border-radius: 18px; padding: 22px; box-shadow: var(--shadow-hard); }
 .body-access { padding: 24px; background: var(--surface); border: var(--bw) solid var(--line); border-radius: 18px; box-shadow: var(--shadow-hard); }
 .body-player-panel .body-buttons input {
-  min-width: 0;
-  flex: 1;
-  max-width: 100%;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: var(--bw) solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
+  min-width: 0; flex: 1; max-width: 100%; font: inherit; color: var(--text); background: var(--surface);
+  border: var(--bw) solid var(--line); border-radius: 10px; padding: 10px;
 }
 .body-task-panel textarea {
-  width: 100%;
-  min-height: 100px;
-  resize: vertical;
-  font: inherit;
-  line-height: 1.7;
-  color: var(--text);
-  background: var(--surface);
-  border: var(--bw) solid var(--line);
-  border-radius: 10px;
-  padding: 12px;
-  margin: 8px 0 12px;
-  box-sizing: border-box;
+  width: 100%; min-height: 100px; resize: vertical; font: inherit; line-height: 1.7; color: var(--text);
+  background: var(--surface); border: var(--bw) solid var(--line); border-radius: 10px; padding: 12px;
+  margin: 8px 0 12px; box-sizing: border-box;
 }
 .body-player-panel .body-buttons input:focus { outline: none; box-shadow: 3px 3px 0 var(--brand); }
 .body-task-panel textarea:focus { outline: none; box-shadow: 3px 3px 0 var(--brand); }
-.body-reply { padding: 12px; border-bottom: 1px solid var(--border-strong); border-color: var(--line-soft); border-bottom-style: dashed; }
-.body-approval { border-top: 1px solid var(--line); padding: 16px 0; border-color: var(--line-soft); border-bottom-style: dashed; }
-@media (max-width:640px) {
+.body-reply { padding: 12px; border-bottom: var(--bw) dashed var(--line-soft); }
+.body-approval { border-top: var(--bw) dashed var(--line-soft); padding: 16px 0; }
+@media (max-width: 640px) {
   .body-player-panel .body-buttons .btn { flex: 1 1 auto; width: auto; }
   .body-player-panel .body-buttons input { flex-basis: 100%; }
   .body-player-panel .body-card dl { grid-template-columns: 80px minmax(0,1fr); }
-}
-@media (max-width: 640px) {
   .body-grid { grid-template-columns: 1fr; }
   .body-control { top: 58px; align-items: stretch; flex-direction: column; padding: 16px; }
   .body-buttons .btn { flex: 1; justify-content: center; width: 100%; min-height: 44px; white-space: nowrap; }

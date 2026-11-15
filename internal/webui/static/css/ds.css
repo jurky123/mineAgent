@@ -13,7 +13,7 @@ body.ds {
   font: 15px/1.65 var(--font-sans);
   overflow-y: auto;
 }
-body.ds a { color: inherit; }
+:where(body.ds) a { color: inherit; }
 h1, h2, h3, h4 { font-family: var(--font-display); }
 
 /* ---------- 顶栏 ---------- */

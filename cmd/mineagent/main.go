@@ -565,7 +565,7 @@ func main() {
 						SessionID: cfg.Minecraft.SessionID,
 						Channel:   "minecraft",
 						IsAdmin:   false,
-						Model:     cfg.Model.Name,
+						Model:     prompts.ModelFor("minecraft", "", cfg.Model.Name),
 						MCStatus:  mcStatusFn,
 						QQIDs:     nil,
 						Requester: chat.Player,
@@ -581,7 +581,7 @@ func main() {
 				}
 				// 人设 + MC 内置能力组合（管理员改人设/系统提示词后即时生效）。
 				canBody := chat.CanBody && bodySvc.DirectControl()
-				req := agent.Request{
+				req := agent.Request{Channel: "minecraft",
 					Session:           sess,
 					Player:            chat.Player,
 					RequesterID:       chat.UUID,

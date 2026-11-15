@@ -1,5 +1,6 @@
 // Agent 页的人设选择、渠道规则与共享模板编辑；保存前保留本地草稿。
 import { apiGet, apiPost } from './api.js';
+import { bus } from './ui.js';
 import { h, icon, openDialog, confirmDialog, toast } from './ds.js';
 
 let activeDialog = null;
@@ -38,6 +39,7 @@ export function initPromptSettings(previewData = null) {
 export async function openPromptSettings(previewData = null) {
   if (activeDialog) { activeDialog.box.focus(); return; }
   let data, view = 'mine', serviceId = 'web', templateId, draft, baseline = '', saving = false;
+  let modelOptions = [], modelLoadError = '', baseModel = '';
   const getData = () => previewData ? Promise.resolve(structuredClone(previewData)) : apiGet('/api/prompts');
   const post = (payload) => {
     if (previewData) return Promise.reject(new Error('预览模式不保存更改'));
@@ -198,8 +200,8 @@ export async function openPromptSettings(previewData = null) {
     const svc = data.services.find((item) => item.id === serviceId) || data.services[0];
     if (!svc) { content.append(heading('暂无渠道', '配置渠道后可以在这里调整提示词。')); draft = null; return; }
     serviceId = svc.id;
-    draft = { persona: svc.persona === svc.defaultPersona ? '' : svc.persona, enabled: !!svc.global?.enabled, text: svc.global?.text || '' };
-    content.append(heading('渠道默认与系统提示词', '管理员设置 · 影响所选渠道的所有用户。网页用户仍可单独选择自己的人设。'));
+    draft = { persona: svc.persona === svc.defaultPersona ? '' : svc.persona, enabled: !!svc.global?.enabled, text: svc.global?.text || '', model: svc.model || '' };
+    content.append(heading('渠道模型、人设与系统提示词', '管理员设置 · 影响所选渠道的所有用户。网页用户仍可单独选择自己的人设。'));
     const layout = h('div', 'prompt-editor-layout');
     layout.append(selectionList(data.services, serviceId, (id) => { serviceId = id; }));
     const editor = h('div', 'prompt-editor');
@@ -210,6 +212,22 @@ export async function openPromptSettings(previewData = null) {
     }
     sel.value = draft.persona; sel.onchange = () => { draft.persona = sel.value; changed(); };
     editor.append(field('默认人设', sel));
+    const model = h('select', 'input'); model.id = 'prompt-service-model';
+    const defaultOption = h('option', null, '跟随站点默认' + (baseModel ? '（' + baseModel + '）' : ''));
+    defaultOption.value = ''; model.append(defaultOption);
+    for (const item of modelOptions) {
+      const opt = h('option', null, (item.label || item.id) + (item.unavailable || item.needsKey ? ' · 暂不可用' : ''));
+      opt.value = item.id; opt.disabled = !!(item.unavailable || item.needsKey); model.append(opt);
+    }
+    if (draft.model && !modelOptions.some((item) => item.id === draft.model)) {
+      const current = h('option', null, draft.model + ' · 当前保存，列表暂未收录'); current.value = draft.model; model.append(current);
+    }
+    model.value = draft.model; model.disabled = !!modelLoadError;
+    model.onchange = () => { draft.model = model.value; changed(); };
+    editor.append(field('默认模型', model), h('p', 'prompt-preview-note', modelLoadError ||
+      (serviceId === 'qq' ? '群或私聊用 /model 单独选择的模型优先；/model default 后跟随这里。' :
+        serviceId === 'web' ? '用户单独选择的模型优先；使用默认时跟随这里。' : '从下一条新请求开始生效，已提交的任务不变。')));
+
     const mode = h('select', 'input'); mode.id = 'prompt-capability-mode';
     for (const [value, label] of [['builtin', '使用内置系统提示词'], ['custom', '使用自定义系统提示词']]) {
       const opt = h('option', null, label); opt.value = value; mode.append(opt);
@@ -310,6 +328,7 @@ export async function openPromptSettings(previewData = null) {
       const payload = view === 'mine' ? { scope: 'user-settings', persona: draft.persona, style: draft.style } : view === 'services' ?
         { scope: 'service-settings', id: serviceId, ...draft } : { scope: 'persona-save', data: draft };
       const result = await post(payload);
+      if (payload.scope === 'service-settings' && payload.id === 'web') bus.emit('channel-model-changed');
       saved = true; baseline = JSON.stringify(draft);
       if (view === 'templates') templateId = result.id;
       data = await getData();
@@ -325,6 +344,12 @@ export async function openPromptSettings(previewData = null) {
     content.replaceChildren(h('div', 'prompt-loading', '正在加载人设与提示词…')); save.disabled = true;
     try {
       data = await getData();
+      if (data.admin) {
+        try {
+          const options = previewData ? (previewData.modelOptions || {models: []}) : await apiGet('/api/options');
+          modelOptions = options.models || []; baseModel = options.baseDefaultModel || options.defaultModel || ''; modelLoadError = '';
+        } catch { modelLoadError = '模型列表暂时加载失败；已保留当前设置。关闭后重新打开可重试。'; }
+      }
       if (!root.isConnected) return;
       data.limits = { persona: 8000, capability: 20000, name: 40, desc: 200, ...data.limits };
       updateLabel(data); render();

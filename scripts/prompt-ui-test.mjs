@@ -39,6 +39,7 @@ const server = createServer(async (req, res) => {
           const svc = data.services.find((s) => s.id === p.id);
           svc.persona = p.persona || svc.defaultPersona;
           svc.global = { enabled: p.enabled, text: p.text };
+          svc.model = p.model || '';
           if (p.id === 'web') data.webPersona = svc.persona;
         }
         if (p.scope === 'persona-save') {
@@ -65,7 +66,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/api/version') return json({ version: 'preview' });
     if (url.pathname === '/api/conversations') return json({ conversations: [] });
     if (url.pathname === '/api/history') return json({ messages: [] });
-    if (url.pathname === '/api/options') return json({ models: [], skills: [], effort: 'medium', admin: data.admin });
+    if (url.pathname === '/api/options') return json({ models: [{id:'claude-haiku-5-5',label:'Claude Haiku 5.5'},{id:'missing-key',label:'缺密钥',needsKey:true}], defaultModel:data.services[0].model || 'fixture-default', baseDefaultModel:'fixture-default', skills: [], effort: 'medium', admin: data.admin });
     if (url.pathname === '/api/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': preview\n\n');
       req.on('close', () => res.end()); return;
@@ -134,10 +135,16 @@ try {
   await page.locator('.dialog-mask').nth(1).waitFor({ state: 'detached' });
   assert.equal(await page.locator('#prompt-capability').inputValue(), '自定义渠道规则', 'channel switch lost unsaved editor text');
   await page.locator('#prompt-service-persona').selectOption('teacher');
+  await page.locator('#prompt-service-model').selectOption('claude-haiku-5-5');
+  assert.equal(await page.locator('#prompt-service-model option[value="missing-key"]').isDisabled(), true);
   await page.getByRole('button', { name: '保存更改', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.prompt-footer .btn').disabled && !document.querySelector('.prompt-status').textContent.includes('正在保存'));
   assert.equal(posts.at(-1).scope, 'service-settings');
   assert.equal(data.services[0].persona, 'teacher');
+  assert.equal(data.services[0].model, 'claude-haiku-5-5');
+  assert.equal(posts.at(-1).model, 'claude-haiku-5-5');
+  await page.waitForFunction(() => document.querySelector('#model-label').textContent === 'claude-haiku-5-5');
+  assert.equal(await page.locator('#prompt-service-model').inputValue(), 'claude-haiku-5-5');
   await shot(page, 'desktop-channel');
   await page.getByRole('tab', { name: '模板库' }).click();
   await page.getByRole('button', { name: '＋ 新建模板' }).click();
@@ -168,6 +175,27 @@ try {
   console.log('PASS: selection, failed save, unsaved guards, channel save, template CRUD/reset, keyboard focus, account removal');
   await context.close();
 
+  for (const [width, theme] of [[390, 'light'], [320, 'dark']]) {
+    const mobile = await browser.newContext({ viewport: { width, height: 844 } });
+    await mobile.addInitScript((mode) => { localStorage.setItem('mineagent.token','preview'); localStorage.setItem('mineagent.name','Preview'); localStorage.setItem('mineagent.theme',mode); }, theme);
+    const p = await mobile.newPage(); await p.goto(base + '/agent'); await p.locator('#header-prompts').click();
+    await p.getByRole('tab', { name: '渠道设置' }).click();
+    await p.locator('.prompt-selector-item').filter({ hasText: 'QQ 机器人' }).click();
+    await p.locator('#prompt-service-model').selectOption('claude-haiku-5-5');
+    failNextSave = true;
+    await p.getByRole('button', {name:'保存更改',exact:true}).click();
+    await p.getByRole('alert').filter({hasText:'模拟保存失败'}).waitFor();
+    assert.equal(await p.locator('#prompt-service-model').inputValue(),'claude-haiku-5-5','failed channel save lost model draft');
+    assert.equal(await p.locator('.prompt-content').evaluate(el => el.scrollWidth <= el.clientWidth + 1),true,'mobile channel content overflow');
+    assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true,'mobile document overflow');
+    await shot(p, 'mobile-channel-' + width + '-' + theme);
+    await p.getByRole('button', {name:'保存更改',exact:true}).click();
+    await p.waitForFunction(() => document.querySelector('.prompt-footer .btn').disabled && !document.querySelector('.prompt-status').textContent.includes('正在保存'));
+    assert.equal(data.services.find(s => s.id === 'qq').model,'claude-haiku-5-5');
+    // Reset the mock for the next viewport, without calling production.
+    data.services.find(s => s.id === 'qq').model = '';
+    await mobile.close();
+  }
   data.admin = false;
   for (const theme of ['light', 'dark']) {
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });

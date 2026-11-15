@@ -34,6 +34,7 @@ func (s *Server) promptsGet(w http.ResponseWriter, u *storage.User) {
 		if u.IsAdmin {
 			item["default"] = prompts.DefaultText(svc.ID)
 			item["global"] = prompts.Global(svc.ID)
+			item["model"] = prompts.ServiceModel(svc.ID)
 		}
 		services = append(services, item)
 	}
@@ -62,6 +63,7 @@ func (s *Server) promptsPost(w http.ResponseWriter, r *http.Request, u *storage.
 		Enabled *bool              `json:"enabled"`
 		Text    *string            `json:"text"`
 		Persona string             `json:"persona"`
+		Model   *string            `json:"model"`
 		Data    json.RawMessage    `json:"data"`
 		Style   *prompts.UserStyle `json:"style"`
 	}
@@ -102,7 +104,27 @@ func (s *Server) promptsPost(w http.ResponseWriter, r *http.Request, u *storage.
 				return
 			}
 			enabled := req.Enabled != nil && *req.Enabled
-			if err := prompts.SetServiceSettings(id, prompts.CapabilityOverride{Enabled: enabled, Text: text}, strings.TrimSpace(req.Persona)); err != nil {
+			var model []string
+			if req.Model != nil {
+				value := strings.TrimSpace(*req.Model)
+				if value != "" && value != prompts.ServiceModel(id) {
+					allowed := false
+					if s.web != nil {
+						for _, candidate := range s.web.SelectableModelIDs(r.Context()) {
+							if candidate == value {
+								allowed = true
+								break
+							}
+						}
+					}
+					if !allowed {
+						writeJSON(w, 400, map[string]string{"error": "该模型不在可选列表，请刷新模型列表后重试"})
+						return
+					}
+				}
+				model = []string{value}
+			}
+			if err := prompts.SetServiceSettings(id, prompts.CapabilityOverride{Enabled: enabled, Text: text}, strings.TrimSpace(req.Persona), model...); err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 				return
 			}

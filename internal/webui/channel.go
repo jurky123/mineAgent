@@ -596,7 +596,7 @@ func (c *Channel) HandleUserMessage(ctx context.Context, u *storage.User, conv *
 		maxSteps = c.bodyMaxSteps
 		bodyInstruction = bodycore.Instruction
 	}
-	if !c.ag.Submit(agent.Request{
+	if !c.ag.Submit(agent.Request{Channel: "web",
 		Context:       runCtx,
 		BodyPrincipal: principal,
 		MaxIterations: maxSteps,

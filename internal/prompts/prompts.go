@@ -64,6 +64,7 @@ type snapshot struct {
 	Global         map[string]CapabilityOverride `json:"global,omitempty"`
 	Personas       []Persona                     `json:"personas,omitempty"`
 	ServicePersona map[string]string             `json:"servicePersona,omitempty"`
+	ServiceModels  map[string]string             `json:"serviceModels,omitempty"`
 	UserPersona    map[string]string             `json:"userPersona,omitempty"`
 	UserStyle      map[string]UserStyle          `json:"userStyle,omitempty"`
 }
@@ -86,6 +87,7 @@ type Manager struct {
 	personas       []Persona
 	personaIndex   map[string]int
 	servicePersona map[string]string
+	serviceModels  map[string]string
 	userPersona    map[string]string
 	userStyle      map[string]UserStyle
 }
@@ -97,6 +99,7 @@ func New(path string) *Manager {
 		global:         make(map[string]CapabilityOverride),
 		personaIndex:   make(map[string]int),
 		servicePersona: make(map[string]string),
+		serviceModels:  make(map[string]string),
 		userPersona:    make(map[string]string),
 		userStyle:      make(map[string]UserStyle),
 	}
@@ -162,6 +165,9 @@ func (m *Manager) Load() error {
 			m.personas = append(m.personas, p)
 		}
 	}
+	if snap.ServiceModels != nil {
+		m.serviceModels = snap.ServiceModels
+	}
 	if snap.ServicePersona != nil {
 		m.servicePersona = snap.ServicePersona
 	}
@@ -180,6 +186,7 @@ func (m *Manager) saveLocked() error {
 		Global:         m.global,
 		Personas:       m.personas,
 		ServicePersona: m.servicePersona,
+		ServiceModels:  m.serviceModels,
 		UserPersona:    m.userPersona,
 		UserStyle:      m.userStyle,
 	})
@@ -412,7 +419,7 @@ func (m *Manager) SetServicePersona(service, personaID string) error {
 }
 
 // SetServiceSettings 一次保存渠道人设与能力覆盖，写盘失败则保留此前的生效值。
-func (m *Manager) SetServiceSettings(service string, o CapabilityOverride, personaID string) error {
+func (m *Manager) SetServiceSettings(service string, o CapabilityOverride, personaID string, model ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.index[service]; !ok {
@@ -430,6 +437,17 @@ func (m *Manager) SetServiceSettings(service string, o CapabilityOverride, perso
 	if o.Enabled && o.Text == "" {
 		return fmt.Errorf("自定义系统提示词不能为空")
 	}
+	if len(model) > 1 {
+		return fmt.Errorf("只能指定一个渠道模型")
+	}
+	oldModel, hadModel := m.serviceModels[service]
+	if len(model) == 1 {
+		if model[0] == "" {
+			delete(m.serviceModels, service)
+		} else {
+			m.serviceModels[service] = model[0]
+		}
+	}
 	oldGlobal, hadGlobal := m.global[service]
 	oldPersona, hadPersona := m.servicePersona[service]
 	m.global[service] = o
@@ -439,6 +457,11 @@ func (m *Manager) SetServiceSettings(service string, o CapabilityOverride, perso
 		m.servicePersona[service] = personaID
 	}
 	if err := m.saveLocked(); err != nil {
+		if hadModel {
+			m.serviceModels[service] = oldModel
+		} else {
+			delete(m.serviceModels, service)
+		}
 		if hadGlobal {
 			m.global[service] = oldGlobal
 		} else {
@@ -620,11 +643,11 @@ func SetCapabilities(id string, o CapabilityOverride) error {
 	return def.SetCapabilities(id, o)
 }
 
-func SetServiceSettings(id string, o CapabilityOverride, personaID string) error {
+func SetServiceSettings(id string, o CapabilityOverride, personaID string, model ...string) error {
 	if def == nil {
 		return fmt.Errorf("提示词未初始化")
 	}
-	return def.SetServiceSettings(id, o, personaID)
+	return def.SetServiceSettings(id, o, personaID, model...)
 }
 
 func ResetCapabilities(id string) error {
@@ -702,4 +725,26 @@ func SetUserSettings(user, persona string, style UserStyle) error {
 		return fmt.Errorf("提示词未初始化")
 	}
 	return def.SetUserSettings(user, persona, style)
+}
+
+// ServiceModel is a channel default, below explicit conversation/account choices.
+func (m *Manager) ServiceModel(service string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.serviceModels[service]
+}
+func ServiceModel(service string) string {
+	if def == nil {
+		return ""
+	}
+	return def.ServiceModel(service)
+}
+func ModelFor(service, selected, fallback string) string {
+	if selected != "" {
+		return selected
+	}
+	if value := ServiceModel(service); value != "" {
+		return value
+	}
+	return fallback
 }

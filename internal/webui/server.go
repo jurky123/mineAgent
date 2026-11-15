@@ -20,6 +20,7 @@ import (
 
 	"mineagent/internal/account"
 	"mineagent/internal/body"
+	"mineagent/internal/prompts"
 	"mineagent/internal/storage"
 	"mineagent/internal/version"
 )
@@ -406,15 +407,16 @@ func (c *Channel) handleOptions(w http.ResponseWriter, r *http.Request, u *stora
 	}
 	// Discovery can be partial or temporarily unavailable. GET must not erase preferences.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"skills":          c.skillsForUser(r.Context(), u),
-		"capabilities":    c.capabilities(r.Context(), u),
-		"models":          catalog,
-		"efforts":         effortLevels,
-		"model":           prefs.Model,
-		"effort":          prefs.Effort,
-		"defaultModel":    c.model,
-		"admin":           u.IsAdmin,
-		"modelsFetchedAt": c.models.fetchedAt(),
+		"skills":           c.skillsForUser(r.Context(), u),
+		"capabilities":     c.capabilities(r.Context(), u),
+		"models":           catalog,
+		"efforts":          effortLevels,
+		"model":            prefs.Model,
+		"effort":           prefs.Effort,
+		"defaultModel":     prompts.ModelFor("web", "", c.model),
+		"baseDefaultModel": c.model,
+		"admin":            u.IsAdmin,
+		"modelsFetchedAt":  c.models.fetchedAt(),
 	})
 }
 

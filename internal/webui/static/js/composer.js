@@ -363,7 +363,7 @@ export function openModelPopover(back, query = '') {
       b.className = 'po-item model' + (cur === '' ? ' on' : '');
       b.dataset.followDefault = 'true';
       b.setAttribute('aria-pressed', String(cur === ''));
-      b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="po-modeldetail">自动使用站点当前默认模型</span></span><span class="check">' + ICON.check + '</span>';
+      b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="po-modeldetail">自动使用网页渠道当前默认模型</span></span><span class="check">' + ICON.check + '</span>';
       b.disabled = !!def && !usable(def);
       b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: '' }); };
       list.appendChild(b);
@@ -572,6 +572,7 @@ export async function loadOptions(force, refreshCatalog = force) {
   finally { if (optionsPending === pending) optionsPending = null; }
 }
 bus.on('conversation-selected', () => { closePopovers(); loadOptions().catch(() => {}); });
+bus.on('channel-model-changed', () => { loadOptions(true, false).catch(() => {}); });
 
 // ---------- 事件绑定 ----------
 const isMobile = () => window.matchMedia('(max-width: 899px)').matches;

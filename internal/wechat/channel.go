@@ -202,7 +202,7 @@ func (c *Channel) onMessage(m WeixinMessage) {
 			SessionID: sessionKey,
 			Channel:   "wechat",
 			IsAdmin:   c.IsAdmin(m.FromUserID),
-			Model:     c.model,
+			Model:     prompts.ModelFor("wechat", "", c.model),
 			Usage:     c.usage.Text,
 			MCStatus:  c.mcStatus,
 			QQStatus:  c.Status,
@@ -243,7 +243,7 @@ func (c *Channel) onMessage(m WeixinMessage) {
 		"session", sessionKey, "author", m.FromUserID,
 		"group", m.GroupID != "", "boundMC", mcName, "query", text, "messageId", stored.ID)
 
-	if !c.ag.Submit(agent.Request{
+	if !c.ag.Submit(agent.Request{Channel: "wechat",
 		Session:           sess,
 		SessionKey:        sessionKey,
 		Player:            tools.WeComRequesterPrefix + m.FromUserID,

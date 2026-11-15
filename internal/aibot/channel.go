@@ -203,7 +203,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 			SessionID: sessionKey,
 			Channel:   "aibot",
 			IsAdmin:   c.isAdmin(m.UserID),
-			Model:     c.model,
+			Model:     prompts.ModelFor("aibot", "", c.model),
 			Usage:     c.usage.Text,
 			MCStatus:  c.mcStatus,
 			QQStatus:  c.AIBotStatus,
@@ -245,7 +245,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		"session", sessionKey, "author", m.UserID,
 		"boundMC", mcName, "query", text, "messageId", stored.ID)
 
-	if !c.ag.Submit(agent.Request{
+	if !c.ag.Submit(agent.Request{Channel: "aibot",
 		Session:           sess,
 		SessionKey:        sessionKey,
 		Player:            tools.WeComRequesterPrefix + m.UserID,

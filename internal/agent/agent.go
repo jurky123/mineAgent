@@ -22,6 +22,7 @@ import (
 	"mineagent/internal/body"
 	"mineagent/internal/config"
 	"mineagent/internal/dshbridge"
+	"mineagent/internal/prompts"
 	"mineagent/internal/session"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
@@ -103,6 +104,7 @@ type Request struct {
 	Progress func(text string)
 	// Model / ReasoningEffort 为空用默认（config.Model.Name / 不传 reasoning_effort）。
 	// 网页通道按账号偏好填（+ 菜单里切模型/思考强度）。
+	Channel         string // Trusted transport ID; never inferred from model output.
 	Model           string
 	ReasoningEffort string
 	// Set only by a trusted channel when the user explicitly selected a
@@ -540,6 +542,7 @@ func (a *Agent) requestContext(ctx context.Context, req Request) (context.Contex
 }
 
 func (a *Agent) Submit(req Request) bool {
+	req.Model = prompts.ModelFor(req.Channel, req.Model, "")
 	if req.BodyPrincipal != nil {
 		if req.MaxIterations == 0 {
 			req.MaxIterations = req.BodyPrincipal.MaxSteps()
@@ -788,7 +791,7 @@ func (a *Agent) respond(ctx context.Context, req Request) {
 // 同一会话复用是安全的；checkpoint 按 run 粒度存 sqlite，resume 时必须用
 // 建它的那个 runner（见 resume，经 pendingRun.runnerKey 取回）。
 func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string, error) {
-	if len(req.Tools) == 0 && req.SystemInstruction == "" && req.MaxIterations == 0 && req.BodyPrincipal == nil {
+	if len(req.Tools) == 0 && req.SystemInstruction == "" && req.MaxIterations == 0 && req.BodyPrincipal == nil && req.Model == "" && req.ReasoningEffort == "" {
 		return a.mcRunner, "", nil
 	}
 	instruction := req.SystemInstruction
@@ -823,7 +826,7 @@ func (a *Agent) runnerFor(ctx context.Context, req Request) (*adk.Runner, string
 	if ok {
 		return r, key, nil
 	}
-	middlewares, err := a.buildMiddlewaresFor(ctx, a.model, true)
+	middlewares, err := a.buildMiddlewaresFor(ctx, cm, true)
 	if err != nil {
 		return nil, "", fmt.Errorf("init middlewares: %w", err)
 	}
@@ -1332,8 +1335,9 @@ func (a *Agent) history(sessionKey string, upToID int64) ([]*schema.Message, int
 			msgs = append(msgs, a.userMessage(name, m.Text, withVision))
 		case "agent":
 			// Older releases persisted queue status as assistant output. Keep it
-			// visible in history, but never teach the model to repeat it.
-			if !strings.HasPrefix(sessionKey, "qq:") || !legacyQQQueueNotice(m.Text) {
+			// visible in history, but never teach the model to repeat it. Empty legacy
+			// replies carry no content or persisted tool calls and are invalid for strict gateways.
+			if strings.TrimSpace(m.Text) != "" && (!strings.HasPrefix(sessionKey, "qq:") || !legacyQQQueueNotice(m.Text)) {
 				msgs = append(msgs, schema.AssistantMessage(m.Text, nil))
 			}
 		}

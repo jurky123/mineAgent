@@ -358,7 +358,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 	}
 
 	if cmd, arg := tools.MatchSystemCommand(text); cmd != "" {
-		currentModel := c.model
+		currentModel := c.defaultModel()
 		if cmd == "status" {
 			selected, err := c.store.SessionModel(ctx, sessionKey)
 			if err != nil {
@@ -490,7 +490,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 			return ctx, msg, err
 		}
 	}
-	if !c.ag.Submit(agent.Request{
+	if !c.ag.Submit(agent.Request{Channel: "qq",
 		Context:           task.ctx,
 		ManagedProgress:   true,
 		Done:              func() { bundle.cleanup(); c.finishTask(scope, task) },

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"mineagent/internal/prompts"
 	"mineagent/internal/storage"
 	"mineagent/internal/tools"
 )
@@ -73,7 +74,7 @@ func (c *Channel) modelSetting(ctx context.Context, key, cmd, arg string) (strin
 	}
 	label := selected
 	if label == "" {
-		label = "默认（" + c.model + "）"
+		label = "默认（" + c.defaultModel() + "）"
 	}
 	if cmd == "settings" || cmd == "设置" {
 		if arg != "" {
@@ -132,7 +133,9 @@ func (c *Channel) modelSetting(ctx context.Context, key, cmd, arg string) (strin
 		return "", err
 	}
 	if value == "" {
-		value = "默认（" + c.model + "）"
+		value = "默认（" + c.defaultModel() + "）"
 	}
 	return "当前会话模型已设为：" + value + "。\n从下一条新请求开始生效，已提交的任务不变。/settings 查看设置。", nil
 }
+
+func (c *Channel) defaultModel() string { return prompts.ModelFor("qq", "", c.model) }

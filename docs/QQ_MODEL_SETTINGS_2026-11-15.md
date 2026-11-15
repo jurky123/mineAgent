@@ -33,3 +33,7 @@ QQ `/help` 增加 `/settings` 入口（中文 `/设置`），集中展示当前�
 发布后 `/api/version=e75dcbe`；门户、聊天、资料空间、插件/工具入口均200；QQ gateway ready且未见启动失败；模型表已存在。线上验证见 `online-verification.json`。未发送真实QQ测试消息，用户可通过 `/settings`、`/model list`、`/model <完整ID>` 验收客户端交互。
 
 发布前生产SQLite一致性备份和旧二进制保存在上述私有证据目录的 `database.before.sqlite` 与 `mineagent.before`，未提交仓库。
+
+## 后续修复与网页入口
+
+网页 **Agent 设置 → 渠道设置 → 默认模型** 可设置各渠道默认。QQ会话显式模型优先；`/model default` 后跟随渠道默认，再回退站点默认。空助手历史导致摘要400、摘要未跟随切换的修复与验收见 [渠道模型与Haiku修复](CHANNEL_MODELS_AND_HAIKU_FIX_2026-11-15.md)。

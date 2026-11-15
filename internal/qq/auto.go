@@ -186,7 +186,7 @@ func (c *Channel) flushAuto(scope, sessionKey, target string, trigger int64) {
 		c.finishTask(scope, task)
 		return
 	}
-	if !c.ag.Submit(agent.Request{Model: selectedModel, Social: true, Context: runCtx, Session: sess, SessionKey: sessionKey, ReplyTarget: target, TriggerMessageID: trigger, ReasoningEffort: effort, SystemInstruction: instruction, ManagedProgress: true, Started: task.start, Done: func() { stop(); task.cancel(); c.finishTask(scope, task) }}) {
+	if !c.ag.Submit(agent.Request{Channel: "qq", Model: selectedModel, Social: true, Context: runCtx, Session: sess, SessionKey: sessionKey, ReplyTarget: target, TriggerMessageID: trigger, ReasoningEffort: effort, SystemInstruction: instruction, ManagedProgress: true, Started: task.start, Done: func() { stop(); task.cancel(); c.finishTask(scope, task) }}) {
 		stop()
 		task.cancel()
 		c.finishTask(scope, task)

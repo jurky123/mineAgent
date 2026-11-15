@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"mineagent/internal/config"
 	"mineagent/internal/prompts"
 	"mineagent/internal/storage"
+	"mineagent/internal/webui"
 )
 
 func TestPromptPreviewAndAdministrativeScopes(t *testing.T) {
@@ -62,5 +64,38 @@ func TestPromptPreviewAndAdministrativeScopes(t *testing.T) {
 	s.promptsPost(r, httptest.NewRequest("POST", "/api/prompts", strings.NewReader(`{"scope":"user-persona","persona":"translator"}`)), u)
 	if r.Code != 200 || m.UserPersona("reader") != "translator" || m.ServicePersona("web") != "teacher" {
 		t.Fatal("personal selection changed global default")
+	}
+}
+
+func TestServiceModelGateAndValidation(t *testing.T) {
+	m, err := prompts.Init(filepath.Join(t.TempDir(), "prompts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Register(prompts.Service{ID: "qq", DefaultText: func() string { return "rules" }})
+	if err := m.SetServiceSettings("qq", prompts.CapabilityOverride{}, "", "saved-model"); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.Default()
+	cfg.Web.DataDir = t.TempDir()
+	cfg.Model.BaseURL = ""
+	cfg.Model.Name = "fixture-default"
+	cfg.Model.Options = []string{"new-model"}
+	s := &Server{log: log, web: webui.NewChannel(log, cfg, nil, nil, nil, nil, nil)}
+	for _, tc := range []struct {
+		admin bool
+		model string
+		want  int
+	}{{false, "injected", 403}, {true, "injected", 400}, {true, "saved-model", 200}, {true, "new-model", 200}, {true, "", 200}} {
+		w := httptest.NewRecorder()
+		body := `{"scope":"service-settings","id":"qq","enabled":false,"text":"","model":"` + tc.model + `"}`
+		s.promptsPost(w, httptest.NewRequest("POST", "/api/prompts", strings.NewReader(body)), &storage.User{Username: "fixture", IsAdmin: tc.admin})
+		if w.Code != tc.want {
+			t.Fatal(w.Code, tc.want, w.Body.String())
+		}
+	}
+	if m.ServiceModel("qq") != "" {
+		t.Fatal("reset failed")
 	}
 }

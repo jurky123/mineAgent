@@ -261,7 +261,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 			SessionID: sessionKey,
 			Channel:   "wecom",
 			IsAdmin:   isAdmin,
-			Model:     c.model,
+			Model:     prompts.ModelFor("wecom", "", c.model),
 			Usage:     c.usage.Text,
 			MCStatus:  c.mcStatus,
 			QQStatus:  nil,
@@ -303,7 +303,7 @@ func (c *Channel) onMessage(m InboundMessage) {
 		"session", sessionKey, "author", display,
 		"boundMC", mcName, "query", text, "messageId", stored.ID)
 
-	if !c.ag.Submit(agent.Request{
+	if !c.ag.Submit(agent.Request{Channel: "wecom",
 		Session:           sess,
 		SessionKey:        sessionKey,
 		Player:            tools.WeComRequesterPrefix + m.UserID,

@@ -307,3 +307,32 @@ func TestPersistence(t *testing.T) {
 		t.Fatalf("人设数量不对: %d", len(m2.Personas()))
 	}
 }
+
+func TestServiceModelAtomicPersistenceAndCompatibility(t *testing.T) {
+	m := testManager(t)
+	if err := m.SetServiceSettings("web", CapabilityOverride{}, "tech", "model-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetServiceSettings("web", CapabilityOverride{}, "teacher"); err != nil {
+		t.Fatal(err)
+	}
+	if m.ServiceModel("web") != "model-a" {
+		t.Fatal("legacy save cleared model")
+	}
+	loaded := New(m.path)
+	if err := loaded.Load(); err != nil || loaded.ServiceModel("web") != "model-a" {
+		t.Fatal("model not persisted", err)
+	}
+	original := m.path
+	m.path = t.TempDir()
+	if err := m.SetServiceSettings("web", CapabilityOverride{Enabled: true, Text: "bad"}, "tech", "model-b"); err == nil {
+		t.Fatal("expected persistence failure")
+	}
+	if m.ServiceModel("web") != "model-a" || m.ServicePersona("web") != "teacher" || m.Global("web").Enabled {
+		t.Fatal("partial save")
+	}
+	m.path = original
+	if err := m.SetServiceSettings("web", CapabilityOverride{}, "teacher", ""); err != nil || m.ServiceModel("web") != "" {
+		t.Fatal("reset", err)
+	}
+}

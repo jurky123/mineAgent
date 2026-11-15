@@ -499,7 +499,6 @@ export function openIntelPopover() {
     if (!reason.isConnected) return;
     reason.removeAttribute('aria-busy'); labels.forEach(button => button.removeAttribute('aria-disabled'));
     paint(intelIndex(S.options?.effort));
-    if (ok) toast('思考强度：' + INTEL[intelIndex(S.options?.effort)].name, 'ok');
   }
   // Preserve the original deterministic particle positions, sizes and calm drift.
   let seed = 7;

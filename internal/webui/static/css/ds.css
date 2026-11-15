@@ -203,7 +203,8 @@ html[data-theme="dark"] .badge.brand, html[data-theme="dark"] .tag.brand { color
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 20px 22px 22px; }
 
 /* ---------- Toast ---------- */
-.toast-wrap { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+#toasts,
+.toast-wrap { position: fixed; left: 50%; top: 72px; transform: translateX(-50%); z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; max-width: calc(100vw - 24px); }
 .toast {
   background: var(--ink); color: var(--page); border: var(--bw) solid var(--ink);
   padding: 9px 18px; border-radius: 12px; font-size: 13.5px; font-weight: 600;
@@ -212,7 +213,8 @@ html[data-theme="dark"] .badge.brand, html[data-theme="dark"] .tag.brand { color
 .toast.out { animation: toast-out 180ms var(--ease-in) forwards; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(12px) scale(.94); } }
 @keyframes toast-out { to { opacity: 0; transform: translateY(6px) scale(.98); } }
-.toast.warn { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: 3px 3px 0 var(--shadow-ink); }
+.toast.warn,
+.toast.err { background: var(--danger); border-color: var(--danger); color: #fff; box-shadow: 3px 3px 0 var(--shadow-ink); }
 
 /* ---------- 空状态 / 骨架 ---------- */
 .empty { color: var(--text-tertiary); font-size: 13.5px; padding: 22px 0; text-align: center; }
@@ -261,6 +263,7 @@ html[data-theme="dark"] .badge.brand, html[data-theme="dark"] .tag.brand { color
 @media (max-width: 640px) {
   .nav { display: none; }                 /* 顶栏只留 logo + 头像，导航交给底部 */
   body.ds { padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
+  #toasts, .toast-wrap { top: 64px; bottom: auto; }
   .tabbar {
     position: fixed; left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 40;
     display: flex; align-items: stretch; padding: 4px;

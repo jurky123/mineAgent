@@ -184,6 +184,7 @@ func sysHelp(s SysCtx) string {
 	}
 	switch s.Channel {
 	case "qq":
+		b.WriteString("/settings —— 会话设置：模型与思考强度\n/model —— 查看模型；/model list 列表；/model <模型ID> 切换；/model default 恢复默认\n")
 		b.WriteString("/status —— 服状态、连接状态、会话消息数\n")
 	case "wecom":
 		b.WriteString("/status —— 服状态、回调状态、会话消息数\n")

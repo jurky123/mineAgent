@@ -432,6 +432,9 @@ func main() {
 			WithMCStatus(mcStatusFn)
 
 		webCh.WithBody(bodySvc, cfg.Body.MaxSteps)
+		if qqCh != nil {
+			qqCh.WithModelCatalog(webCh.SelectableModelIDs)
+		}
 		portalSrv = portal.New(log, cfg, store, acct, webCh).WithBody(bodySvc).WithBodyUI(gameBodyUI.Handler(acct))
 		gamesMgr := games.NewManager(log, store)
 		// AI 解说（每步点评）：用同一个模型网关，失败不影响对局

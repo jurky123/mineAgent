@@ -534,3 +534,14 @@ func (l *modelLister) fetchedAt() int64 {
 	}
 	return l.at.UnixMilli()
 }
+
+// SelectableModelIDs shares the website's filtered catalog without credentials.
+func (c *Channel) SelectableModelIDs(ctx context.Context) []string {
+	var ids []string
+	for _, m := range c.modelCatalog(ctx) {
+		if m.ID != "" && !m.Unavailable && !m.NeedsKey {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids
+}

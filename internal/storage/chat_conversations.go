@@ -60,6 +60,10 @@ func copyConversationHistory(ctx context.Context, tx *sql.Tx, source, dest strin
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO session_efforts(session_id,effort) SELECT ?,effort FROM session_efforts WHERE session_id=?`, dest, source)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO session_models(session_id,model) SELECT ?,model FROM session_models WHERE session_id=?`, dest, source)
 	return err
 }
 

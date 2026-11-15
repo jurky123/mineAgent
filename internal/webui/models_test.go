@@ -289,3 +289,23 @@ func TestOpenRouterNestedPricingKeepsCatalogAndMissingKeyState(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectableModelIDsExcludeDisabledAndHonorAllowlist(t *testing.T) {
+	l := newModelLister("", "", "", nil)
+	l.probedAt = time.Now()
+	l.list = []ModelOption{{ID: "allowed"}, {ID: "denied", Unavailable: true}, {ID: "outside"}}
+	l.at = time.Now()
+	c := &Channel{models: l, modelOptions: []string{"allowed", "denied"}, providers: []config.Provider{{ID: "extra", BaseURL: "unused"}}, providerModels: map[string]providerCache{
+		"extra": {at: time.Now(), opts: []ModelOption{{ID: "extra/no-key", NeedsKey: true}, {ID: "extra/ready"}}},
+	}}
+	ids := c.SelectableModelIDs(context.Background())
+	got := strings.Join(ids, ",")
+	if len(ids) != 2 || !strings.Contains(got, "allowed") || !strings.Contains(got, "extra/ready") {
+		t.Fatal(ids)
+	}
+	for _, id := range ids {
+		if id == "outside" || id == "denied" || id == "extra/no-key" {
+			t.Fatal("disabled model exposed", ids)
+		}
+	}
+}

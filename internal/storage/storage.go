@@ -212,7 +212,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.migratePortal(ctx); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, passkeySchema+passwordSchema+webSchema+downloadSchema+chatConversationSchema+sessionEffortSchema)
+	_, err := s.db.ExecContext(ctx, passkeySchema+passwordSchema+webSchema+downloadSchema+chatConversationSchema+sessionEffortSchema+sessionModelSchema)
 	return err
 }
 

@@ -35,13 +35,14 @@ func TestAutoSwitchPermissionsScopeCancellationAndNoTools(t *testing.T) {
 	c, st := newInputTestChannel(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			Tools    []any            `json:"tools"`
+			Model    string           `json:"model"`
 			Effort   string           `json:"reasoning_effort"`
 			Messages []map[string]any `json:"messages"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 			t.Error(err)
 		}
-		if len(input.Tools) != 0 || input.Effort != "high" {
+		if len(input.Tools) != 0 || input.Effort != "high" || input.Model != "fixture-social" {
 			t.Error("optional turn gained tools or lost effort")
 		}
 		calls.Add(1)
@@ -58,6 +59,9 @@ func TestAutoSwitchPermissionsScopeCancellationAndNoTools(t *testing.T) {
 		t.Fatal("nonadmin enabled auto")
 	}
 	send("enable", "ADMIN", "G", "group_at", "/auto on")
+	if err := st.SetSessionModel(context.Background(), "qq:group:G", "fixture-social"); err != nil {
+		t.Fatal(err)
+	}
 	if !c.autoEnabled(context.Background(), "qq:group:G") || c.autoEnabled(context.Background(), "qq:group:OTHER") {
 		t.Fatal("switch scope incorrect")
 	}

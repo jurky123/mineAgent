@@ -179,7 +179,14 @@ func (c *Channel) flushAuto(scope, sessionKey, target string, trigger int64) {
 	if selected, err := c.store.SessionEffort(ctx, sessionKey); err == nil && selected != "" {
 		effort = selected
 	}
-	if !c.ag.Submit(agent.Request{Social: true, Context: runCtx, Session: sess, SessionKey: sessionKey, ReplyTarget: target, TriggerMessageID: trigger, ReasoningEffort: effort, SystemInstruction: instruction, ManagedProgress: true, Started: task.start, Done: func() { stop(); task.cancel(); c.finishTask(scope, task) }}) {
+	selectedModel, err := c.store.SessionModel(ctx, sessionKey)
+	if err != nil {
+		stop()
+		task.cancel()
+		c.finishTask(scope, task)
+		return
+	}
+	if !c.ag.Submit(agent.Request{Model: selectedModel, Social: true, Context: runCtx, Session: sess, SessionKey: sessionKey, ReplyTarget: target, TriggerMessageID: trigger, ReasoningEffort: effort, SystemInstruction: instruction, ManagedProgress: true, Started: task.start, Done: func() { stop(); task.cancel(); c.finishTask(scope, task) }}) {
 		stop()
 		task.cancel()
 		c.finishTask(scope, task)

@@ -1,4 +1,4 @@
-/* portal.css — 登录、游戏目录、账号设置和通用页面骨架；首页由 community.css 负责。 */
+/* portal.css — 登录、游戏目录、账号设置与错误页的纸墨骨架。 */
 .login-mark { width: 44px; height: 44px; border-radius: 14px; margin: 0 auto 6px; }
 .login-title { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.3px; }
 .login-sub { margin: 0 0 6px; color: var(--text-secondary); font-size: 14px; }
@@ -74,10 +74,6 @@
 .catalog-card.clickable:hover { border-color: var(--border-strong); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(16, 24, 40, .07); }
 .catalog-card.clickable:active { transform: translateY(0) scale(.99); transition-duration: var(--motion-press); }
 .catalog-card.clickable:hover .catalog-art-piece { transform: translateY(-2px) scale(1.04); }
-.wrap.games-wrap { max-width: 52rem; }
-.catalog-art { display: flex; align-items: center; justify-content: center; height: 108px; position: relative; overflow: hidden; text-decoration: none; }
-.catalog-art-piece { transition: transform 320ms var(--ease-out); width: 56px; height: 56px; opacity: .9; position: relative; z-index: 1; }
-.art-chess { background: var(--surface-muted); }
 .art-chess::before {
   content: '';
   position: absolute;
@@ -85,7 +81,6 @@
   background: repeating-conic-gradient(rgba(10, 132, 255, .10) 0% 25%, transparent 0% 50%) 0 0 / 48px 48px;
   opacity: .8;
 }
-.art-gomoku { background: var(--surface-muted); }
 .art-gomoku::before {
   content: '';
   position: absolute;
@@ -123,7 +118,6 @@
 .wrap.narrow { max-width: 920px; }
 .catalog { min-width: 0; }
 .catalog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
-.catalog-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
 .catalog-head { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .catalog-go {
   margin-top: auto;
@@ -137,7 +131,6 @@
   display: inline-flex;
   align-items: center;
 }
-.catalog-card { padding: 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden; min-width: 0; box-shadow: none; }
 .login-view {
   position: fixed;
   inset: var(--shell-height) 0 0;
@@ -176,6 +169,49 @@
 .presence-dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: #22c55e; animation: none; }
 .account-recovery summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-size: 14px; }
 .account-recovery p { max-width: 65ch; }
+.page-head { margin: 6px 0 32px; }
+.page-head h1 { margin: 0; font-size: clamp(36px,5vw,56px); font-weight: 850; letter-spacing: -.035em; line-height: 1.1; }
+.wrap.games-wrap { max-width: 60rem; }
+.catalog-card {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  min-width: 0;
+  box-shadow: var(--shadow-hard);
+  border: var(--bw) solid var(--line);
+  transition: transform 200ms var(--ease-out),box-shadow 200ms var(--ease-out);
+}
+.catalog-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-hard-lg); }
+.catalog-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 160px;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  border-bottom: var(--bw) solid var(--line);
+}
+.art-chess { background: repeating-conic-gradient(var(--tone-games-soft) 0 25%,var(--surface) 0 50%) 0 0/40px 40px; }
+.catalog-art-piece {
+  transition: transform 200ms var(--ease-spring);
+  width: 88px;
+  height: 88px;
+  opacity: .9;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(3px 3px 0 var(--shadow-ink));
+}
+.catalog-card:hover .catalog-art-piece { transform: rotate(-6deg); }
+.art-gomoku {
+  background: var(--surface-muted);
+  background-color: #E9C98F;
+  background-image: linear-gradient(rgba(24,23,31,.35) 1px,transparent 1px),linear-gradient(90deg,rgba(24,23,31,.35) 1px,transparent 1px);
+  background-size: 24px 24px;
+}
+.catalog-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
 @keyframes live-ping { 0% { opacity: .45; transform: scale(1); } 70%, 100% { opacity: 0; transform: scale(2.6); } }
 @media (max-width: 860px) {
   .wrap { padding: 26px 16px 56px; }

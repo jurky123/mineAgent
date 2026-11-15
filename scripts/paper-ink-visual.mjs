@@ -10,7 +10,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.join(repo, 'internal/webui/static');
 const out = process.argv[2];
 assert(out && path.isAbsolute(out), 'Provide an absolute artifact directory');
-const pages = {'/':'portal/index.html','/agent':'chat/index.html','/games':'games/index.html','/games/chess':'games/chess/index.html','/games/gomoku':'games/gomoku/index.html','/minecraft':'minecraft/index.html','/account':'account/index.html','/account/history':'account/history/index.html','/downloads':'downloads/index.html','/screens':'display/index.html','/body':'body/index.html'};
+const pages = {'/':'portal/index.html','/agent':'chat/index.html','/agent/library':'chat/index.html','/agent/tools':'chat/index.html','/games':'games/index.html','/games/chess':'games/chess/index.html','/games/gomoku':'games/gomoku/index.html','/minecraft':'minecraft/index.html','/account':'account/index.html','/account/history':'account/history/index.html','/downloads':'downloads/index.html','/screens':'display/index.html','/body':'body/index.html'};
 const types = {'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.webp':'image/webp','.woff2':'font/woff2','.json':'application/json'};
 const apps=[{id:'agent',name:'Agent',path:'/agent',icon:'sparkle',nav:true},{id:'games',name:'游戏',path:'/games',icon:'gamepad',nav:true},{id:'minecraft',name:'Minecraft',path:'/minecraft',icon:'pickaxe',nav:true},{id:'aiplayer',name:'AI 玩家',path:'/ai',enabled:true}];
 const server=createServer(async(req,res)=>{
@@ -35,7 +35,7 @@ const server=createServer(async(req,res)=>{
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port;
-const routes=[['home','/?ui=1'],['guest','/'],['games','/games?ui=1'],['chess-lobby','/games/chess?ui=1&state=lobby'],['chess-playing','/games/chess?ui=1&state=playing'],['chess-check','/games/chess?ui=1&state=check'],['chess-finished','/games/chess?ui=1&state=finished-win'],['gomoku-playing','/games/gomoku?ui=1&state=playing'],['gomoku-finished','/games/gomoku?ui=1&state=finished-win'],['agent','/agent?ui=1'],['agent-models','/agent?ui=1&panel=models'],['agent-prompts','/agent?ui=1&panel=prompts'],['agent-intel','/agent?ui=1&panel=intel'],['minecraft','/minecraft'],['account','/account?ui=1'],['history','/account/history?demo=gomoku'],['404','/does-not-exist']];
+const routes=[['home','/?ui=1'],['guest','/'],['games','/games?ui=1'],['chess-lobby','/games/chess?ui=1&state=lobby'],['chess-playing','/games/chess?ui=1&state=playing'],['chess-check','/games/chess?ui=1&state=check'],['chess-finished','/games/chess?ui=1&state=finished-win'],['gomoku-playing','/games/gomoku?ui=1&state=playing'],['gomoku-finished','/games/gomoku?ui=1&state=finished-win'],['agent','/agent?ui=1'],['library','/agent/library?ui=1'],['tools','/agent/tools?ui=1'],['capabilities','/agent/tools?ui=1&tab=tools'],['agent-models','/agent?ui=1&panel=models'],['agent-prompts','/agent?ui=1&panel=prompts'],['agent-intel','/agent?ui=1&panel=intel'],['minecraft','/minecraft'],['account','/account?ui=1'],['history','/account/history?demo=gomoku'],['404','/does-not-exist']];
 let browser;const result=[];
 try {
  await mkdir(out,{recursive:true});browser=await chromium.launch({headless:true});
@@ -44,7 +44,7 @@ try {
   await ctx.addInitScript(t=>{localStorage.setItem('mineagent.theme',t);},theme);
   for(const [name,url] of routes){
    const page=await ctx.newPage(), errors=[];page.on('pageerror',e=>errors.push(e.message));
-   await page.goto(base+url,{waitUntil:'domcontentloaded'});if(name.startsWith('agent'))await page.locator('#app').waitFor({state:'visible'});await page.waitForTimeout(350);
+   await page.goto(base+url,{waitUntil:'domcontentloaded'});if(name.startsWith('agent')||['library','tools','capabilities'].includes(name))await page.locator('#app').waitFor({state:'visible'});if(['library','tools','capabilities'].includes(name))await page.locator('#section-count').filter({hasText:'项'}).waitFor();await page.waitForTimeout(350);
    const metrics=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth,title:document.title,h1:document.querySelector('h1')?.textContent??'',theme:document.documentElement.dataset.theme}));
    await page.screenshot({path:path.join(out,`${name}-${width}-${theme}.png`),fullPage:true});
    result.push({name,width,theme,...metrics,errors});await page.close();

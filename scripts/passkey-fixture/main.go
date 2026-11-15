@@ -63,6 +63,12 @@ func main() {
 	cfg.Web.DataDir = dir
 	cfg.Web.DownloadPublicOrigin = os.Getenv("MINEAGENT_TEST_DOWNLOAD_ORIGIN")
 	cfg.Workspace.Root = filepath.Join(dir, "workspace")
+	if err := os.MkdirAll(cfg.Workspace.Root, 0700); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.Workspace.Root, "fixture-note.md"), []byte("fixture section file"), 0600); err != nil {
+		panic(err)
+	}
 	cfg.Web.PasskeyRPID = "localhost"
 	cfg.Web.PasskeyOrigins = []string{origin}
 	ch := webui.NewChannel(log, cfg, service, session.NewHub(store, log), store, nil, nil)

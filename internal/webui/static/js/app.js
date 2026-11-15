@@ -1,6 +1,7 @@
 // 入口：登录、侧栏、启动装配
 
 import './navigation-rail.js';
+import { agentSection, mountAgentSection, clearAgentSection } from './agent-sections.js';
 import { boot as bootShell, shell } from './shell.js';
 import { passwordForm } from './passwords.js';
 import { $, toast, bus, initOverlayFocus } from './ui.js';
@@ -48,6 +49,7 @@ function hideApp(done) {
 
 function logout(silent) {
   clearAuth();
+  clearAgentSection();
   S.options = null;
   document.querySelectorAll('.modal.on').forEach((el) => el.classList.remove('on'));
   chat.disconnect();
@@ -61,7 +63,8 @@ async function startChat() {
   $('myavatar').textContent = (S.me[0] || '?').toUpperCase();
   $('myrole').textContent = S.admin ? '管理员' : '';
   $('myrole').className = 'badge' + (S.admin ? ' admin' : '');
-  $('menu-ws').hidden = !S.admin; $('rail-workspace').hidden = !S.admin;
+  $('menu-ws').hidden = !S.admin; $('rail-workspace').hidden = false;
+  if (agentSection) { await mountAgentSection(); return; }
   chat.clearMessages();
   await conversations.refresh();
   await chat.loadHistory();
@@ -99,8 +102,8 @@ async function openUsage() {
 }
 
 // ---------- 侧栏 ----------
-function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); $('menu').setAttribute('aria-expanded', 'true'); $('sidebar').setAttribute('role', 'dialog'); $('sidebar').setAttribute('aria-modal', 'true'); $('list').closest('main').inert = true; $('shell-top') && ($('shell-top').inert = true); $('conv-search').focus(); }
-function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); $('sidebar').removeAttribute('role'); $('sidebar').removeAttribute('aria-modal'); $('list').closest('main').inert = false; $('shell-top') && ($('shell-top').inert = false); $('menu').setAttribute('aria-expanded', 'false'); $('menu').focus(); }
+function openSidebar() { $('sidebar').classList.add('open'); $('backdrop').classList.add('on'); $('menu').setAttribute('aria-expanded', 'true'); $('sidebar').setAttribute('role', 'dialog'); $('sidebar').setAttribute('aria-modal', 'true'); $('list').closest('main').inert = true; $('shell-top') && ($('shell-top').inert = true); (agentSection ? $('section-sidebar').querySelector('button,a,input') : $('conv-search'))?.focus(); }
+function closeSidebar() { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('on'); $('sidebar').removeAttribute('role'); $('sidebar').removeAttribute('aria-modal'); $('list').closest('main').inert = false; $('shell-top') && ($('shell-top').inert = false); $('menu').setAttribute('aria-expanded', 'false'); (agentSection ? $('section-menu') : $('menu'))?.focus(); }
 
 // 页面比服务端旧（开着标签页时后端更新过）→ 自动带新参数刷新一次，避免旧 JS 一直用下去
 async function ensureFresh() {
@@ -128,7 +131,7 @@ async function boot() {
   await bootShell({ active: '/agent', requireLogin: false, preview: new URLSearchParams(location.search).has('ui') });
   // 渲染调试模式：?ui=1 不连后端，直接用假数据渲染（给截图/视觉对比用）
   if (new URLSearchParams(location.search).has('ui')) {
-    import('./debug.js').then((m) => m.startDebug());
+    import('./debug.js').then(async (m) => { m.startDebug(); if (agentSection) await mountAgentSection(); });
     return;
   }
   initWorkspace();
@@ -189,6 +192,7 @@ async function boot() {
 
 // URL 直达：/agent?new=1 开新对话；/agent?conv=<id> 打开指定会话（Portal 首页卡片用）。
 async function applyURLTarget() {
+  if (agentSection) return;
   const q = new URLSearchParams(location.search);
   const wantConv = q.get('conv');
   const wantNew = q.has('new');

@@ -24,7 +24,7 @@ QQ 群聊：`/auto` 查状态，已配置的 QQ 管理员用 `/auto on`、`/auto
 
 后续仅吸收用户指定的模型选择器与点阵，已上线版本 `ea8e362`，记录见 [模型选择器与点阵](docs/PAPER_INK_MODEL_DOTS_2026-11-15.md)。不合并参考分支的其他视觉或行为改动。
 
-侧栏采用独立产品导航与会话列表两列，入口和验证见 [独立导航栏](docs/AGENT_NAVIGATION_RAIL_2026-11-15.md)。
+侧栏采用独立产品导航与会话列表两列，入口和验证见 [独立导航栏](docs/AGENT_NAVIGATION_RAIL_2026-11-15.md)。资料空间 `/agent/library`、插件/工具 `/agent/tools` 已拆成独立页面，详情见 [工作区页面](docs/AGENT_SECTIONS_2026-11-15.md)。
 
 ### 门户与 Agent 界面（2026-10-21）
 

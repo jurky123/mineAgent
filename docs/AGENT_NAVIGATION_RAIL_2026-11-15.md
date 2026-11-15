@@ -8,3 +8,7 @@
 - 手机随抽屉展示；进入工具/额度/资料时先关闭抽屉，解除主区 inert；账号菜单 Escape 只关闭一层并恢复焦点。
 
 验证：`npm run test:navigation-rail`、`npm run test:review` 通过；68张视觉截图无溢出、无脚本错误，保留 ID / ARIA 钩子。新增测试覆盖桌面收起恢复、各入口、普通用户资料空间隐藏、手机工具接管和账号菜单边界。截图 `/home/ubuntu/.local/share/zkun-rail-20261115/`，交互日志 `/tmp/zkun-rail-accessibility.log`。不含真实账号或模型调用。
+
+## 后续：独立资料与工具页面
+
+用户进一步要求移除导航首页，资料空间和插件/工具各自打开独立页面，旧弹窗与附件能力菜单移除。当前实现以 [独立工作区页面](AGENT_SECTIONS_2026-11-15.md) 为准，上述最初入口代理方式已退役。

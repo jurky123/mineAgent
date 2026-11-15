@@ -30,6 +30,7 @@
 <link rel="stylesheet" href="/static/__VER__/css/composer.css">
 <link rel="stylesheet" href="/static/__VER__/css/overlays.css">
 <link rel="stylesheet" href="/static/__VER__/css/prompts.css">
+<link rel="stylesheet" href="/static/__VER__/css/agent-sections.css">
 </head>
 <body class="agent-page">
 
@@ -72,10 +73,9 @@
 <div id="app">
   <aside id="sidebar">
     <nav class="navigation-rail" aria-label="工作区导航">
-      <a class="rail-button rail-home" href="/" aria-label="首页" title="首页"><svg class="i"><use href="#i-home"/></svg></a>
-      <button class="rail-button" id="rail-conversations" aria-label="会话" title="会话"><svg class="i"><use href="#i-panel"/></svg></button>
-      <button class="rail-button" id="rail-workspace" aria-label="资料空间" title="资料空间"><svg class="i"><use href="#i-workspace"/></svg></button>
-      <button class="rail-button" id="rail-tools" aria-label="插件与工具" title="插件与工具"><svg class="i"><use href="#i-spark"/></svg></button>
+      <a class="rail-button" id="rail-conversations" href="/agent" aria-label="会话" title="会话"><svg class="i"><use href="#i-panel"/></svg></a>
+      <a class="rail-button" id="rail-workspace" href="/agent/library" aria-label="资料空间" title="资料空间"><svg class="i"><use href="#i-workspace"/></svg></a>
+      <a class="rail-button" id="rail-tools" href="/agent/tools" aria-label="插件与工具" title="插件与工具"><svg class="i"><use href="#i-spark"/></svg></a>
       <div class="rail-bottom">
         <button class="rail-button" id="rail-usage" aria-label="额度与用量" title="额度与用量"><svg class="i"><use href="#i-chart"/></svg></button>      <button class="rail-button prompt-entry" aria-label="Agent 设置" title="Agent 设置" id="agent-settings"><svg class="i"><use href="#i-settings"/></svg><span>Agent 设置</span><span id="agent-persona-label">人设与提示词</span></button>
         <div class="rail-account">
@@ -87,7 +87,7 @@
       </button>
       <div id="accountmenu" class="popover account-menu">
         <button class="po-item" id="menu-prompts"><svg class="i"><use href="#i-settings"/></svg>人设与提示词</button>
-        <button class="po-item" id="menu-ws"><svg class="i"><use href="#i-workspace"/></svg>Workspace</button>
+        <button class="po-item" id="menu-ws"><svg class="i"><use href="#i-workspace"/></svg>资料空间</button>
         <button class="po-item" id="menu-theme"><svg class="i"><use href="#i-theme"/></svg>外观</button>
         <button class="po-item" id="menu-usage"><svg class="i"><use href="#i-chart"/></svg>用量</button>
         <div class="po-sep"></div>
@@ -96,6 +96,7 @@
       </div>
     </nav>
     <div class="sidebar-panel">
+      <div id="section-sidebar" hidden></div>
     <div class="side-top">
       <div class="brand">Agent<span class="side-product-note">工作区</span></div>
     </div>
@@ -113,6 +114,7 @@
   <div id="backdrop"></div>
 
   <main>
+    <section id="section-content" hidden aria-label="工作区页面"></section>
     <header>
       <a class="icon-btn" id="home" href="/" title="回门户"><svg class="i lg"><use href="#i-home"/></svg></a>
       <button class="icon-btn" id="menu" title="菜单"><svg class="i lg"><use href="#i-menu"/></svg></button>
@@ -161,17 +163,6 @@
       </div>
     </div>
   </main>
-</div>
-
-<div id="wsmodal" class="modal">
-  <div class="modal-card ws-card">
-    <div class="ws-head">
-      <div class="ws-path" id="ws-path"></div>
-      <button class="icon-button" id="ws-refresh" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
-      <button class="icon-button" id="ws-close" title="关闭"><svg class="i"><use href="#i-x"/></svg></button>
-    </div>
-    <div class="ws-list" id="ws-list"></div>
-  </div>
 </div>
 
 <div id="apmodal" class="modal">

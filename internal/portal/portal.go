@@ -239,6 +239,8 @@ func (s *Server) redirectHTTPS(next http.Handler) http.Handler {
 var pages = map[string]string{
 	"/":                "portal/index.html",
 	"/agent":           "chat/index.html",
+	"/agent/library":   "chat/index.html",
+	"/agent/tools":     "chat/index.html",
 	"/account":         "account/index.html",
 	"/account/history": "account/history/index.html",
 	"/games":           "games/index.html",
@@ -261,7 +263,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 			s.render(w, "chat/index.html")
 			return
 		}
-		if p == "/agent" || p == "/account" || strings.HasPrefix(p, "/games") {
+		if p == "/agent" || p == "/agent/library" || p == "/agent/tools" || p == "/account" || strings.HasPrefix(p, "/games") {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}

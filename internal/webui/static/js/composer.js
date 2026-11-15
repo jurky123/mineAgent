@@ -278,32 +278,11 @@ function modelLabel() {
 }
 
 function renderPlusMenu() {
-  const box = $('plusmenu');
-  const skills = (S.options && S.options.skills) || [];
-  box.innerHTML =
+  $('plusmenu').innerHTML =
     '<button class="po-item" id="pm-file"><svg class="i"><use href="#i-file"/></svg>上传文件</button>' +
-    '<button class="po-item" id="pm-image"><svg class="i"><use href="#i-image"/></svg>上传图片</button>' +
-    (skills.length
-      ? '<div class="po-sep"></div><div class="po-title">技能</div>' +
-        skills.map((s, i) => '<button class="po-item" data-skill="' + i + '" title="' + esc(s.reason || '') + '"><svg class="i"><use href="#i-spark"/></svg><span>' + esc(s.name) +
-          '</span><span class="po-desc" style="margin-left:auto">' + esc((s.status === 'admin' || s.status === 'unavailable') ? s.reason : (s.status === 'approval' ? '需审批 · ' : '') + (s.desc || '')) + '</span></button>').join('')
-      : '');
+    '<button class="po-item" id="pm-image"><svg class="i"><use href="#i-image"/></svg>上传图片</button>';
   $('pm-file').onclick = () => { closePopovers(); $('file').click(); };
   $('pm-image').onclick = () => { closePopovers(); $('file').click(); };
-  const capabilities = S.options?.capabilities || [];
-  if (capabilities.length) { const details = document.createElement('details'); details.className = 'capability-list'; const summary = document.createElement('summary'); summary.textContent = '当前工具与权限'; details.appendChild(summary);
-    for (const entry of capabilities) { const row = document.createElement('p'); const labels = { available: '可用', approval: '需审批', admin: '管理员专属', unavailable: '当前不可用' }; row.textContent = entry.name + ' · ' + entry.kind + ' · ' + (labels[entry.status] || '当前不可用'); details.appendChild(row); } box.appendChild(details); }
-  box.querySelectorAll('[data-skill]').forEach((b) => {
-    b.onclick = () => {
-      const s = skills[+b.dataset.skill];
-      if (s.status === 'admin' || s.status === 'unavailable') { toast(s.reason || '当前不可用'); return; }
-      closePopovers();
-      $('text').value = s.prompt || s.name;
-      autoGrow(); $('text').focus();
-      $('text').setSelectionRange($('text').value.length, $('text').value.length);
-      updateSendBtn();
-    };
-  });
 }
 
 let modelFreeOnly = localStorage.getItem('mineagent.freeonly') === '1';

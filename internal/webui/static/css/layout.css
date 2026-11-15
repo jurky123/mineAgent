@@ -226,7 +226,6 @@ body.agent-page { padding-bottom: 0; }
 .rail-button .i { width:19px; height:19px; }
 .rail-button:hover { background:var(--surface-muted); color:var(--text); }
 .rail-button[aria-current="page"] { background:var(--tone-sun-soft); color:var(--text); border-color:var(--line); box-shadow:var(--shadow-hard-sm); }
-.rail-home { margin-bottom:12px; color:var(--text); border-color:var(--line-soft); }
 .rail-bottom { margin-top:auto; display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:14px; border-top:1px solid var(--line-soft); }
 .rail-account { position:relative; }
 #sidebar .rail-account .userbtn { width:44px; height:44px; padding:6px; justify-content:center; border:0; border-radius:12px; }

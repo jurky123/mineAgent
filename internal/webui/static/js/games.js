@@ -40,10 +40,10 @@ function catalogCard(game, status) {
   const body = h('div', 'catalog-body');
   const head = h('div', 'catalog-head');
   head.appendChild(h('div', 'catalog-title', game.name));
+  head.appendChild(h('span', 'tag', '2P'));
   if (status && status.openRooms) head.appendChild(h('span', 'badge brand', status.openRooms + ' 个房间等待'));
   body.appendChild(head);
 
-  body.appendChild(h('p', 'game-description', '2 人 · ' + (game.desc || (game.id === 'gomoku' ? '15 路棋盘，先连五子获胜' : '国际象棋在线对局'))));
   const bits = [];
   if (status && status.total) bits.push('最近 ' + status.wins + ' 胜 ' + status.losses + ' 负' + (status.draws ? ' ' + status.draws + ' 和' : ''));
   body.appendChild(h('div', 'game-stats', status?.guest ? '登录后可创建或加入房间' : status?.historyFailed ? '战绩暂时不可用' : bits.length ? bits.join(' · ') : '还没有对局记录'));
@@ -84,7 +84,7 @@ function catalogCard(game, status) {
     if (!list.length) { host.appendChild(h('div', 'card', '暂时还没有可玩的游戏')); return; }
     const stats = shell.user ? await Promise.all(list.map((g) => gameStatus(g.id))) : list.map(() => ({ guest: true }));
     list.forEach((g, i) => host.appendChild(catalogCard(g, stats[i])));
-    const demo = h('a', 'btn', '先看一局演示回放'); demo.href = '/account/history?demo=gomoku'; host.after(demo);
+    const demo = h('a', 'btn ghost catalog-demo', '先看一局演示回放'); demo.href = '/account/history?demo=gomoku'; host.after(demo);
   } catch (e) {
     host.appendChild(h('div', 'card', '加载失败：' + e.message));
   }

@@ -509,14 +509,12 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
   hero.appendChild(tile);
   const txt = h('div');
   txt.appendChild(h('h1', 'lobby-title', gameId === 'chess' ? '国际象棋' : '五子棋'));
-  txt.appendChild(h('div', 'lobby-sub', '创建房间，或输入邀请码加入一局。'));
   hero.appendChild(txt);
   el.appendChild(hero);
 
   const grid = h('div', 'lobby-grid');
-  const createCard = h('article', 'card lobby-card');
+  const createCard = h('article', 'card lobby-card lobby-card-primary');
   createCard.appendChild(h('div', 'lobby-card-title', '创建一个新房间'));
-  createCard.appendChild(h('div', 'lobby-card-sub', '创建后可分享房间码或邀请链接'));
   const create = h('button', 'btn primary cta', '创建房间');
   create.onclick = () => withPending(create, async () => {
     if (demoCreate) { onRoom(demoCreate()); return; }
@@ -527,7 +525,6 @@ export function lobby(el, { gameId, onRoom, iconEl, demoRooms, demoCreate, demoJ
 
   const joinCard = h('article', 'card lobby-card');
   joinCard.appendChild(h('div', 'lobby-card-title', '加入房间'));
-  joinCard.appendChild(h('div', 'lobby-card-sub', '输入 6 位房间码'));
   const row = h('div', 'join-row');
   const input = h('input', 'input code-input');
   input.maxLength = 32; input.name = 'room'; input.autocomplete = 'off';

@@ -63,6 +63,11 @@
 .art-chess {
   background: repeating-conic-gradient(var(--tone-games-soft) 0% 25%, var(--surface) 0% 50%) 0 0 / 40px 40px;
 }
+html[data-theme="dark"] .art-chess .catalog-art-piece {
+  filter: drop-shadow(1px 0 0 rgba(255, 255, 255, .7)) drop-shadow(-1px 0 0 rgba(255, 255, 255, .7))
+          drop-shadow(0 1px 0 rgba(255, 255, 255, .7)) drop-shadow(0 -1px 0 rgba(255, 255, 255, .7))
+          drop-shadow(3px 3px 0 var(--shadow-ink));
+}
 .art-gomoku {
   background-color: #e9c98f;
   background-image:
@@ -70,6 +75,8 @@
     linear-gradient(to bottom, rgba(24, 23, 31, .28) 1px, transparent 1px);
   background-size: 24px 24px;
 }
+html[data-theme="dark"] .art-gomoku { background-color: #b89b66; }
+.catalog-demo { margin-top: 18px; }
 .catalog-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; }
 .catalog-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .catalog-title { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }

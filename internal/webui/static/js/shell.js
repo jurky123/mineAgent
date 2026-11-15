@@ -35,11 +35,13 @@ let shellActive = '';
 
 export async function refreshUser(active = shellActive || location.pathname) {
   if (!shell.token) return shell.user;
+  const token = shell.token;
   try {
     const [appsRes, me] = await Promise.all([
       apiGet('/api/portal/apps').catch(() => null),
       apiGet('/api/auth/me'),
     ]);
+    if (shell.token !== token) return shell.user;
     if (appsRes && Array.isArray(appsRes.apps)) shell.apps = appsRes.apps;
     saveAuth(me);
     localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify({
@@ -112,13 +114,14 @@ export function fmtTime(ms) {
 export async function api(path, opts) {
   opts = opts || {};
   if (shell.preview && (opts.method || 'GET').toUpperCase() !== 'GET') throw new Error('演示模式不提交真实操作');
+  const token = shell.token;
   opts.headers = Object.assign({}, opts.headers,
-    shell.token ? { Authorization: 'Bearer ' + shell.token } : {});
+    token ? { Authorization: 'Bearer ' + token } : {});
   const res = await fetch(path, opts);
   let body = null;
   try { body = await res.json(); } catch (e) { /* 空响应 */ }
   if (res.status === 401) {
-    clearAuth();
+    if (shell.token === token) clearAuth();
     throw Object.assign(new Error('未登录'), { unauthorized: true });
   }
   if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));

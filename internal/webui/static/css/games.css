@@ -194,6 +194,11 @@ body.game-live .room-layout { animation: none; }
   letter-spacing: 6px; text-transform: uppercase; font-variant-numeric: tabular-nums; max-width: 12rem;
   font-family: var(--font-mono); font-size: 20px; text-align: center;
 }
+/* Placeholder is prose; keep tracking only for the entered six-character code. */
+.code-input::placeholder {
+  font-family: var(--font-sans); font-size: 14px; letter-spacing: normal; text-transform: none;
+  color: var(--text-tertiary); opacity: 1;
+}
 .lobby-grid .empty { border: var(--bw) dashed var(--line-soft); border-radius: 12px; padding: 20px; }
 .board {
   width: calc(100% - 24px); max-width: var(--board-max); aspect-ratio: 1 / 1; display: grid;

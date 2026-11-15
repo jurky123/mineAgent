@@ -611,3 +611,5 @@ node scripts/ui-preview.mjs --base https://zkun.art --only shots
 本轮补充：玩家资料页的身体任务显示最近20项工具状态及耗时，仍只对已验证操作者可见；Node身体可配置客户端视距（默认4）。完整隔离测试使用硬内存上限和主机余量预检，不以JVM堆上限代替总栈资源预算。测试结论与真实模型限制统一记录在上述体验文档中。
 
 原图与思考指令回归：`go test ./internal/qq ./internal/storage ./internal/tools ./internal/webui ./internal/agent`；`npm run test:conversations` 验证真实浏览器命令、滑杆同步和恢复；`npm run test:models` 保留思考滑杆动效回归。真实 GIF 原件通过帧/时序与字节校验，并在 Bubblewrap 工作区内实际读取。显式会话思考强度可覆盖网页身体任务的思考档位，但不修改身体工具、审批、12 步预算或只读预算；未显式设置时仍沿用身体自身配置。
+
+2026-11-15 用户提交 `b215839` 的评审、房间码提示与登录态竞态修复及验收见 [UI版本评审与发布](docs/UI_REVIEW_RELEASE_2026-11-15.md)。

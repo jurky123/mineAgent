@@ -123,6 +123,11 @@ try {
       if (width === 390) await page.screenshot({ path: '/tmp/zkun-community-ui/' + (url.includes('history') ? 'replay' : url.includes('minecraft') ? 'minecraft' : 'home') + '-mobile.png', fullPage: true });
     }
   }
+  await page.goto(base + '/account/history?demo=chess');
+  await page.getByRole('button', { name: '回放', exact: true }).first().click();
+  assert.equal(await page.locator('#replay-board .sq').count(), 64, 'chess demo opened another game');
+  assert.match(await page.locator('#replay-hint').textContent(), /着法/);
+  assert.equal(await page.getByRole('link', { name: '退出演示', exact: true }).getAttribute('href'), '/games/chess');
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(base + '/?ui=1&theme=dark'); await page.getByRole('heading', { name: '你好，这里是 zkun', exact:true }).waitFor();
   await page.screenshot({ path: '/tmp/zkun-community-ui/home-dark.png', fullPage: true });

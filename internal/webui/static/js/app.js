@@ -1,5 +1,6 @@
 // 入口：登录、侧栏、启动装配
 
+import './navigation-rail.js';
 import { boot as bootShell, shell } from './shell.js';
 import { passwordForm } from './passwords.js';
 import { $, toast, bus, initOverlayFocus } from './ui.js';
@@ -60,7 +61,7 @@ async function startChat() {
   $('myavatar').textContent = (S.me[0] || '?').toUpperCase();
   $('myrole').textContent = S.admin ? '管理员' : '';
   $('myrole').className = 'badge' + (S.admin ? ' admin' : '');
-  $('menu-ws').hidden = !S.admin;
+  $('menu-ws').hidden = !S.admin; $('rail-workspace').hidden = !S.admin;
   chat.clearMessages();
   await conversations.refresh();
   await chat.loadHistory();
@@ -140,7 +141,7 @@ async function boot() {
   document.addEventListener('click', (e) => {
     if (!e.target.closest('#accountmenu') && !e.target.closest('#userbtn')) closeAccount();
   });
-  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && $('accountmenu').classList.contains('on')) { closeAccount(); $('userbtn').focus(); } });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && $('accountmenu').classList.contains('on')) { event.preventDefault(); event.stopImmediatePropagation(); closeAccount(); $('userbtn').focus(); } });
   $('menu-ws').onclick = () => { closeAccount(); openWorkspace(); };
   $('menu-theme').onclick = () => { closeAccount(); openAppearance(); };
   $('menu-usage').onclick = () => { closeAccount(); openUsage(); };

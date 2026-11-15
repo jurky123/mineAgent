@@ -24,6 +24,8 @@ QQ 群聊：`/auto` 查状态，已配置的 QQ 管理员用 `/auto on`、`/auto
 
 后续仅吸收用户指定的模型选择器与点阵，已上线版本 `ea8e362`，记录见 [模型选择器与点阵](docs/PAPER_INK_MODEL_DOTS_2026-11-15.md)。不合并参考分支的其他视觉或行为改动。
 
+侧栏采用独立产品导航与会话列表两列，入口和验证见 [独立导航栏](docs/AGENT_NAVIGATION_RAIL_2026-11-15.md)。
+
 ### 门户与 Agent 界面（2026-10-21）
 
 - 首页保留 Agent、游戏、Minecraft 三项入口和真实最近记录；安装说明集中到 `/minecraft`。`GET /api/portal/public` 仅调用显式注册的 `PublicCard`，公开 Minecraft 可用状态与在线人数，不包含玩家身份、聊天或机器诊断；成功结果短缓存，失败显示未知状态。

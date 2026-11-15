@@ -88,7 +88,7 @@ export function startDebug() {
   $('myavatar').textContent = S.me[0];
   $('myrole').textContent = '管理员';
   $('myrole').className = 'badge admin';
-  $('menu-ws').hidden = false;
+  $('menu-ws').hidden = false; $('rail-workspace').hidden = false;
   if (q.get('sidebar') === '0') document.body.classList.add('collapsed');
   renderList();
   renderToolbar();

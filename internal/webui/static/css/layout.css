@@ -155,7 +155,7 @@ main > header .icon-btn:hover { background: var(--surface-active); color: var(--
 .agent-page.is-preview #app { height: calc(100dvh - var(--shell-height) - 40px); }
 .agent-page.is-preview #sidebar { top: calc(var(--shell-height) + 40px); }
 #sidebar {
-  position: fixed; inset: 0 auto 0 0; width: 268px; z-index: 20; display: flex; flex-direction: column;
+  position: fixed; inset: 0 auto 0 0; width: 324px; z-index: 20; display: flex; flex-direction: column;
   background: var(--sidebar); border-right: var(--bw) solid var(--line); transform: translateX(-100%);
   transition: transform .2s cubic-bezier(.2,.8,.2,1);
 }
@@ -219,9 +219,27 @@ main > header {
 }
 .agent-page { --col: 50rem; padding-bottom: 0; font-family: var(--font-sans); }
 body.agent-page { padding-bottom: 0; }
+/* Independent product navigation, separate from the conversation list. */
+.sidebar-panel { margin-left:56px; min-width:0; height:100%; display:flex; flex-direction:column; }
+.navigation-rail { position:absolute; inset:0 auto 0 0; width:56px; padding:12px 6px; display:flex; flex-direction:column; align-items:center; gap:10px; background:var(--surface); border-right:1px solid var(--line-soft); }
+.rail-button { display:flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; padding:0; border:1px solid transparent; border-radius:12px; background:transparent; color:var(--text-secondary); text-decoration:none; transition:background 150ms,color 150ms; }
+.rail-button .i { width:19px; height:19px; }
+.rail-button:hover { background:var(--surface-muted); color:var(--text); }
+.rail-button[aria-current="page"] { background:var(--tone-sun-soft); color:var(--text); border-color:var(--line); box-shadow:var(--shadow-hard-sm); }
+.rail-home { margin-bottom:12px; color:var(--text); border-color:var(--line-soft); }
+.rail-bottom { margin-top:auto; display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:14px; border-top:1px solid var(--line-soft); }
+.rail-account { position:relative; }
+#sidebar .rail-account .userbtn { width:44px; height:44px; padding:6px; justify-content:center; border:0; border-radius:12px; }
+.rail-account .uname, .rail-account .badge, .rail-account .userbtn > .i, .navigation-rail .prompt-entry > span { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+#sidebar .rail-account .avatar { width:30px; height:30px; }
+#sidebar .navigation-rail #accountmenu { left:calc(100% + 10px); right:auto; bottom:0; width:min(248px, calc(100vw - 80px)); z-index:60; }
+#sidebar .navigation-rail #agent-settings { width:44px; padding:0; justify-content:center; }
 @media (min-width: 961px) {
+  body.collapsed #sidebar { transform:none; width:56px; }
+  body.collapsed .sidebar-panel { display:none; }
+  body.agent-page.collapsed main { margin-left:56px !important; }
   #sidebar { transform: none; }
-  main { margin-left: 268px; }
+  main { margin-left: 324px; }
   #menu { display: none; }
   #backdrop { display: none !important; }
 }
@@ -242,7 +260,7 @@ body.agent-page { padding-bottom: 0; }
   #collapse { display: none; }
   #empty h2 { margin-top: 9vh; font-size: 24px; }
   .tool-btn .label.model { max-width: 26vw; }
-  #sidebar { width: min(300px, 86vw); }
+  #sidebar { width: min(356px, 94vw); }
 }
 @media (max-width: 640px) {
   .agent-page { padding-bottom: 0; }

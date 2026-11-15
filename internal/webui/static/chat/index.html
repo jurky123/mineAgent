@@ -71,21 +71,15 @@
 
 <div id="app">
   <aside id="sidebar">
-    <div class="side-top">
-      <div class="brand">Agent<span class="side-product-note">工作区</span></div>
-    </div>
-    <div class="side-actions">
-      <div class="side-search" id="searchbox">
-        <svg class="i sm"><use href="#i-search"/></svg>
-        <input id="conv-search" class="search-input" aria-label="搜索聊天" placeholder="搜索聊天…" autocomplete="off" spellcheck="false">
-        <button class="search-clear" id="search-clear" hidden title="清除"><svg class="i sm"><use href="#i-x"/></svg></button>
-      </div>
-      <button class="nav-item" id="newchat"><svg class="i"><use href="#i-plus"/></svg>新聊天</button>
-    </div>
-    <div class="conv-list" id="conv-list"></div>
-    <div class="side-foot">
-      <button class="nav-item prompt-entry" id="agent-settings"><svg class="i"><use href="#i-settings"/></svg><span>Agent 设置</span><span id="agent-persona-label">人设与提示词</span></button>
-      <button class="userbtn" id="userbtn">
+    <nav class="navigation-rail" aria-label="工作区导航">
+      <a class="rail-button rail-home" href="/" aria-label="首页" title="首页"><svg class="i"><use href="#i-home"/></svg></a>
+      <button class="rail-button" id="rail-conversations" aria-label="会话" title="会话"><svg class="i"><use href="#i-panel"/></svg></button>
+      <button class="rail-button" id="rail-workspace" aria-label="资料空间" title="资料空间"><svg class="i"><use href="#i-workspace"/></svg></button>
+      <button class="rail-button" id="rail-tools" aria-label="插件与工具" title="插件与工具"><svg class="i"><use href="#i-spark"/></svg></button>
+      <div class="rail-bottom">
+        <button class="rail-button" id="rail-usage" aria-label="额度与用量" title="额度与用量"><svg class="i"><use href="#i-chart"/></svg></button>      <button class="rail-button prompt-entry" aria-label="Agent 设置" title="Agent 设置" id="agent-settings"><svg class="i"><use href="#i-settings"/></svg><span>Agent 设置</span><span id="agent-persona-label">人设与提示词</span></button>
+        <div class="rail-account">
+      <button class="userbtn" id="userbtn" aria-label="账号与设置" title="账号与设置">
         <span class="avatar" id="myavatar">?</span>
         <span class="uname" id="myname"></span>
         <span class="badge" id="myrole"></span>
@@ -98,7 +92,22 @@
         <button class="po-item" id="menu-usage"><svg class="i"><use href="#i-chart"/></svg>用量</button>
         <div class="po-sep"></div>
         <button class="po-item" id="menu-logout"><svg class="i"><use href="#i-logout"/></svg>退出登录</button>
+      </div></div>
       </div>
+    </nav>
+    <div class="sidebar-panel">
+    <div class="side-top">
+      <div class="brand">Agent<span class="side-product-note">工作区</span></div>
+    </div>
+    <div class="side-actions">
+      <div class="side-search" id="searchbox">
+        <svg class="i sm"><use href="#i-search"/></svg>
+        <input id="conv-search" class="search-input" aria-label="搜索聊天" placeholder="搜索聊天…" autocomplete="off" spellcheck="false">
+        <button class="search-clear" id="search-clear" hidden title="清除"><svg class="i sm"><use href="#i-x"/></svg></button>
+      </div>
+      <button class="nav-item" id="newchat"><svg class="i"><use href="#i-plus"/></svg>新聊天</button>
+    </div>
+    <div class="conv-list" id="conv-list"></div>
     </div>
   </aside>
   <div id="backdrop"></div>

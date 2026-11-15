@@ -13,7 +13,8 @@
 #share-link { display: block; width: 100%; margin: 10px 0; }
 .download-table-wrap { overflow-x: auto; }
 .download-table { border-collapse: collapse; width: 100%; text-align: left; font-size: 14px; }
-.download-table th, .download-table td { padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.download-table td:nth-child(2) { font-family: monospace; overflow-wrap: anywhere; }
+.download-table th { border-bottom: var(--bw) solid var(--line); padding: 10px; font-weight: 750; }
+.download-table td { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
+.download-table td:nth-child(2) { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .download-card [hidden], #download-admin[hidden], #events-panel[hidden] { display: none; }
 @media (max-width: 500px) { .download-card { padding: 18px; } .download-table { min-width: 580px; } }

@@ -171,11 +171,11 @@ p {
 }
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: var(--bw) solid var(--line);
+  border-radius: var(--radius-card);
   padding: 24px;
   min-width: 0;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-hard);
 }
 .agent-card {
   display: flex;
@@ -193,12 +193,13 @@ p {
   width: 56px;
   flex: none;
   border-radius: 14px;
+  border: var(--bw) solid var(--line);
   object-fit: cover;
-  background: var(--surface-muted);
+  background: var(--tone-sun);
   display: grid;
   place-items: center;
-  font-weight: 650;
-  color: var(--text-secondary);
+  font-weight: 800;
+  color: var(--on-accent);
   font-size: 20px;
 }
 .avatar img {
@@ -242,17 +243,18 @@ p {
   display: inline-flex;
   align-items: center;
   font-size: 12px;
+  font-weight: 650;
   line-height: 1.5;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid var(--border);
+  border: var(--bw) solid var(--line);
+  background: var(--surface);
   color: var(--text-secondary);
   text-decoration: none;
 }
 .badge {
-  background: var(--brand-soft);
-  color: var(--link);
-  border: 0;
+  background: var(--tone-agent-soft);
+  color: var(--text);
 }
 .tag-list,
 .row {
@@ -270,7 +272,7 @@ p {
 .card .card-end {
   margin-top: auto;
   padding-top: 14px;
-  border-top: 1px solid var(--border);
+  border-top: var(--bw) dashed var(--line-soft);
   display: flex;
   justify-content: space-between;
   align-items: center;

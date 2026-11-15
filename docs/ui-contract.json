@@ -11,13 +11,13 @@
   "tokens": {
     "source": "internal/webui/static/css/tokens.css",
     "mirror": "aiplayer/static/css/tokens.css",
-    "font": "system Chinese sans-serif",
-    "contentWidth": 1200,
+    "font": "system Chinese sans-serif; JetBrains Mono / Cascadia Code / Consolas for code and data",
+    "contentWidth": 1180,
     "mobileGutter": 16,
     "desktopGutter": 24,
-    "primary": "#2563EB",
-    "page": "#F6F7F9",
-    "text": "#172033"
+    "primary": "#5B63F0",
+    "page": "#F5F1E8",
+    "text": "#18171F"
   },
   "states": {
     "request": [

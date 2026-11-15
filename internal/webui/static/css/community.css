@@ -196,54 +196,120 @@ html[data-theme="dark"] .launch-agent { border-color: var(--line); }
 .welcome-skeleton { height: 380px; border-radius: var(--radius-card); }
 .home-error { padding: 16px 0; }
 
-/* ---------- Minecraft 指南（将在 Step 6 进一步细化） ---------- */
-.minecraft-section { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 40px; border-top: var(--bw) solid var(--line); padding: 32px 0; scroll-margin-top: 96px; }
-.minecraft-intro h2 { font-size: 24px; margin: 0 0 12px; }
-.minecraft-intro p { color: var(--text-secondary); font-size: 14px; max-width: 34em; }
-.download-card { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding: 24px; }
-.download-card > .badge { align-self: flex-start; }
-.download-card h3 { font-size: 20px; margin: 0; }
-.download-card > p { color: var(--text-secondary); font-size: 14px; margin: 0; }
-.release-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
-.release-facts dt { color: var(--text-secondary); font-size: 12px; }
-.release-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
-.release-hash { font-size: 13px; }
-.release-hash code { display: block; overflow-wrap: anywhere; margin-top: 8px; user-select: all; }
+/* ---------- Minecraft 指南 ---------- */
+.guide-crumb { display: flex; gap: 10px; font-size: 13px; color: var(--text-secondary); margin-bottom: 18px; }
+.guide-head { max-width: 44rem; margin-bottom: 24px; }
+.guide-head h1 { font-size: clamp(36px, 5vw, 56px); margin: 10px 0 0; line-height: 1.05; letter-spacing: -.04em; font-weight: 850; }
+.guide-head > p:last-child { color: var(--text-secondary); }
+
+.server-connect {
+  position: relative;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 20px; padding: 22px 26px;
+  border: var(--bw) solid var(--line); border-radius: var(--radius-card);
+  box-shadow: var(--shadow-hard-lg);
+  background:
+    radial-gradient(circle at 0 50%, var(--bg) 8px, var(--line) 8.5px, var(--line) 10px, transparent 10.5px),
+    radial-gradient(circle at 100% 50%, var(--bg) 8px, var(--line) 8.5px, var(--line) 10px, transparent 10.5px),
+    var(--tone-mc);
+}
+.server-connect > div:first-child { flex: 1 1 220px; display: grid; gap: 4px; min-width: 0; }
+.server-connect > div:first-child span {
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--on-accent); opacity: .78;
+}
+.server-connect code {
+  font-family: var(--font-mono); font-size: clamp(22px, 3vw, 28px);
+  font-weight: 800; letter-spacing: -.02em;
+  color: var(--on-accent); overflow-wrap: anywhere; user-select: all;
+}
+.server-connect > .copy-control:first-of-type { padding-left: 20px; border-left: var(--bw) dashed var(--line); }
+.server-connect .btn { background: var(--surface); color: var(--text); }
+.server-connect .copy-feedback { color: var(--on-accent); font-weight: 600; }
+
 .copy-control { display: flex; flex-direction: column; gap: 4px; }
 .copy-feedback { font-size: 12px; color: var(--text-secondary); }
 .copy-feedback:empty { display: none; }
-.server-connect { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; padding: 20px 24px; }
-.server-connect > div:first-child { flex: 1; display: grid; gap: 6px; min-width: 0; }
-.server-connect span { color: var(--text-secondary); font-size: 13px; }
-.server-connect code { font-size: 20px; color: var(--text); overflow-wrap: anywhere; user-select: all; }
-.guide-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 28px; }
-.guide-nav a { display: inline-flex; align-items: center; min-height: 40px; text-decoration: none; color: var(--text-secondary); font-size: 14px; padding: 0 12px; }
-.guide-nav a:hover { color: var(--link); }
-.world-visual { border-radius: 14px; overflow: hidden; margin-top: 20px; border: var(--bw) solid var(--line); background: var(--surface-muted); }
+
+.guide-nav {
+  position: sticky; top: calc(var(--shell-height, 64px) + 8px); z-index: 10;
+  display: flex; gap: 6px; flex-wrap: wrap; width: fit-content; max-width: 100%;
+  padding: 5px 8px; margin-bottom: 28px;
+  border: var(--bw) solid var(--line); border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-hard-sm);
+}
+.guide-nav a {
+  display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px;
+  border-radius: 999px; text-decoration: none;
+  color: var(--text-secondary); font-size: 13.5px; font-weight: 650;
+  transition: background-color 140ms, color 140ms;
+}
+.guide-nav a:hover { background: var(--surface); color: var(--text); }
+
+.minecraft-player-entry { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 24px; }
+.minecraft-player-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.minecraft-player-entry h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.minecraft-player-entry .btn { flex-shrink: 0; min-height: 44px; }
+
+.minecraft-section { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 36px; border-top: var(--bw) solid var(--line); padding: 32px 0; scroll-margin-top: 96px; }
+.minecraft-intro h2 { font-size: 24px; font-weight: 800; margin: 0 0 12px; }
+.minecraft-intro p { color: var(--text-secondary); font-size: 14px; max-width: 34em; }
+.download-card { display: flex; flex-direction: column; align-items: stretch; gap: 16px; padding: 24px; background: var(--tone-sun-soft); }
+.download-card > .badge { align-self: flex-start; }
+.download-card h3 { font-size: 20px; font-weight: 800; margin: 0; }
+.download-card > p { color: var(--text-secondary); font-size: 14px; margin: 0; }
+.release-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.release-facts > div { padding: 10px 12px; border-radius: 12px; border: var(--bw) dashed var(--line); background: var(--surface); min-width: 0; }
+.release-facts dt { color: var(--text-tertiary); font-size: 11.5px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .04em; }
+.release-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 14px; font-weight: 700; }
+.release-hash { font-size: 13px; }
+.release-hash code { display: block; overflow-wrap: anywhere; margin-top: 8px; user-select: all; font-family: var(--font-mono); }
+
+.world-visual { border-radius: 14px; overflow: hidden; margin-top: 16px; border: var(--bw) solid var(--line); background: var(--surface-muted); box-shadow: var(--shadow-hard-sm); }
 .world-cover { width: 100%; height: auto; aspect-ratio: 8/5; object-fit: cover; display: block; }
 .world-placeholder { display: none; }
-.world-caption { padding: 14px 16px; display: grid; gap: 4px; font-size: 13px; }
-.guide-crumb { display: flex; gap: 10px; font-size: 13px; color: var(--text-secondary); margin-bottom: 24px; }
-.guide-head { max-width: 44rem; margin-bottom: 28px; }
-.guide-head h1 { font-size: clamp(32px, 4.5vw, 48px); margin: 0 0 12px; line-height: 1.15; letter-spacing: -.03em; font-weight: 850; }
-.guide-head > p:last-child { color: var(--text-secondary); }
-.minecraft-player-entry { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 24px; }
-.minecraft-player-entry h2 { margin: 0; }
-.minecraft-player-entry .btn { flex-shrink: 0; min-height: 44px; }
+.world-caption { padding: 12px 16px; display: grid; gap: 4px; font-size: 13px; }
+
 .guide-section { border-top: var(--bw) solid var(--line); padding: 32px 0; scroll-margin-top: 88px; }
-.section-heading h2 { font-size: 24px; margin: 0 0 10px; font-weight: 800; }
+.section-heading h2 { font-size: 24px; margin: 0 0 8px; font-weight: 800; }
 .section-heading p:not(.eyebrow) { color: var(--text-secondary); }
-.install-steps { list-style: none; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 24px 0; }
-.install-steps li { display: flex; gap: 16px; min-width: 0; }
-.step-number { color: var(--brand); font-size: 14px; font-weight: 700; padding-top: 3px; font-family: var(--font-mono); }
-.install-steps h3 { margin: 0 0 6px; font-size: 17px; }
-.install-steps p, .guide-copy p { margin-top: 0; color: var(--text-secondary); font-size: 14px; }
-.install-steps a { font-size: 13px; color: var(--link); }
+.install-steps { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 22px 0; }
+.install-steps li {
+  display: flex; gap: 14px; align-items: flex-start; min-width: 0;
+  padding: 18px 20px; border-radius: var(--radius-card);
+  border: var(--bw) solid var(--line); background: var(--surface); box-shadow: var(--shadow-hard-sm);
+}
+.step-number {
+  width: 36px; height: 36px; flex: none; border-radius: 50%;
+  border: var(--bw) solid var(--line); background: var(--tone-sun); color: var(--on-accent);
+  display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 800;
+}
+.install-steps h3 { margin: 0 0 6px; font-size: 16.5px; font-weight: 800; }
+.install-steps p, .guide-copy p { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.65; }
+.install-steps a { display: inline-block; margin-top: 8px; font-size: 13px; color: var(--link); font-weight: 650; }
 .guide-note { color: var(--text-tertiary); font-size: 13px; line-height: 1.7; }
-.guide-faq { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
-.guide-faq details { border: var(--bw) solid var(--line); border-radius: 14px; background: var(--surface); padding: 12px 16px; }
-.guide-faq summary { cursor: pointer; font-weight: 650; min-height: 36px; display: flex; align-items: center; }
-.guide-faq p { color: var(--text-secondary); margin: 10px 0 0; font-size: 14px; max-width: 52rem; }
+.guide-note::before { content: 'ⓘ '; font-weight: 700; }
+
+.guide-faq { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.guide-faq details {
+  border: var(--bw) solid var(--line); border-radius: 16px;
+  background: var(--surface); box-shadow: var(--shadow-hard-sm); padding: 14px 18px;
+}
+.guide-faq summary {
+  cursor: pointer; font-weight: 700; min-height: 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none;
+}
+.guide-faq summary::-webkit-details-marker { display: none; }
+.guide-faq summary::after {
+  content: '+'; font-family: var(--font-mono); font-size: 20px; font-weight: 700; line-height: 1;
+  transition: transform 160ms var(--ease-out);
+}
+.guide-faq details[open] summary::after { transform: rotate(45deg); }
+.guide-faq p { color: var(--text-secondary); margin: 10px 0 0; font-size: 14px; max-width: 52rem; line-height: 1.65; }
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 960px) {
@@ -263,7 +329,9 @@ html[data-theme="dark"] .launch-agent { border-color: var(--line); }
   .launch-card { padding: 20px; }
   .launch-game-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .recent-row { gap: 12px; flex-wrap: wrap; }
-  .minecraft-section, .install-steps { grid-template-columns: 1fr; gap: 18px; }
-  .minecraft-player-entry { align-items: stretch; flex-direction: column; gap: 16px; }
-  .server-connect .copy-control { flex: 1; }
+  .minecraft-section, .install-steps, .release-facts { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .server-connect { padding: 18px; gap: 12px; }
+  .server-connect > .copy-control:first-of-type { padding-left: 0; border-left: 0; padding-top: 12px; border-top: var(--bw) dashed var(--line); }
+  .minecraft-player-entry { align-items: stretch; flex-direction: column; gap: 14px; }
+  .server-connect .copy-control { flex: 1 1 100%; }
 }

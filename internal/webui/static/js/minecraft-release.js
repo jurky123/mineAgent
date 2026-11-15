@@ -72,15 +72,14 @@ export function downloadCard(data, { compact = false, status = '' } = {}) {
   const section = h('section', 'minecraft-section');
   const intro = h('div', 'minecraft-intro');
   intro.appendChild(h('h2', null, '下载与加入'));
-  intro.appendChild(h('p', null, '查看服务器信息，下载整合包并按指南配置客户端。'));
   if (!compact && data?.cover?.src) intro.appendChild(worldVisual(data, status));
   section.appendChild(intro);
   const card = h('div', 'card download-card');
   const release = downloadableRelease(data);
-  card.appendChild(h('span', 'badge', release ? '稳定版' : '发布准备中'));
+  card.appendChild(h('span', 'badge ' + (release ? 'ok' : 'warn'), release ? '稳定版' : '发布准备中'));
   card.appendChild(h('h3', null, release ? '下载整合包' : '整合包准备中'));
 
-  card.appendChild(h('p', null, release ? '下载后导入电脑端 PCL，安装为独立实例。' : '兼容版本和 PCL 导入流程验证完成后开放下载。已有玩家可先查看加入指南。'));
+  card.appendChild(h('p', 'guide-note', release ? '下载后导入电脑端 PCL，安装为独立实例。' : '兼容版本和 PCL 导入流程验证完成后开放下载。'));
   const facts = h('dl', 'release-facts');
   const add = (key, value) => { const row = h('div'); row.append(h('dt', null, key), h('dd', null, value)); facts.appendChild(row); };
   if (release) {

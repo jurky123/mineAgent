@@ -90,9 +90,15 @@ html[data-theme="dark"] .art-gomoku { background-color: #b89b66; }
 .catalog-card.clickable:hover .catalog-go { transform: translateX(4px); }
 
 /* ---------- 账号设置 ---------- */
-.account-head { display: flex; align-items: center; gap: 18px; margin: 6px 0 12px; }
+.account-head { display: flex; align-items: center; gap: 18px; margin: 6px 0 18px; }
+.account-head .avatar.lg {
+  width: 64px; height: 64px; font-size: 24px; font-weight: 850;
+  background: var(--tone-sun); color: var(--on-accent);
+  border: var(--bw) solid var(--line); box-shadow: var(--shadow-hard);
+}
 .account-head h1 { margin: 0; font-size: 28px; font-weight: 850; letter-spacing: -.02em; }
-.account-head .meta { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 13px; font-family: var(--font-mono); margin-top: 4px; }
+.account-head .meta { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 13px; font-family: var(--font-mono); margin-top: 4px; flex-wrap: wrap; }
+.settings .list-title.danger { color: var(--danger); font-weight: 700; }
 .setting-value { color: var(--text-secondary); font-size: 14px; font-family: var(--font-mono); }
 .setting-row { cursor: default; }
 .setting-row.action { cursor: pointer; transition: background var(--motion-ui) ease; }

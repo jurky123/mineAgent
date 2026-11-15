@@ -1,5 +1,8 @@
 /* layout.css — Agent 侧栏、标题和空状态的限域布局。 */
-#login { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); z-index: 50; }
+#login {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: var(--bg); background-image: var(--paper-pattern); background-size: var(--paper-grid); z-index: 50;
+}
 .login-card { width: 100%; max-width: 360px; text-align: center; }
 .logo-mark {
   width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 12px; background: var(--text);
@@ -72,6 +75,7 @@ body.collapsed main { margin-left: 0 !important; }
 #sidebar .badge { font-size: 11px; color: var(--text-3); }
 #sidebar .badge.admin { color: var(--ok); }
 main { display: flex; flex-direction: column; height: 100%; }
+.agent-page main { background-image: var(--paper-pattern); background-size: var(--paper-grid); }
 main > header .icon-btn {
   display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
   background: none; border: 0; border-radius: var(--radius-sm); color: var(--text-2);

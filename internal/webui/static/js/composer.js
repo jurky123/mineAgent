@@ -239,7 +239,7 @@ export function placePopover(box) {
   const below = window.innerHeight - rect.bottom - 18;
   const useBelow = centered && below >= above;
   box.classList.toggle('below', useBelow);
-  if (box.id === 'popover') box.style.maxHeight = Math.max(160, Math.min(560, useBelow ? below : above)) + 'px';
+  if (box.id === 'popover') box.style.maxHeight = Math.max(160, Math.min(box.classList.contains('model-picker') ? 520 : 560, useBelow ? below : above)) + 'px';
 }
 
 export function closePopovers(except) {
@@ -317,6 +317,7 @@ export function openModelPopover(back, query = '') {
   popoverOpener = 'modelbtn';
   let visibleModels = 80;
   const box = $('popover');
+  box.classList.add('model-picker');
   box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '选择模型');
   const cur = S.options ? S.options.model || '' : '';
   const defaultModel = (S.options && S.options.defaultModel) || '';
@@ -327,8 +328,8 @@ export function openModelPopover(back, query = '') {
     '<div class="po-toolrow po-modelcontrols">' +
     '<button class="po-chip' + (modelFreeOnly ? ' on' : '') + '" id="po-freeonly" aria-pressed="' + modelFreeOnly + '">只看免费</button>' +
     '<button class="po-chip' + (modelShowUnavailable ? ' on' : '') + '" id="po-showall" aria-pressed="' + modelShowUnavailable + '">显示不可用</button>' +
-    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option><option value="provider">按提供商分组</option></select></div>' +
-    '<div class="po-toolrow"><select id="po-capability" class="po-sort" aria-label="模型能力筛选"><option value="">全部能力</option><option value="vision">支持图片</option><option value="reasoning">支持思考</option><option value="tools">支持工具</option></select></div><div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
+    '<select class="po-sort" id="po-sort" aria-label="模型排序"><option value="newest">最新优先</option><option value="free">免费优先</option><option value="name">名称排序</option><option value="provider">按提供商分组</option></select>' +
+    '<select id="po-capability" class="po-sort" aria-label="模型能力筛选"><option value="">全部能力</option><option value="vision">支持图片</option><option value="reasoning">支持思考</option><option value="tools">支持工具</option></select></div><div class="po-modelstatus" id="po-modelstatus" aria-live="polite"></div>' +
     '<div id="po-providerstatus" class="po-providerstatus"></div>' +
     '<div class="po-scroll" id="po-list"></div>';
   if (back) $('po-back').onclick = (e) => { e.stopPropagation(); openIntelPopover(); };
@@ -346,14 +347,16 @@ export function openModelPopover(back, query = '') {
   };
   const mk = (m) => {
     const b = document.createElement('button');
-    b.className = 'po-item model' + ((cur || defaultModel) === m.id ? ' on' : '') + (!usable(m) ? ' off' : '');
+    b.className = 'po-item model' + (cur === m.id ? ' on' : '') + (!usable(m) ? ' off' : '');
+    b.dataset.modelId = m.id;
+    b.setAttribute('aria-pressed', String(cur === m.id));
     b.disabled = !usable(m);
     const released = new Date((m.created || 0) * 1000);
     const date = m.created && Number.isFinite(released.getTime()) ? released.toISOString().slice(0, 10) : '';
-    const detail = [m.providerLabel || m.provider, m.id, date ? '发布 ' + date : '', m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
+    const detail = [m.providerLabel || m.provider, m.id !== m.label ? m.id : '', date ? '发布 ' + date : '', m.contextLength ? Math.round(m.contextLength / 1024) + 'K 上下文' : '',
       m.unavailableReason || '', m.stale ? '缓存目录' : ''].filter(Boolean).join(' · ');
     b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">' + esc(m.label) +
-      (m.provider === 'default' && m.id === defaultModel ? ' <span class="po-desc">默认</span>' : '') + badge(m) +
+      (m.provider === 'default' && m.id === defaultModel ? '<span class="po-badge default">默认</span>' : '') + badge(m) +
       '</span><span class="po-modeldetail">' + esc(detail) + '</span></span><span class="check">' + ICON.check + '</span>';
     b.title = detail;
     b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: m.id }); };
@@ -379,7 +382,9 @@ export function openModelPopover(back, query = '') {
     if (!q && !modelFreeOnly && !modelCapability && (!def || usable(def) || modelShowUnavailable)) {
       const b = document.createElement('button');
       b.className = 'po-item model' + (cur === '' ? ' on' : '');
-      b.innerHTML = '<span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="check">' + ICON.check + '</span>';
+      b.dataset.followDefault = 'true';
+      b.setAttribute('aria-pressed', String(cur === ''));
+      b.innerHTML = '<span class="po-modelbody"><span class="po-modelname">跟随默认 · ' + esc(defaultModel) + (def ? badge(def) : '') + '</span><span class="po-modeldetail">自动使用站点当前默认模型</span></span><span class="check">' + ICON.check + '</span>';
       b.disabled = !!def && !usable(def);
       b.onclick = (e) => { e.stopPropagation(); setPrefs({ model: '' }); };
       list.appendChild(b);
@@ -449,7 +454,7 @@ export function openModelPopover(back, query = '') {
 
 export function openIntelPopover() {
   popoverOpener = 'intelbtn';
-  const box = $('popover'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '思考强度');
+  const box = $('popover'); box.classList.remove('model-picker'); box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', '思考强度');
   const idx = intelIndex(S.options?.effort);
   box.innerHTML = '<div class="intel-head">思考强度：<span id="reason-value">' + INTEL[idx].name + '</span></div>' +
     '<div class="reason init" id="reason">' +

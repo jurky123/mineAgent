@@ -43,6 +43,14 @@ export async function checkInk(browser,base,repo,out){
   await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('.tab-pill').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 211, 77)');assert.equal(await page.locator('.tabbar').evaluate(e=>getComputedStyle(e).left),'10px');
   await page.goto(base+'/agent?ui=1');await page.locator('#app').waitFor({state:'visible'});assert.equal(await page.locator('#newchat').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(91, 99, 240)','sidebar primary action lost to scoped navigation');await page.locator('#text').focus();assert.notEqual(await page.locator('.composer-box').evaluate(e=>getComputedStyle(e).boxShadow),'none');
   // Every selector is unique within its own file and media/support scope.
+  const texture = await page.locator('main').evaluate(e => ({pattern:getComputedStyle(e).backgroundImage,size:getComputedStyle(e).backgroundSize}));
+  assert(texture.pattern.includes('radial-gradient'), 'Agent paper dots absent');assert.equal(texture.size,'22px 22px');
+  assert.equal(await page.locator('.composer-box').evaluate(e => getComputedStyle(e).backgroundImage),'none','paper pattern leaked into the input surface');
+  await page.evaluate(async () => { const c=await import('/static/preview/js/composer.js');c.openModelPopover(false); });
+  const selectedColors=await page.locator('#po-list .model.on').evaluate(e => {
+   const hex=color=>'#'+color.match(/\d+/g).slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join('');
+   return {fg:hex(getComputedStyle(e.querySelector('.po-modeldetail')).color),bg:hex(getComputedStyle(e).backgroundColor)};
+  });assert(ratio(selectedColors.fg,selectedColors.bg)>=4.5,'selected model metadata contrast');
   for(const route of ['/minecraft','/games/chess?ui=1','/agent?ui=1']){
    await page.goto(base+route);if(route.startsWith('/agent'))await page.locator('#app').waitFor({state:'visible'});
    const duplicates=await page.evaluate(names=>{

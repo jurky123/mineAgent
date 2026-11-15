@@ -133,7 +133,7 @@
 .account-btn:has(.account-login-label) { width: auto; padding-inline: 10px; }
 body.ds {
   margin: 0; background: var(--page); color: var(--text); font: 15px/1.6 var(--font-sans); overflow-y: auto;
-  background-image: radial-gradient(var(--line-soft) .7px, transparent .7px); background-size: 22px 22px;
+  background-image: var(--paper-pattern); background-size: var(--paper-grid);
 }
 .topbar .brand {
   display: flex; align-items: center; gap: 9px; font-weight: 800; letter-spacing: .1px; text-decoration: none;

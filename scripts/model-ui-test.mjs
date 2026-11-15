@@ -72,7 +72,16 @@ try {
   await page.evaluate(async () => {
     const c = await import('/static/preview/js/composer.js'); await c.loadOptions(); c.openModelPopover(true);
   });
-  const rows = page.locator('#po-list .po-modelbody .po-modelname');
+  const rows = page.locator('#po-list [data-model-id] .po-modelname');
+  assert.equal(await page.locator('#po-list .model[aria-pressed="true"]').count(), 1, 'default-following rendered two selected models');
+  assert.equal(await page.locator('#po-list [data-follow-default]').getAttribute('aria-pressed'), 'true');
+  await page.locator('#po-list [data-model-id="old"]').click();
+  await page.waitForFunction(() => document.querySelector('#po-list [data-model-id="old"]')?.getAttribute('aria-pressed') === 'true');
+  assert.equal(selection, 'old', 'explicit default model did not persist');
+  assert.equal(await page.locator('#po-list .model[aria-pressed="true"]').count(), 1);
+  await page.locator('#po-list [data-follow-default]').click();
+  await page.waitForFunction(() => document.querySelector('#po-list [data-follow-default]')?.getAttribute('aria-pressed') === 'true');
+  assert.equal(selection, '', 'following default was saved as a fixed model');
   assert.match(await rows.first().textContent(), /New Free/);
   assert.equal(await rows.count(), 3, 'known unavailable models should be hidden');
   assert.equal(await page.getByText('OpenRouter 未配置 API 密钥，暂不可使用。', { exact: true }).isVisible(), true);
@@ -128,11 +137,11 @@ try {
   await page.goto(base + '/agent');
   await page.evaluate(async()=>{const c=await import('/static/preview/js/composer.js');await c.loadOptions();c.openModelPopover(false);});
   await page.locator('#po-filter').waitFor();
-  assert.equal(await page.locator('#po-list .po-modelbody').count(),80,'large model catalog rendered without a bound');
+  assert.equal(await page.locator('#po-list [data-model-id]').count(),80,'large model catalog rendered without a bound');
   await page.getByRole('button',{name:/显示更多模型/}).click();
-  assert.equal(await page.locator('#po-list .po-modelbody').count(),160);
+  assert.equal(await page.locator('#po-list [data-model-id]').count(),160);
   await page.locator('#po-filter').fill('bulk-0');
-  assert.equal(await page.locator('#po-list .po-modelbody').count(),1,'search ignored an unloaded model');
+  assert.equal(await page.locator('#po-list [data-model-id]').count(),1,'search ignored an unloaded model');
   await page.locator('#modelbtn').focus(); await page.keyboard.press('Escape');
   await page.locator('#intelbtn').click();
   await page.getByRole('radio', {name:'中',exact:true}).waitFor();
@@ -193,6 +202,19 @@ try {
   await page.waitForFunction(()=>document.querySelector('#intellabel').textContent.includes('低'));
   releaseOptions();await page.evaluate(()=>window.oldOptions);
   assert.match(await page.locator('#intellabel').textContent(),/低/,'stale options overwrote a newer preference');
+  assert.equal(await page.locator('#popover').evaluate(el => el.classList.contains('model-picker')), false, 'model picker styles leaked into reasoning');
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(t => { document.documentElement.dataset.theme = t; }, theme);
+    for (const width of [320, 390, 768, 1280]) {
+      await page.setViewportSize({width, height:844});
+      await page.evaluate(async () => { const c = await import('/static/preview/js/composer.js'); c.openModelPopover(false); });
+      const rect = await page.locator('#popover').boundingBox();
+      assert(rect.x >= 0 && rect.x + rect.width <= width && rect.y >= 0 && rect.y + rect.height <= 845, 'model dialog outside viewport');
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.equal(await page.locator('#po-list .po-modelname').first().evaluate(el => getComputedStyle(el).fontSize), '14px');
+      await page.screenshot({path:'/tmp/mineagent-models-ui/picker-'+width+'-'+theme+'.png'});
+    }
+  }
   assert.deepEqual(errors, []);
   console.log('Model UI checks passed (catalog, preview isolation, restored aurora/particles, fractional drag and snap, cancel, optimistic feedback, save rollback, keyboard/focus, reduced motion).');
 } finally {

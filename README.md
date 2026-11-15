@@ -20,7 +20,9 @@ QQ 群聊：`/auto` 查状态，已配置的 QQ 管理员用 `/auto on`、`/auto
 
 ### 纸与墨视觉重构（2026-11-15，已部署）
 
-首页 Hero / Bento、游戏、Agent、Minecraft 指南、账号与共享组件采用用户确认的“纸与墨”方案，保留现有身份、权限与业务操作。验收命令 `npm run test:paper-ink`；范围、对比度、前后截图与发布记录见 [实施与验收记录](docs/PAPER_INK_IMPLEMENTATION_2026-11-15.md)。主站与 AI 玩家门户已按用户后续要求上线，运行版本 `8dbc353`；未推送远端。
+首页 Hero / Bento、游戏、Agent、Minecraft 指南、账号与共享组件采用用户确认的“纸与墨”方案，保留现有身份、权限与业务操作。验收命令 `npm run test:paper-ink`；范围、对比度、前后截图与发布记录见 [实施与验收记录](docs/PAPER_INK_IMPLEMENTATION_2026-11-15.md)。首轮运行版本 `8dbc353`，主站与 AI 玩家门户已上线，并按用户后续要求推送远端。
+
+后续仅吸收用户指定的模型选择器与点阵，记录见 [模型选择器与点阵](docs/PAPER_INK_MODEL_DOTS_2026-11-15.md)。不合并参考分支的其他视觉或行为改动。
 
 ### 门户与 Agent 界面（2026-10-21）
 

@@ -49,6 +49,9 @@ time { font-variant-numeric: tabular-nums; }
   --text-tertiary: #6F6B78;
   --line: #18171F;
   --line-soft: #DDD6C6;
+  --dot: rgba(24, 23, 31, .09);
+  --paper-pattern: radial-gradient(var(--dot) 1px, transparent 1.3px);
+  --paper-grid: 22px 22px;
   --shadow-ink: #18171F;
   --brand: #5B63F0;
   --periwinkle: #5B63F0;
@@ -138,6 +141,7 @@ html[data-theme="dark"] {
   --text-tertiary: #9A95A7;
   --line: #6E6A7E;
   --line-soft: #34333F;
+  --dot: rgba(242, 238, 228, .06);
   --shadow-ink: #000000;
   --brand: #7C83FF;
   --brand-hover: #959BFF;

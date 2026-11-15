@@ -35,7 +35,7 @@ const server=createServer(async(req,res)=>{
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port;
-const routes=[['home','/?ui=1'],['guest','/'],['games','/games?ui=1'],['chess-lobby','/games/chess?ui=1&state=lobby'],['chess-playing','/games/chess?ui=1&state=playing'],['chess-check','/games/chess?ui=1&state=check'],['chess-finished','/games/chess?ui=1&state=finished-win'],['gomoku-playing','/games/gomoku?ui=1&state=playing'],['gomoku-finished','/games/gomoku?ui=1&state=finished-win'],['agent','/agent?ui=1'],['agent-prompts','/agent?ui=1&panel=prompts'],['agent-intel','/agent?ui=1&panel=intel'],['minecraft','/minecraft'],['account','/account?ui=1'],['history','/account/history?demo=gomoku'],['404','/does-not-exist']];
+const routes=[['home','/?ui=1'],['guest','/'],['games','/games?ui=1'],['chess-lobby','/games/chess?ui=1&state=lobby'],['chess-playing','/games/chess?ui=1&state=playing'],['chess-check','/games/chess?ui=1&state=check'],['chess-finished','/games/chess?ui=1&state=finished-win'],['gomoku-playing','/games/gomoku?ui=1&state=playing'],['gomoku-finished','/games/gomoku?ui=1&state=finished-win'],['agent','/agent?ui=1'],['agent-models','/agent?ui=1&panel=models'],['agent-prompts','/agent?ui=1&panel=prompts'],['agent-intel','/agent?ui=1&panel=intel'],['minecraft','/minecraft'],['account','/account?ui=1'],['history','/account/history?demo=gomoku'],['404','/does-not-exist']];
 let browser;const result=[];
 try {
  await mkdir(out,{recursive:true});browser=await chromium.launch({headless:true});

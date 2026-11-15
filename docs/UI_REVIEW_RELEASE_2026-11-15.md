@@ -22,3 +22,9 @@
 ## 发布前检查
 
 进行中棋局0、身体动作/审批0，22次AI运行均结束，无已知迁移/备份进程；独立AI站论坛关闭、备份未运行。MC 25565未监听、无tmux控制台，因此没有全服通告目标；不启动MC、ViaProxy或改网络。使用主站 `scripts/deploy.sh` 的对局/drain检查；独立站仅原子替换已验证候选与正常重启，嵌入静态资源需同步发布。旧主站/独立站二进制及独立站一致性数据库备份保存在上述私有目录。
+
+## 上线结果
+
+主站运行 `ff0a218`，`scripts/deploy.sh` 正常通过对局/drain与健康检查。独立 `aiplayer-portal` 已原子替换为验证过的候选并正常重启，健康检查通过，运行二进制与候选一致，配置未改。
+
+发布后以真实域名/证书连接本机HTTPS检查30项桌面/手机页面：主站版本、棋类提示完整显示、独立AI站实际CSS与token镜像一致，横向溢出0、脚本错误0。两项服务均active，身体仍paused且非drain，无动作或审批。结果见 `release/online-verification.json`、`release/verify.log`、`aiplayer-publish.json` 与 `publish.log`。这些核查不等同于外部公网或用户真机验收。

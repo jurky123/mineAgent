@@ -1,120 +1,230 @@
-/* 弹窗（Workspace / 外观）与图片查看器（保持暗色） */
+/* overlays.css — Agent 模态框（文件浏览器、外观、用量、确认）与图片查看器 */
 
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: none; align-items: center; justify-content: center; z-index: 35; padding: 20px; }
-.modal.on { display: flex; animation: fadein .15s ease; }
-.modal.closing { animation: fadein .12s ease reverse forwards; }
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 19, 26, .42);
+  backdrop-filter: blur(4px);
+  overflow-y: auto;
+}
+.modal.on { display: grid; }
+
 .modal-card {
-  width: 100%; display: flex; flex-direction: column;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-popover); overflow: hidden; animation: pop .15s ease-out;
+  width: 100%;
+  max-width: 520px;
+  max-height: 86dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  background: var(--surface);
+  border: var(--bw) solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow-hard-lg);
+  overflow: hidden;
 }
-.ws-card { max-width: 620px; max-height: 76vh; }
-.ap-card { max-width: 460px; }
-.ws-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-.ws-path { flex: 1; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-path a { color: var(--text-2); text-decoration: none; cursor: pointer; }
-.ws-path a:hover { color: var(--text); text-decoration: underline; }
+
+.ws-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ws-head h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+
 .icon-button {
-  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
-  border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--text-2);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: var(--bw) solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  box-shadow: var(--shadow-hard-sm);
 }
-.icon-button:hover { background: var(--surface-hover); color: var(--text); }
-.ws-list { overflow-y: auto; padding: 6px; }
+.icon-button:hover { background: var(--surface-muted); }
+
+/* 文件浏览器 */
+.ws-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  border: 1px dashed var(--line-soft);
+  overflow-wrap: anywhere;
+}
+.ws-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .ws-row {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0;
-  border-radius: var(--radius-sm); background: none; color: inherit; text-decoration: none;
-  font-size: 14px; text-align: left; cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: var(--bw) solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  text-decoration: none;
+  cursor: pointer;
 }
-.ws-row:hover { background: var(--surface-hover); }
-.ws-row .ws-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-row .ws-size { color: var(--text-3); font-size: 12px; }
-.ws-row .i { color: var(--text-3); }
-.ws-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 26px; }
+.ws-row:hover {
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+.ws-row .ws-size {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
 
-/* 额度弹窗 */
-.usage-card { max-width: 460px; }
-.usage-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
-.usage-row { display: flex; flex-direction: column; gap: 6px; }
-.usage-top { display: flex; justify-content: space-between; font-size: 13.5px; }
-.usage-top .pct { color: var(--text-2); font-variant-numeric: tabular-nums; }
-.usage-bar { height: 8px; border-radius: 999px; background: var(--control-bg); overflow: hidden; }
-.usage-fill { height: 100%; border-radius: 999px; background: var(--interactive); transition: width .45s cubic-bezier(.22,1,.36,1); }
-.usage-fill.warm { background: #f59e0b; }
-.usage-fill.hot { background: #ef4444; }
-.usage-reset { font-size: 11.5px; color: var(--text-3); }
-.usage-note { font-size: 11.5px; color: var(--text-3); line-height: 1.6; }
-.usage-loading { padding: 22px 0; text-align: center; color: var(--text-3); font-size: 13px; }
+/* 用量窗口 */
+.usage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.usage-row {
+  padding: 12px 14px;
+  border: var(--bw) solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.usage-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.usage-bar {
+  height: 10px;
+  border-radius: 999px;
+  border: var(--bw) solid var(--line);
+  background: var(--surface);
+  overflow: hidden;
+}
+.usage-fill {
+  height: 100%;
+  background: var(--brand);
+}
+.usage-fill.warn { background: var(--tone-sun); }
+.usage-fill.high { background: var(--danger); }
+.usage-reset,
+.usage-note,
+.usage-loading {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
 
-/* 通用确认 / 输入弹窗 */
-.dlg-card { max-width: 400px; padding: 20px 20px 16px; }
-.dlg-title { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
-.dlg-text { margin-top: 8px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
-.dlg-input {
-  width: 100%; margin-top: 14px; padding: 9px 12px; border: 1px solid var(--border-control);
-  border-radius: 10px; background: var(--control-bg); color: var(--text); font: inherit;
-  font-size: 14px; outline: none;
+/* 确认 / 输入弹框 */
+.dlg-card { max-width: 420px; }
+.dlg-card h3 { margin: 0; font-size: 18px; font-weight: 800; }
+.dlg-card p { margin: 0; font-size: 14px; color: var(--text-secondary); line-height: 1.55; }
+.dlg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
 }
-.dlg-input:focus { border-color: var(--interactive-border); background: var(--surface); }
-.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.btn {
-  padding: 8px 15px; border-radius: 10px; border: 1px solid var(--border-control);
-  background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 500;
-}
-.btn:hover { background: var(--control-hover); }
-.btn.primary { background: var(--interactive); border-color: var(--interactive); color: #fff; }
-.btn.primary:hover { filter: brightness(.95); background: var(--interactive); }
-.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-.btn.danger:hover { filter: brightness(.95); background: var(--danger); }
 
-/* 外观 */
-.ap-title { font-weight: 600; font-size: 14.5px; }
-.ap-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 16px; }
-.ap-row .ap-label { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
-.ap-row .seg { margin: 0; }
-/* ---------- 图片查看器 ---------- */
-#viewer { position: fixed; inset: 0; background: rgba(10,10,12,.95); display: none; flex-direction: column; z-index: 40; }
-#viewer.on { display: flex; animation: fadein .14s ease; }
-#viewer.closing { animation: fadein .12s ease reverse forwards; }
-.vbar { display: flex; align-items: center; gap: 6px; padding: 12px 14px; color: #e8e8e8; }
-.vname { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
-.vcount { color: #9a9a9a; font-size: 12px; flex: 1; }
-.vbtn {
-  display: flex; align-items: center; justify-content: center; min-width: 32px; height: 32px;
-  padding: 0 9px; border: 1px solid rgba(255,255,255,.16); border-radius: var(--radius-sm);
-  background: rgba(255,255,255,.06); color: #e8e8e8; font-size: 12.5px; text-decoration: none; gap: 5px;
+/* ---------- 图片查看器（保留深色沉浸） ---------- */
+#viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: none;
+  flex-direction: column;
+  background: rgba(15, 14, 20, .92);
+  color: #f4f2ec;
+  opacity: 1;
+  transition: opacity 140ms;
 }
-.vbtn:hover { background: rgba(255,255,255,.16); }
-.vzoom { min-width: 44px; text-align: center; font-size: 12px; color: #b9b9b9; }
-.vstage { flex: 1; position: relative; overflow: hidden; touch-action: none; display: flex; align-items: center; justify-content: center; }
-.vimg { max-width: 100%; max-height: 100%; user-select: none; -webkit-user-drag: none; transform-origin: center center; cursor: grab; }
-.vimg.grabbing { cursor: grabbing; }
+#viewer.on { display: flex; }
+#viewer.closing { opacity: 0; }
+
+.vbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: rgba(15, 14, 20, .75);
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+  font-size: 13.5px;
+}
+.vbar-actions { display: flex; align-items: center; gap: 8px; }
+.vbar button,
+.vbar a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .24);
+  background: rgba(255, 255, 255, .08);
+  color: #f4f2ec;
+  font: inherit;
+  font-size: 12.5px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.vstage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+#vimg {
+  max-width: 92vw;
+  max-height: 82dvh;
+  object-fit: contain;
+  cursor: grab;
+  user-select: none;
+}
+#vimg.grabbing { cursor: grabbing; }
 .vnav {
-  position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 56px; border: 0;
-  border-radius: var(--radius-md); background: rgba(255,255,255,.08); color: #fff; font-size: 22px; line-height: 1;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .28);
+  background: rgba(15, 14, 20, .72);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
 }
-.vnav:hover { background: rgba(255,255,255,.18); }
-.vnav.prev { left: 14px; } .vnav.next { right: 14px; }
-.vmeta { padding: 8px 14px 14px; color: #8a8a8a; font-size: 12px; text-align: center; }
+.vnav.prev { left: 16px; }
+.vnav.next { right: 16px; }
 
-/* ---------- 动效统一（与门户 ds.css 同一套 token）----------
-   按钮：颜色过渡 + 按下缩放；弹窗：卡片随遮罩一起进出（原来关闭时只有遮罩在淡出，卡片原样消失）。 */
-.icon-btn, .icon-button, .tool-btn, .send, .btn, .nav-item, .suggests button, #loadolder, .po-item {
-  transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease,
-    filter var(--motion-ui) ease, transform 160ms var(--ease-out);
+@media (prefers-reduced-motion: reduce) {
+  #viewer { transition: none; }
 }
-.icon-btn:active, .icon-button:active, .tool-btn:active, .btn:active, .nav-item:active,
-.suggests button:active, #loadolder:active, .send.ready:active {
-  transform: scale(var(--press-scale)); transition-duration: var(--motion-press);
-}
-.send.ready:active { transform: scale(.92); }
-.modal.on { animation: fadein 180ms ease; }
-.modal.on .modal-card { animation: modal-in 220ms var(--ease-out); }
-.modal.closing { animation: fadein 140ms ease reverse forwards; }
-.modal.closing .modal-card { animation: modal-out 130ms var(--ease-in) forwards; }
-@keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
-@keyframes modal-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
-.popover.on { animation: pop 160ms var(--ease-out); }
-
-.ws-path button { border: 0; padding: 6px; background: none; color: var(--link); font: inherit; min-height: 36px; cursor: pointer; }
-.modal { overscroll-behavior: contain; }
-@media (max-width: 640px) { .icon-button { min-height: 44px; min-width: 44px; } .ws-row { min-height: 44px; } }

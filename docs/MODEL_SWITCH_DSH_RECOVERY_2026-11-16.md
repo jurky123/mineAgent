@@ -26,3 +26,9 @@
 证据：`/home/ubuntu/.local/share/zkun-dsh-recovery-20261116/` 中 `tests.log`、`installed-e2e.log`、`live-smoke.log/json`；不包含已输出的令牌或完整敏感配置。
 
 发布前确认：6次普通AI运行均已结束，DSH active/hostRunning均0，进行中棋局/身体动作/审批均0，无已知备份进程。MC端口未监听、仅dsh-web的tmux会话，因此无全服通告目标；只更新MineAgent，不启动MC或重启代理。保留旧二进制到上述私有证据目录。
+
+## 发布结果
+
+`d470447` 已按 `scripts/deploy.sh` 上线，主站入口均200，QQ gateway ready，DSH认证健康检查通过且无任务运行；原QQ模型覆盖值保留，身体仍暂停、非drain、无动作与审批。另以零工具合成文本补验Haiku API成功，与默认DSH路径分别可用。未向真实QQ代发消息，未清空会话或改模型选择。
+
+结果见 `publish.log`、`online-verification.json`、`haiku-smoke.log/json`。服务恢复不代表自动重做失败任务，本次没有重放任何旧请求。

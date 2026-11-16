@@ -613,3 +613,5 @@ node scripts/ui-preview.mjs --base https://zkun.art --only shots
 原图与思考指令回归：`go test ./internal/qq ./internal/storage ./internal/tools ./internal/webui ./internal/agent`；`npm run test:conversations` 验证真实浏览器命令、滑杆同步和恢复；`npm run test:models` 保留思考滑杆动效回归。真实 GIF 原件通过帧/时序与字节校验，并在 Bubblewrap 工作区内实际读取。显式会话思考强度可覆盖网页身体任务的思考档位，但不修改身体工具、审批、12 步预算或只读预算；未显式设置时仍沿用身体自身配置。
 
 2026-11-15 用户提交 `b215839` 的评审、房间码提示与登录态竞态修复及验收见 [UI版本评审与发布](docs/UI_REVIEW_RELEASE_2026-11-15.md)。
+
+2026-11-16 修复切回默认模型时DSH宿主离线及恢复后保护锁定无法解除的问题：仅在认证取消确认旧任务停止后解锁新请求，保留失败任务不自动重放。见 [模型切换与DSH恢复](docs/MODEL_SWITCH_DSH_RECOVERY_2026-11-16.md)。

@@ -160,8 +160,13 @@ func (a *Agent) respondDSH(ctx context.Context, req Request, msgs []*schema.Mess
 		return
 	}
 	if err != nil {
-		a.log.Warn("DSH bridge run failed", "err", err)
+		a.log.Warn("DSH bridge run failed", "model", route.Model, "provider", route.Provider, "selector", req.Model, "err", err)
 		message := "DSH 调用失败，本次任务已结束。已完成的操作不会撤销；请核查结果后再重试。"
+		if errors.Is(err, dshbridge.ErrStopUnconfirmed) {
+			message = "DSH 执行服务尚未确认旧任务停止，已阻止新任务。请管理员核查服务；确认停止后可继续，无需清空会话。已完成的操作不会撤销。"
+		} else if errors.Is(err, dshbridge.ErrUnavailable) {
+			message = "DSH 执行服务当前未连接，本次未自动重发。请管理员恢复执行服务；已发生的操作不会撤销，重试前请先核查结果。"
+		}
 		var runError *dshbridge.RunError
 		if errors.As(err, &runError) && runError.Code == "UNSUPPORTED_REASONING_EFFORT" {
 			message = "当前模型不支持所选思考强度，请调整后重新提交。已完成的操作不会撤销，请先核查结果。"

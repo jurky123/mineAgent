@@ -24,6 +24,11 @@ import (
 
 const MaxFrame = 64 << 20
 
+var (
+	ErrUnavailable     = errors.New("DSH bridge unavailable")
+	ErrStopUnconfirmed = errors.New("DSH bridge stop unconfirmed")
+)
+
 // RunError carries only a validated public provider error code.
 // It does not imply that earlier tools can safely be replayed.
 type RunError struct{ Code string }
@@ -76,12 +81,13 @@ type frame struct {
 	Code      string          `json:"code"`
 }
 type Client struct {
-	cfg   Config
-	token string
-	http  *http.Client
-	mu    sync.Mutex
-	fault bool
-	gate  chan struct{}
+	cfg        Config
+	token      string
+	http       *http.Client
+	mu         sync.Mutex
+	fault      bool
+	faultRunID string
+	gate       chan struct{}
 }
 
 func New(cfg Config) (*Client, error) {
@@ -135,7 +141,7 @@ func (c *Client) post(ctx context.Context, path string, v any) (*http.Response, 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, errors.New("DSH bridge unavailable")
+		return nil, ErrUnavailable
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
@@ -146,7 +152,7 @@ func (c *Client) post(ctx context.Context, path string, v any) (*http.Response, 
 
 // Run never replays a failed request or falls back after actions may have run.
 // Cancellation waits for DSH quiescence. Failure to confirm it latches this
-// client closed until restart, preventing overlapping uncertain agent loops.
+// client closed until that exact run is confirmed stopped. No request is replayed.
 func (c *Client) Run(ctx context.Context, req Request, invoke func(context.Context, string, string) (string, error)) (text string, err error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -161,10 +167,17 @@ func (c *Client) Run(ctx context.Context, req Request, invoke func(context.Conte
 		return "", ctx.Err()
 	}
 	c.mu.Lock()
-	fault := c.fault
+	fault, faultRunID := c.fault, c.faultRunID
 	c.mu.Unlock()
 	if fault {
-		return "", errors.New("DSH bridge stop unconfirmed; restart required")
+		// Recover only by retiring and confirming the old ID, never by a health
+		// probe or a retry of its run/tools. The gate keeps later requests waiting.
+		if faultRunID == "" || c.confirmStopped(ctx, faultRunID) != nil {
+			return "", ErrStopUnconfirmed
+		}
+		c.mu.Lock()
+		c.fault, c.faultRunID = false, ""
+		c.mu.Unlock()
 	}
 	id := make([]byte, 16)
 	if _, err = rand.Read(id); err != nil {
@@ -176,22 +189,9 @@ func (c *Client) Run(ctx context.Context, req Request, invoke func(context.Conte
 		if completed {
 			return
 		}
-		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		resp, e := c.post(stopCtx, "/v1/runs/"+req.ID+"/cancel", struct{}{})
-		if e == nil {
-			var ack struct {
-				Stopped bool `json:"stopped"`
-			}
-			e = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&ack)
-			resp.Body.Close()
-			if e == nil && !ack.Stopped {
-				e = errors.New("stop not confirmed")
-			}
-		}
-		if e != nil {
+		if c.confirmStopped(context.Background(), req.ID) != nil {
 			c.mu.Lock()
-			c.fault = true
+			c.fault, c.faultRunID = true, req.ID
 			c.mu.Unlock()
 		}
 	}()
@@ -320,4 +320,26 @@ func safeErrorCode(code string) bool {
 		return true
 	}
 	return false
+}
+
+// Cancellation is idempotent: the authenticated bridge also retires unknown IDs,
+// so a late delivery of the uncertain original request cannot start afterward.
+func (c *Client) confirmStopped(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	resp, err := c.post(ctx, "/v1/runs/"+id+"/cancel", struct{}{})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var ack struct {
+		Stopped bool `json:"stopped"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&ack); err != nil {
+		return err
+	}
+	if !ack.Stopped {
+		return ErrStopUnconfirmed
+	}
+	return nil
 }

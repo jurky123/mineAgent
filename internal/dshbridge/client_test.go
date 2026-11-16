@@ -234,3 +234,96 @@ func TestPublicRunErrorIsTypedSanitizedAndNeverReplayed(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoveryRequiresExactOldRunStopAndNeverReplays(t *testing.T) {
+	var stopOK atomic.Bool
+	var starts, tools, cancels atomic.Int32
+	var firstID atomic.Value
+	c := clientFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/runs" {
+			var req Request
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			n := starts.Add(1)
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			if n == 1 {
+				firstID.Store(req.ID)
+				fmt.Fprintln(w, `{"type":"ready"}`)
+				return
+			}
+			if req.Model != "new-model" {
+				t.Error("new selection not applied")
+			}
+			if req.ID == firstID.Load().(string) {
+				t.Error("old request replayed")
+			}
+			fmt.Fprintln(w, `{"type":"tool","id":"fresh-tool","name":"fixture","arguments":{}}`)
+			w.(http.Flusher).Flush()
+			for tools.Load() == 0 {
+				time.Sleep(time.Millisecond)
+			}
+			fmt.Fprintln(w, `{"type":"done","text":"new task done"}`)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/cancel") {
+			cancels.Add(1)
+			if r.URL.Path != "/v1/runs/"+firstID.Load().(string)+"/cancel" {
+				t.Error("wrong recovery ID")
+			}
+			fmt.Fprintf(w, `{"stopped":%t}`, stopOK.Load())
+			return
+		}
+		tools.Add(1)
+		fmt.Fprint(w, `{}`)
+	})
+	if _, err := c.Run(context.Background(), Request{Model: "old-model"}, nil); err == nil {
+		t.Fatal("incomplete run accepted")
+	}
+	if _, err := c.Run(context.Background(), Request{Model: "new-model"}, nil); !errors.Is(err, ErrStopUnconfirmed) {
+		t.Fatal("unconfirmed recovery allowed", err)
+	}
+	if starts.Load() != 1 || cancels.Load() != 2 {
+		t.Fatal("request replayed before stop ack")
+	}
+	stopOK.Store(true)
+	text, err := c.Run(context.Background(), Request{Model: "new-model"}, func(context.Context, string, string) (string, error) { return "result", nil })
+	if err != nil || text != "new task done" || starts.Load() != 2 || tools.Load() != 1 || cancels.Load() != 3 {
+		t.Fatal(text, err, starts.Load(), tools.Load(), cancels.Load())
+	}
+	if c.fault {
+		t.Fatal("confirmed stop did not release fault")
+	}
+}
+
+func TestUnavailableHostRecoversAfterAuthenticatedCancellation(t *testing.T) {
+	var online atomic.Bool
+	var starts, cancels atomic.Int32
+	c := clientFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if !online.Load() {
+			w.WriteHeader(503)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/cancel") {
+			cancels.Add(1)
+			fmt.Fprint(w, `{"stopped":true}`)
+			return
+		}
+		starts.Add(1)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"type":"done","text":"recovered"}`)
+	})
+	if _, err := c.Run(context.Background(), Request{}, nil); err == nil {
+		t.Fatal("offline request accepted")
+	}
+	if _, err := c.Run(context.Background(), Request{}, nil); !errors.Is(err, ErrStopUnconfirmed) {
+		t.Fatal(err)
+	}
+	online.Store(true)
+	if text, err := c.Run(context.Background(), Request{}, nil); err != nil || text != "recovered" {
+		t.Fatal(text, err)
+	}
+	if starts.Load() != 1 || cancels.Load() != 1 {
+		t.Fatal("unexpected replay", starts.Load(), cancels.Load())
+	}
+}

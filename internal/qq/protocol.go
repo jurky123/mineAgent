@@ -1,6 +1,10 @@
 package qq
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+)
 
 // 按官方文档 api-v2 的事件结构建模，只取我们用的子集：
 // C2C_MESSAGE_CREATE（单聊）、GROUP_AT_MESSAGE_CREATE（群@机器人）。
@@ -68,6 +72,8 @@ type qqUser struct {
 	IsYou        bool   `json:"is_you"`
 	ID           string `json:"id"`
 	Username     string `json:"username"`
+	Avatar       string `json:"avatar"`
+	Nickname     string `json:"nickname"`
 	Bot          bool   `json:"bot"`
 	UnionOpenID  string `json:"union_openid"`
 	UserOpenID   string `json:"user_openid"`
@@ -123,6 +129,7 @@ type Attachment struct {
 	URL         string `json:"url"`
 	Filename    string `json:"filename"`
 	ContentType string `json:"content_type"`
+	Size        int64  `json:"size,omitempty"`
 }
 
 // InboundMessage 是网关事件归一化后的内部消息，channel.go 消费它。
@@ -143,6 +150,7 @@ type InboundMessage struct {
 	UnionOpenID string
 	// Username: 昵称（C2C 可能为空）。
 	Username string
+	Avatar   string
 	// Text is the current sender's caption, separate from quoted material.
 	Text    string
 	content messageContent
@@ -150,4 +158,24 @@ type InboundMessage struct {
 	MemberRole string
 	// HasOtherMention prevents unsolicited replies to messages addressed to others.
 	HasOtherMention bool
+}
+
+// Some QQ payload variants encode sizes as strings; missing/invalid metadata
+// never bypasses the actual streamed byte limit or drops the whole message.
+func (a *Attachment) UnmarshalJSON(raw []byte) error {
+	var v struct {
+		URL         string          `json:"url"`
+		Filename    string          `json:"filename"`
+		ContentType string          `json:"content_type"`
+		Size        json.RawMessage `json:"size"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return err
+	}
+	*a = Attachment{URL: v.URL, Filename: v.Filename, ContentType: v.ContentType}
+	a.Size, _ = strconv.ParseInt(strings.Trim(string(v.Size), "\""), 10, 64)
+	if a.Size < 0 {
+		a.Size = 0
+	}
+	return nil
 }

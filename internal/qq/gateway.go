@@ -302,7 +302,8 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 			Kind: "c2c", MsgID: e.ID, EventID: eventID,
 			UserOpenID:  firstNonEmpty(e.Author.UserOpenID, e.Author.ID),
 			UnionOpenID: e.Author.UnionOpenID,
-			Username:    e.Author.Username,
+			Username:    firstNonEmpty(e.Author.Username, e.Author.Nickname),
+			Avatar:      e.Author.Avatar,
 			Text:        e.Content,
 			content:     e.messageContent,
 		})
@@ -324,8 +325,9 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 		g.mu.Unlock()
 		directed, other := t == "GROUP_AT_MESSAGE_CREATE", false
 		text := e.Content
-		for _, mention := range e.Mentions {
+		for i, mention := range e.Mentions {
 			if mention.IsYou || (botID != "" && mention.ID == botID) {
+				e.Mentions[i].IsYou = true
 				directed = true
 				for _, id := range []string{mention.ID, mention.MemberOpenID} {
 					if id != "" {
@@ -351,7 +353,8 @@ func (g *Gateway) dispatch(t, eventID string, d json.RawMessage) {
 			GroupOpenID:     e.GroupOpenID,
 			MemberOpenID:    firstNonEmpty(e.Author.MemberOpenID, e.Author.ID),
 			UnionOpenID:     e.Author.UnionOpenID,
-			Username:        e.Author.Username,
+			Username:        firstNonEmpty(e.Author.Username, e.Author.Nickname),
+			Avatar:          e.Author.Avatar,
 			Text:            strings.TrimSpace(text),
 			content:         e.messageContent,
 			MemberRole:      e.Author.MemberRole,

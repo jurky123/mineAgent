@@ -59,3 +59,7 @@ QQ 群状态接口已确认该群 `recv_msg_setting=all`、`allow_proactive_msg=
 ## 会话模型设置（2026-11-15）
 
 `/settings`（或 `/设置`）统一查看模型与思考强度，入口也列入 `/help`。`/model list [页码]`、`/model <完整ID>`、`/model default` 查询/切换/恢复，作用于当前共享对话与后续自然接话，工具及管理员权限保持。私聊与各群隔离，重启保留；实现与验证见 [QQ 模型设置](docs/QQ_MODEL_SETTINGS_2026-11-15.md)。
+
+## 2026-11-17：成员工具与原件获取
+
+明确任务新增 `qq_member_profile`、`qq_mention`、`qq_fetch_attachment`。成员按当前群/私聊隔离，平台身份仍独立决定授权；自然接话仍无工具。大图保留原件并提供压缩预览，大附件按需流式下载。详见 [实现与验收](docs/QQ_MENTIONS_MEDIA_PROFILES_2026-11-17.md)。

@@ -125,7 +125,7 @@ func TestOriginalFailureAndVisualLimitAreIndependent(t *testing.T) {
 			}
 			file := b.files[0]
 			if mode == "over-visual-limit" {
-				if len(msg.UserInputMultiContent) != 0 || file.Path == "" || !strings.Contains(file.Status, "4MB") {
+				if len(msg.UserInputMultiContent) != 2 || file.Path == "" || !strings.Contains(file.Status, "压缩预览") {
 					t.Fatal("visual limit discarded file copy")
 				}
 			} else if len(msg.UserInputMultiContent) != 2 || file.Path != "" || file.FileStatus == "" {

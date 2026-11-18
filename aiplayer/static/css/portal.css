@@ -138,10 +138,10 @@ textarea:focus-visible {
 }
 .topbar nav a[aria-current="page"],
 .nav-item.active {
-  background: var(--surface);
-  color: var(--text);
+  background: var(--ink);
+  color: var(--paper);
   border-color: var(--line);
-  box-shadow: var(--shadow-hard-sm);
+  box-shadow: none;
   font-weight: 700;
 }
 #theme {
@@ -788,9 +788,26 @@ footer {
 
 h1 { font-size: 32px; }
 .card { box-shadow: var(--shadow-hard); }
-.directory-filters { border-block: 1px solid var(--border); padding-block: 8px; margin-bottom: 24px; }
-.directory-filters > summary { cursor: pointer; display: flex; align-items: center; min-height: 44px; color: var(--text-secondary); font-size: 14px; }
-.directory-filters .filters { margin-block: 16px; }
+.directory-filters {
+  border: var(--bw) dashed var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 6px 16px;
+  margin-bottom: 24px;
+}
+.directory-filters > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 650;
+}
+.directory-filters[open] > summary {
+  border-bottom: var(--bw) dashed var(--line-soft);
+}
+.directory-filters .filters { margin-block: 12px 10px; }
 .grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
 .agent-card { max-width: 560px; }
 @media (max-width: 600px) { h1 { font-size: 28px; } .topbar { gap: 8px; } main { padding: 24px 16px 40px; } }

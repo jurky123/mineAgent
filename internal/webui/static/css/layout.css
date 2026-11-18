@@ -85,7 +85,8 @@ main > header .icon-btn:hover { background: var(--surface-active); color: var(--
 #listInner { width: min(100% - 32px, var(--col)); margin-inline: auto; padding: 12px 0 24px; }
 #loadolder {
   display: block; margin: 4px auto 12px; padding: 6px 14px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border); background: none; color: var(--text-2); font-size: 12.5px;
+  border: var(--bw) solid var(--line); background: var(--surface); color: var(--text-2); font-size: 12.5px;
+  box-shadow: var(--shadow-hard-sm);
 }
 #loadolder:hover { background: var(--surface-hover); }
 #empty { text-align: center; }
@@ -96,8 +97,8 @@ main > header .icon-btn:hover { background: var(--surface-active); color: var(--
 #tobottom {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: 112px; width: 34px; height: 34px;
   display: none; align-items: center; justify-content: center; border-radius: 50%;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text-2); z-index: 6;
-  box-shadow: var(--shadow-popover);
+  border: var(--bw) solid var(--line); background: var(--surface); color: var(--text-2); z-index: 6;
+  box-shadow: var(--shadow-hard-sm);
 }
 #tobottom.on { display: flex; }
 #connbar {
@@ -192,7 +193,7 @@ main > header {
   display: flex; align-items: center; gap: 8px; padding: 10px 16px; position: sticky; top: 0; z-index: 5;
   background: var(--header-bg); backdrop-filter: blur(12px); border-bottom: var(--bw) solid var(--line);
 }
-.agent-page main > header { background: var(--header-bg); backdrop-filter: blur(12px); min-height: 64px; }
+.agent-page main > header { background: var(--header-bg); backdrop-filter: blur(12px); min-height: 52px; padding: 8px 16px; }
 .title { font-weight: 750; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .agent-page .title { margin: 0; font-size: 15px; font-weight: 750; }
 #empty h2 { margin: 20px 0 28px; font-size: 32px; font-weight: 850; letter-spacing: -.03em; }
@@ -221,12 +222,12 @@ main > header {
 body.agent-page { padding-bottom: 0; }
 /* Independent product navigation, separate from the conversation list. */
 .sidebar-panel { margin-left:56px; min-width:0; height:100%; display:flex; flex-direction:column; }
-.navigation-rail { position:absolute; inset:0 auto 0 0; width:56px; padding:12px 6px; display:flex; flex-direction:column; align-items:center; gap:10px; background:var(--surface); border-right:1px solid var(--line-soft); }
+.navigation-rail { position:absolute; inset:0 auto 0 0; width:56px; padding:12px 6px; display:flex; flex-direction:column; align-items:center; gap:10px; background:var(--surface); border-right:var(--bw) solid var(--line); }
 .rail-button { display:flex; align-items:center; justify-content:center; flex:none; width:44px; height:44px; padding:0; border:1px solid transparent; border-radius:12px; background:transparent; color:var(--text-secondary); text-decoration:none; transition:background 150ms,color 150ms; }
 .rail-button .i { width:19px; height:19px; }
 .rail-button:hover { background:var(--surface-muted); color:var(--text); }
 .rail-button[aria-current="page"] { background:var(--tone-sun-soft); color:var(--text); border-color:var(--line); box-shadow:var(--shadow-hard-sm); }
-.rail-bottom { margin-top:auto; display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:14px; border-top:1px solid var(--line-soft); }
+.rail-bottom { margin-top:auto; display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:14px; border-top:var(--bw) dashed var(--line-soft); }
 .rail-account { position:relative; }
 #sidebar .rail-account .userbtn { width:44px; height:44px; padding:6px; justify-content:center; border:0; border-radius:12px; }
 .rail-account .uname, .rail-account .badge, .rail-account .userbtn > .i, .navigation-rail .prompt-entry > span { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }

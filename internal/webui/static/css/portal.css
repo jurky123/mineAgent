@@ -25,13 +25,14 @@
   display: inline-flex; align-items: center; justify-content: center;
 }
 .game-icon .game-icon-img { width: 20px; height: 20px; }
-.feed { padding: 6px 0; }
-.feed-row + .feed-row { border-top: 1px solid var(--border); }
-.feed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); margin-top: 8px; flex: none; }
+.feed { padding: 4px 0; overflow: hidden; }
+.feed-row + .feed-row { border-top: var(--bw) dashed var(--line-soft); }
+.feed-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); border: 1px solid var(--line); margin-top: 7px; flex: none; }
 .feed-main { flex: 1; min-width: 0; }
 .feed-text { color: var(--text); font-size: 14.5px; white-space: pre-wrap; word-break: break-word; }
 .feed-meta { color: var(--text-tertiary); font-size: 12.5px; margin-top: 3px; }
-.feed-row { display: flex; gap: 12px; padding: 14px 18px; align-items: flex-start; transition: background var(--motion-ui) ease; }
+.feed-row { display: flex; gap: 12px; padding: 15px 20px; align-items: flex-start; transition: background var(--motion-ui) ease; }
+.feed-row:hover { background: var(--surface-muted); }
 .feed-del { opacity: 0; transition: opacity var(--motion-ui) ease; }
 .feed-row:hover .feed-del { opacity: 1; }
 .account-head { display: flex; align-items: center; gap: 16px; margin: 6px 0 8px; }
@@ -40,7 +41,7 @@
 .setting-row.action { cursor: pointer; transition: background var(--motion-ui) ease; }
 .setting-row.action:hover { background: var(--surface-muted); }
 .setting-row .right { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); }
-.seg { display: inline-flex; background: var(--surface-muted); border-radius: 10px; padding: 3px; gap: 2px; }
+.seg { display: inline-flex; background: var(--surface-muted); border: var(--bw) solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
 .seg-item {
   border: 0; background: transparent; color: var(--text-secondary); padding: 6px 12px; border-radius: 8px;
   font: inherit; font-size: 13.5px; cursor: pointer;
@@ -60,7 +61,7 @@
 .settings .list-row.action:hover .right { transform: translateX(2px); color: var(--text-secondary); }
 .settings .list-row.action:hover { background: var(--surface-muted); }
 .section-head .section-title { font-size: 15px; color: var(--text-secondary); font-weight: 600; }
-.feed-dot.game { background: #f59e0b; }
+.feed-dot.game { background: var(--tone-sun); }
 .demo-banner {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
   padding: 16px; margin: 0 0 24px; border: 1px solid var(--border); border-radius: 12px;

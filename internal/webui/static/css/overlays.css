@@ -1,16 +1,16 @@
 /* 弹层与账号人设设置；纸墨外观，焦点、权限和查看器行为保持。 */
 .ws-card { max-width: 620px; max-height: 76vh; }
 .ap-card { max-width: 460px; }
-.ws-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: var(--bw) solid var(--line); }
+.ws-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: var(--bw) solid var(--line); }
 .ws-path { flex: 1; font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-path a { color: var(--text-2); text-decoration: none; cursor: pointer; }
 .ws-path a:hover { color: var(--text); text-decoration: underline; }
 .icon-button:hover { background: var(--surface-hover); color: var(--text); }
 .ws-list { overflow-y: auto; padding: 6px; }
 .ws-row {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border: 0;
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 9px 10px; border: 0;
   border-radius: var(--radius-sm); background: none; color: inherit; text-decoration: none; font-size: 14px;
-  text-align: left; cursor: pointer;
+  text-align: left; cursor: pointer; transition: background var(--motion-fast) ease;
 }
 .ws-row:hover { background: var(--surface-hover); }
 .ws-row .ws-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -18,29 +18,29 @@
 .ws-row .i { color: var(--text-3); }
 .ws-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 26px; }
 .usage-card { max-width: 460px; }
-.usage-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.usage-body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .usage-row { display: flex; flex-direction: column; gap: 6px; }
-.usage-top { display: flex; justify-content: space-between; font-size: 13.5px; }
+.usage-top { display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 600; }
 .usage-top .pct { color: var(--text-2); font-variant-numeric: tabular-nums; }
-.usage-bar { height: 8px; border-radius: 999px; background: var(--control-bg); overflow: hidden; }
-.usage-fill { height: 100%; border-radius: 999px; background: var(--interactive); transition: width .45s cubic-bezier(.22,1,.36,1); }
-.usage-fill.warm { background: #f59e0b; }
-.usage-fill.hot { background: #ef4444; }
+.usage-bar { height: 12px; border-radius: 999px; border: var(--bw) solid var(--line); background: var(--surface-muted); overflow: hidden; }
+.usage-fill { height: 100%; border-radius: 999px; background: var(--brand-fill); transition: width .45s cubic-bezier(.22,1,.36,1); }
+.usage-fill.warm { background: var(--tone-sun); }
+.usage-fill.hot { background: var(--danger); }
 .usage-reset { font-size: 11.5px; color: var(--text-3); }
 .usage-note { font-size: 11.5px; color: var(--text-3); line-height: 1.6; }
 .usage-loading { padding: 22px 0; text-align: center; color: var(--text-3); font-size: 13px; }
-.dlg-card { max-width: 400px; padding: 20px 20px 16px; }
-.dlg-title { font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+.dlg-card { max-width: 400px; padding: 22px 22px 18px; }
+.dlg-title { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
 .dlg-text { margin-top: 8px; color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
 .dlg-input {
-  width: 100%; margin-top: 14px; padding: 9px 12px; border: 1px solid var(--border-control);
-  border-radius: 10px; background: var(--control-bg); color: var(--text); font: inherit; font-size: 14px;
-  outline: none;
+  width: 100%; min-height: 44px; margin-top: 14px; padding: 10px 12px; border: var(--bw) solid var(--line);
+  border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: inherit; font-size: 14px;
+  outline: none; transition: border-color var(--motion-ui) ease, box-shadow var(--motion-ui) ease;
 }
-.dlg-input:focus { border-color: var(--interactive-border); background: var(--surface); }
+.dlg-input:focus { border-color: var(--line); background: var(--surface); box-shadow: 3px 3px 0 var(--brand); }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.ap-title { font-weight: 600; font-size: 14.5px; }
-.ap-body { padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 16px; }
+.ap-title { font-weight: 650; font-size: 15px; }
+.ap-body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 16px; }
 .ap-row .ap-label { font-size: 13px; color: var(--text-2); margin-bottom: 8px; }
 .ap-row .seg { margin: 0; }
 #viewer { position: fixed; inset: 0; background: rgba(10,10,12,.95); display: none; flex-direction: column; z-index: 40; }
@@ -125,16 +125,18 @@
   justify-content: center; z-index: 35; padding: 20px; overscroll-behavior: contain;
 }
 #toasts {
-  position: fixed; right: 20px; bottom: 20px; z-index: 60;
-  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  position: fixed; top: calc(var(--shell-height) + 12px); left: 50%; transform: translateX(-50%); z-index: 80;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 24px); pointer-events: none;
 }
 #toasts .toast {
   background: var(--surface); color: var(--text); border: var(--bw) solid var(--line);
-  border-radius: 999px; box-shadow: var(--shadow-hard);
-  padding: 9px 14px; font-size: 13px; font-weight: 700; pointer-events: auto;
+  border-radius: var(--radius-cta); box-shadow: 3px 3px 0 var(--brand); max-width: min(420px, calc(100vw - 24px));
+  padding: 9px 16px; font-size: 13px; font-weight: 700; text-align: center; pointer-events: auto;
+  animation: pop 160ms var(--ease-out);
 }
-#toasts .toast.ok { border-color: var(--ok); }
-#toasts .toast.err { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
+#toasts .toast.ok { border-color: var(--line); background: var(--tone-mc-soft); box-shadow: 3px 3px 0 var(--ok); }
+#toasts .toast.err { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, var(--surface)); box-shadow: 3px 3px 0 var(--danger); }
+#toasts .toast.out { animation: toast-out 180ms var(--ease-in) forwards; }
 @keyframes modal-in { from { opacity: 0; transform: translateY(10px) scale(.97); } }
 @keyframes modal-out { to { opacity: 0; transform: translateY(4px) scale(.98); } }
 @media (max-width: 640px) {

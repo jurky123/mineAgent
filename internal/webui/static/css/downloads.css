@@ -1,19 +1,33 @@
 /* downloads.css — 下载卡片、文件票据和滚动表格；列表不叠加硬投影。 */
 .download-page { padding-top: clamp(32px, 10vh, 100px); }
-.download-brand { display: inline-block; font-size: 24px; font-weight: 650; text-decoration: none; margin-bottom: 24px; color: var(--text); }
+.download-brand { display: inline-flex; align-items: center; min-height: 44px; font-size: 24px; font-weight: 850; letter-spacing: -.02em; text-decoration: none; margin-bottom: 20px; color: var(--text); }
 .download-card h1 { margin: 0 0 16px; }
 .download-card h2 { margin: 0 0 16px; }
 .download-card h3 { margin: 0 0 16px; }
 .download-card p { line-height: 1.65; }
-.download-card details { margin: 20px 0; }
-.download-card code { display: block; margin-top: 12px; word-break: break-all; }
+.download-card label { font-size: 13.5px; font-weight: 650; color: var(--text); }
+.download-card details { margin: 20px 0; padding: 10px 14px; border: var(--bw) dashed var(--line-soft); border-radius: var(--radius-cta); background: var(--surface-muted); }
+.download-card summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 650; font-size: 14px; }
+.download-card code { display: block; margin-top: 8px; padding: 10px 12px; border: var(--bw) solid var(--line); border-radius: var(--radius-control); background: var(--surface); font-size: 12.5px; word-break: break-all; user-select: all; }
 .download-card form { margin: 24px 0; }
+.download-card input[type="file"] {
+  width: 100%; min-height: 44px; padding: 10px 12px; border: var(--bw) dashed var(--line);
+  border-radius: var(--radius-cta); background: var(--surface-muted); color: var(--text); font: inherit;
+  font-size: 13.5px; cursor: pointer;
+}
+.download-card input[type="file"]::file-selector-button {
+  margin-right: 12px; padding: 6px 12px; border: var(--bw) solid var(--line);
+  border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: inherit;
+  font-weight: 650; box-shadow: var(--shadow-hard-sm); cursor: pointer;
+}
+.download-card input[type="file"]::file-selector-button:hover { background: var(--control-hover); }
+#upload-button { justify-self: start; }
 .download-stack { display: grid; gap: 16px; }
 .download-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .download-count { font-weight: 600; }
-#new-link { margin-top: 24px; }
+#new-link { margin-top: 24px; padding-top: 18px; border-top: var(--bw) dashed var(--line-soft); }
 #share-link { display: block; width: 100%; margin: 10px 0; }
-.download-table-wrap { overflow-x: auto; }
+.download-table-wrap { overflow-x: auto; border: var(--bw) solid var(--line); border-radius: var(--radius-cta); background: var(--surface); margin-top: 14px; }
 .download-table { border-collapse: collapse; width: 100%; text-align: left; font-size: 14px; }
 .download-card [hidden] { display: none; }
 #download-admin[hidden] { display: none; }
@@ -22,8 +36,10 @@
   padding: 24px; overflow-wrap: anywhere; border: var(--bw) solid var(--line); border-radius: 18px;
   box-shadow: var(--shadow-hard); background: var(--surface);
 }
-.download-table th { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
-.download-table td { padding: 12px 10px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
+.download-table th { padding: 11px 12px; background: var(--surface-muted); border-bottom: var(--bw) solid var(--line); font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); vertical-align: top; }
+.download-table td { padding: 12px; border-bottom: var(--bw) dashed var(--line-soft); vertical-align: top; }
+.download-table tr:last-child td { border-bottom: 0; }
+.download-table td:first-child, .download-table td:nth-child(4) { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .download-table td:first-child::before {
   content: ''; display: inline-block; vertical-align: middle; margin-right: 8px; width: 16px; height: 20px;
   border: var(--bw) solid var(--line); border-radius: 4px; background: var(--tone-sun);
@@ -32,4 +48,5 @@
 @media (max-width: 640px) {
   .download-card { padding: 18px; }
   .download-table { min-width: 580px; }
+  #upload-button { justify-self: stretch; }
 }

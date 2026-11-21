@@ -246,14 +246,16 @@ public final class AgentUi implements Listener {
                     buttons.add(new Choice("refresh", "刷新审批"));
                 }
             }
-            case "help" ->
-                    content =
-                            "直接输入 /agent 打开面板，/agent dialog 强制原版界面。\n"
-                                    + "/agent <问题> 和聊天 @agent 仍可用。\n\n"
-                                    + "增强界面在输入框按回车发送；原版对话框点击发送。\n"
-                                    + "原版对话框通过刷新查看新回复，按钮刷新会保留未发送草稿。\n"
-                                    + "仅保存本次在线、本人实际收到的最近 30 条记录，离线即清除。\n\n"
-                                    + "AI 玩家面板首次关联已验证网页管理员后可控制；离线或授权到期后失效，游戏内 OP 不能代替网页认证。";
+            case "help" -> {
+                title = "MineAgent · 使用说明";
+                content =
+                        "直接输入 /agent 打开面板，/agent dialog 强制原版界面。\n"
+                                + "/agent <问题> 和聊天 @agent 仍可用。\n\n"
+                                + "增强界面在输入框按回车发送；原版对话框点击发送。\n"
+                                + "原版对话框通过刷新查看新回复，按钮刷新会保留未发送草稿。\n"
+                                + "仅保存本次在线、本人实际收到的最近 30 条记录，离线即清除。\n\n"
+                                + "AI 玩家面板首次关联已验证网页管理员后可控制；离线或授权到期后失效，游戏内 OP 不能代替网页认证。";
+            }
             default -> {
                 title = "MineAgent · 更多功能";
                 content = "查询服务器、查看审批与打开网页。\n返回对话即可继续输入，未发送的原版面板草稿会保留。";
@@ -359,7 +361,15 @@ public final class AgentUi implements Listener {
 
     private List<DialogBody> dialogBody(Panel panel) {
         List<DialogBody> body = new ArrayList<>();
-        body.add(DialogBody.plainMessage(Component.text(panel.status(), NamedTextColor.GRAY), 310));
+        boolean warnStatus = panel.status().contains("未连接")
+                || panel.status().contains("已暂停")
+                || panel.status().contains("尚未");
+        body.add(
+                DialogBody.plainMessage(
+                        Component.text(
+                                panel.status(),
+                                warnStatus ? NamedTextColor.YELLOW : NamedTextColor.GRAY),
+                        310));
         if (panel.turns().isEmpty())
             body.add(DialogBody.plainMessage(Component.text(panel.content()), 310));
         else
@@ -636,7 +646,7 @@ public final class AgentUi implements Listener {
     public void reply(Player viewer, String text) {
         state.record(viewer.getUniqueId(), "MineAgent", text);
         View view = views.get(viewer.getUniqueId());
-        if (view != null)
+        if (view != null && (enhanced == null || !enhanced.isOpen(viewer.getUniqueId())))
             viewer.sendActionBar(Component.text("助手已回复 · 面板内刷新查看", NamedTextColor.AQUA));
         if (enhanced != null && view != null) {
             try {

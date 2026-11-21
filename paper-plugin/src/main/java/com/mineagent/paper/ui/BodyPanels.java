@@ -130,32 +130,44 @@ final class BodyPanels {
             boolean resume = page.endsWith("resume");
             title = resume ? "恢复 AI 玩家" : "断开 AI 玩家";
             content = resume ? "恢复后继续保留的任务；急停或重连后旧任务不恢复。确认恢复？" : "AI 玩家将离开游戏。确认断开？";
-            choices.add(new AgentUi.Choice(resume ? "body_resume" : "body_disconnect", "确认"));
+            choices.add(
+                    new AgentUi.Choice(
+                            resume ? "body_resume" : "body_disconnect",
+                            resume ? "确认恢复" : "确认断开"));
         } else {
             String position =
                     state.has("pos") ? UiState.clip(state.get("pos").toString(), 100) : "未知";
+            String bodyName = text(snapshot, "name");
+            String mode = text(snapshot, "mode");
+            String pauseReason = text(state, "pauseReason");
+            String health = text(state, "health");
+            String food = text(state, "food");
+            String heldItem = text(state, "heldItem");
+            String worldId = text(state, "worldId");
+            String taskTool = text(object(state, "task"), "tool");
             content =
-                    text(snapshot, "name")
+                    (bodyName.isEmpty() ? "AI 玩家" : bodyName)
                             + "\n模式："
-                            + text(snapshot, "mode")
+                            + (mode.isEmpty() ? "未知" : mode)
                             + "\n状态："
                             + (yes(snapshot, "stale")
                                     ? "状态已过期，请刷新"
                                     : yes(snapshot, "paused") ? "已暂停" : "可接收任务")
-                            + "\n暂停原因："
-                            + text(state, "pauseReason")
+                            + (yes(snapshot, "paused") || !pauseReason.isEmpty()
+                                    ? "\n暂停原因：" + (pauseReason.isEmpty() ? "未说明" : pauseReason)
+                                    : "")
                             + "\n生命 / 饥饿："
-                            + text(state, "health")
+                            + (health.isEmpty() ? "-" : health)
                             + " / "
-                            + text(state, "food")
+                            + (food.isEmpty() ? "-" : food)
                             + "\n手持："
-                            + text(state, "heldItem")
+                            + (heldItem.isEmpty() ? "空" : heldItem)
                             + "\n世界："
-                            + text(state, "worldId")
+                            + (worldId.isEmpty() ? "未知" : worldId)
                             + "\n位置："
                             + position
                             + "\n当前任务："
-                            + text(object(state, "task"), "tool")
+                            + (taskTool.isEmpty() ? "空闲" : taskTool)
                             + "\n\n"
                             + (direct
                                     ? "控制方式：游戏内直接控制（mineagent.body）"
@@ -168,7 +180,7 @@ final class BodyPanels {
             choices.add(new AgentUi.Choice("body_confirm_disconnect", "断开"));
             if (!direct) choices.add(new AgentUi.Choice("body_unlink", "解除本次授权"));
         }
-        if (!error(code).isEmpty()) content = error(code) + "\n\n" + content;
+        if (!error(code).isEmpty()) content = "⚠ " + error(code) + "\n\n" + content;
         choices.add(new AgentUi.Choice("body_refresh", "刷新身体状态"));
         if (!"body".equals(page)) choices.add(new AgentUi.Choice("body", "返回 AI 玩家"));
         choices.add(new AgentUi.Choice("home", "返回共享对话"));

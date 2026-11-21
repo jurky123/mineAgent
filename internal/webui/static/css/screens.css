@@ -2,9 +2,11 @@
 .settings .screens-row { display: flex; align-items: center; gap: 12px; padding: 12px 2px; }
 .settings .screens-row + .screens-row { border-top: var(--bw) dashed var(--line-soft); }
 .screens-row-icon {
-  width: 30px; height: 30px; border-radius: 9px; flex: none; background: var(--surface-muted);
-  color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: var(--radius-control); flex: none; background: var(--surface-muted);
+  border: var(--bw) solid var(--line); color: var(--text); display: inline-flex; align-items: center; justify-content: center;
 }
+.screens-row details { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+.screens-row summary { cursor: pointer; min-height: 32px; display: inline-flex; align-items: center; }
 .screens-row-main { flex: 1; min-width: 0; }
 .screens-row-title { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .screens-row-sub { color: var(--text-tertiary); font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -12,31 +14,40 @@
 .screens-form .input { flex: 1; min-width: 170px; }
 .screens-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
 .screens-chip {
-  display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border);
-  background: var(--surface-muted); color: var(--text-secondary); border-radius: 999px; font: inherit;
-  font-size: 12px; padding: 3px 10px; cursor: pointer;
-  transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease;
+  display: inline-flex; align-items: center; gap: 6px; border: var(--bw) solid var(--line);
+  background: var(--surface); color: var(--text); border-radius: 999px; font-family: var(--font-mono);
+  font-size: 12.5px; font-weight: 600; padding: 5px 12px; min-height: 36px;
 }
-.screens-chip:hover {
-  color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
-  background: color-mix(in srgb, var(--danger) 7%, transparent);
+button.screens-chip {
+  cursor: pointer; box-shadow: var(--shadow-hard-sm);
+  transition: background var(--motion-ui) ease, color var(--motion-ui) ease, border-color var(--motion-ui) ease, box-shadow var(--motion-ui) ease, transform 160ms var(--ease-out);
 }
-.screens-chip .i { width: 12px; height: 12px; opacity: .65; }
-.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--text-secondary); cursor: pointer; user-select: none; }
+button.screens-chip:hover {
+  color: var(--danger); border-color: var(--danger); transform: translate(-1px, -1px);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface)); box-shadow: 3px 3px 0 var(--danger);
+}
+button.screens-chip:active { transform: translate(2px, 2px); box-shadow: none; }
+.screens-chip .i { width: 12px; height: 12px; opacity: .75; }
+.toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13.5px; font-weight: 650; color: var(--text); cursor: pointer; user-select: none; }
 .toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .toggle-track {
-  position: relative; width: 38px; height: 22px; flex: none; border-radius: 999px;
-  background: var(--border-strong); transition: background var(--motion-ui) ease;
+  position: relative; width: 44px; height: 26px; flex: none; border-radius: 999px;
+  border: var(--bw) solid var(--line); background: var(--surface-muted); box-shadow: var(--shadow-hard-sm);
+  transition: background var(--motion-ui) ease;
 }
-.toggle input:checked + .toggle-track { background: var(--brand); }
-.toggle input:checked + .toggle-track .toggle-knob { transform: translateX(16px); }
-.toggle input:focus-visible + .toggle-track { box-shadow: 0 0 0 3px var(--brand-soft); }
-.wrap code { font-size: 12.5px; padding: 1px 5px; border-radius: 6px; background: var(--surface-muted); border: 1px solid var(--border); }
-.screens-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.screens-form label { width: 100%; font-size: 14px; font-weight: 600; }
+.toggle input:checked + .toggle-track { background: var(--brand-fill); }
+.toggle input:checked + .toggle-track .toggle-knob { transform: translateX(18px); }
+.toggle input:focus-visible + .toggle-track { outline: 2px solid var(--brand); outline-offset: 3px; }
+.wrap code { font-size: 12.5px; padding: 2px 7px; border-radius: 6px; background: var(--code-inline); border: var(--bw) solid var(--line); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.screens-form { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.screens-form label { width: 100%; font-size: 14px; font-weight: 650; }
+#screens-list + [data-admin] { margin-top: 18px; }
 [data-admin][hidden] { display: none !important; }
 .toggle-knob {
-  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--paper); box-shadow: var(--shadow-card);
+  position: absolute; top: 2.5px; left: 2.5px; width: 18px; height: 18px; border-radius: 50%;
+  background: #FFFDF7; border: var(--bw) solid var(--line);
   transition: transform var(--motion-ui) var(--ease-out);
+}
+@media (hover: none), (max-width: 640px) {
+  button.screens-chip { min-height: 44px; }
 }

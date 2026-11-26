@@ -617,15 +617,26 @@ document.addEventListener('paste', (e) => {
   const files = e.clipboardData && e.clipboardData.files;
   if (files && files.length) { e.preventDefault(); addFiles(files); }
 });
+const isFileDrag = (e) => {
+  const types = e.dataTransfer && e.dataTransfer.types;
+  return !!types && Array.from(types).includes('Files');
+};
 let dragDepth = 0;
 window.addEventListener('dragenter', (e) => {
+  if (!S.me || !isFileDrag(e)) return;
   e.preventDefault();
-  if (!S.me) return;
   if (++dragDepth === 1) $('drop').classList.add('on');
 });
-window.addEventListener('dragover', (e) => e.preventDefault());
-window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('drop').classList.remove('on'); } });
+window.addEventListener('dragover', (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+});
+window.addEventListener('dragleave', (e) => {
+  if (!dragDepth) return;
+  if (--dragDepth <= 0) { dragDepth = 0; $('drop').classList.remove('on'); }
+});
 window.addEventListener('drop', (e) => {
+  if (!isFileDrag(e)) { dragDepth = 0; $('drop').classList.remove('on'); return; }
   e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on');
   if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
 });

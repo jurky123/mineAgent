@@ -104,9 +104,9 @@
 .palette-item .palette-hint { color: var(--text-tertiary); font-size: 12.5px; }
 .palette-empty { color: var(--text-tertiary); font-size: 13.5px; padding: 14px; text-align: center; }
 .palette-icon { width: 18px; height: 18px; }
-.topbar .nav-item { min-height: 44px; }
-.topbar .icon-btn { min-height: 44px; }
-.topbar .acc-btn { min-height: 44px; }
+.topbar .nav-item { min-height: 36px; }
+.topbar .icon-btn { min-height: 36px; }
+.topbar .acc-btn { min-height: 36px; }
 :where(a, button, input, select, textarea, summary):focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 .passkey-form { display: flex; flex-direction: column; gap: 12px; text-align: left; width: 100%; color: var(--text); }
 .passkey-form h1 { font-size: 28px; margin: 0; line-height: 1.4; }
@@ -136,19 +136,19 @@ body.ds {
   background-image: var(--paper-pattern); background-size: var(--paper-grid);
 }
 .topbar .brand {
-  display: flex; align-items: center; gap: 9px; font-weight: 800; letter-spacing: .1px; text-decoration: none;
-  font-size: 19px; min-height: 44px;
+  display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .1px; text-decoration: none;
+  font-size: 17px; min-height: 36px;
 }
 .brand-logo {
-  width: 34px; height: 34px; border-radius: 10px; border: var(--bw) solid var(--line);
+  width: 28px; height: 28px; border-radius: 8px; border: var(--bw) solid var(--line);
   box-shadow: var(--shadow-hard-sm); transition: transform 200ms var(--ease-spring);
 }
 .brand:hover .brand-logo { transform: rotate(-8deg) scale(1.06); }
 .nav-item {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px;
-  text-decoration: none; color: var(--text-secondary); font-size: 14px; position: relative; isolation: isolate;
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  text-decoration: none; color: var(--text-secondary); font-size: 13.5px; position: relative; isolation: isolate;
   transition: background var(--motion-ui) ease, color var(--motion-ui) ease, transform var(--motion-fast) var(--ease-out);
-  border: var(--bw) solid transparent; min-height: 44px;
+  border: var(--bw) solid transparent; min-height: 36px;
 }
 .nav-item:hover { background: var(--surface); color: var(--text); border-color: var(--line); }
 .nav-item.on { color: var(--paper); font-weight: 700; }
@@ -303,11 +303,11 @@ html[data-theme="dark"] .badge.brand { color: #FFFFFF; }
   }
   .tabbar .tab.on { color: var(--text); }
   .tabbar .tab.on .tab-ic { color: var(--on-accent); }
-  .topbar { padding: 0 10px; gap: 4px; height: 56px; padding-inline: 8px; min-height: 56px; }
+  .topbar { padding: 0 10px; gap: 4px; height: 50px; padding-inline: 8px; min-height: 50px; }
   .topbar .brand span { display: inline; }
   .nav-item { white-space: nowrap; padding: 6px 8px; font-size: 12px; gap: 0; }
   .nav-item .i { display: inline; }
-  .brand-logo { width: 34px; height: 34px; }
+  .brand-logo { width: 28px; height: 28px; }
 }
 @media (hover: none), (max-width: 640px) {
   .icon-btn { min-width: 44px; min-height: 44px; }

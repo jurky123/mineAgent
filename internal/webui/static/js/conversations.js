@@ -40,6 +40,7 @@ export function initConversations() {
   const archiveToggle = document.createElement('button'); archiveToggle.className = 'side-archive-toggle'; archiveToggle.textContent = '已归档';
   archiveToggle.onclick = () => { showArchived = !showArchived; archiveToggle.textContent = showArchived ? '返回聊天列表' : '已归档'; renderList(); }; $('conv-list').before(archiveToggle);
   bus.on('conversations-changed', () => { refresh().catch(() => {}); });
+  bus.on('fork-from-message', ({ conv, messageId }) => { forkConversation(conv, messageId); });
   bus.on('message-other', ({ conv }) => {
     if (!S.conversations.some((c) => c.conv === conv)) return;
     S.unread.add(conv);
@@ -108,17 +109,39 @@ export function renderList() {
     const menu = document.createElement('details'); menu.className = 'conv-menu';
     const trigger = document.createElement('summary'); trigger.textContent = '⋯'; trigger.setAttribute('aria-label', '会话操作：' + label); menu.appendChild(trigger);
     const actions = document.createElement('div'); actions.className = 'conv-menu-actions';
-    for (const [label, run] of [
-      ['从此对话创建分支', () => forkConversation(c.conv)],
-      ['重命名', () => rename(c)],
-      [c.pinned ? '取消置顶' : '置顶', () => settings(c, { pinned: !c.pinned })],
-      [c.archived ? '取消归档' : '归档', () => settings(c, { archived: !c.archived })],
-      ['删除', () => del(c)],
-    ]) { const button = document.createElement('button'); button.textContent = label; button.onclick = () => { menu.open = false; run(); }; actions.appendChild(button); }
+    for (const [text, iconId, cls, run] of [
+      ['从此对话创建分支', '#i-fork', '', () => forkConversation(c.conv)],
+      ['重命名', '#i-edit', '', () => rename(c)],
+      [c.pinned ? '取消置顶' : '置顶', '#i-pin', '', () => settings(c, { pinned: !c.pinned })],
+      [c.archived ? '取消归档' : '归档', '#i-archive', 'warn', () => settings(c, { archived: !c.archived })],
+      ['删除', '#i-trash', 'danger', () => del(c)],
+    ]) {
+      const button = document.createElement('button');
+      if (cls) button.className = cls;
+      button.innerHTML = '<svg class="i sm" aria-hidden="true"><use href="' + iconId + '"/></svg><span>' + esc(text) + '</span>';
+      button.onclick = () => { menu.open = false; run(); };
+      actions.appendChild(button);
+    }
+    menu.addEventListener('toggle', () => {
+      if (!menu.open) return;
+      document.querySelectorAll('.conv-menu[open]').forEach((other) => { if (other !== menu) other.open = false; });
+      const rect = trigger.getBoundingClientRect();
+      actions.style.left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - 170)) + 'px';
+      actions.style.top = Math.min(rect.bottom + 4, Math.max(8, window.innerHeight - actions.offsetHeight - 8)) + 'px';
+    });
     menu.addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); menu.open = false; trigger.focus(); } });
     menu.appendChild(actions); item.appendChild(menu);
     box.appendChild(item);
   });
+  if (!box._menuDismissBound) {
+    box._menuDismissBound = true;
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.conv-menu')) document.querySelectorAll('.conv-menu[open]').forEach((m) => { m.open = false; });
+    });
+    box.addEventListener('scroll', () => {
+      document.querySelectorAll('.conv-menu[open]').forEach((m) => { m.open = false; });
+    }, { passive: true });
+  }
   // 顶栏标题：草稿态显示"新聊天"
   const active = S.conversations.find((c) => c.conv === S.conv);
   $('header-title').textContent = S.conv === null ? '新聊天' : ((active && active.title) || 'MineAgent');
@@ -166,16 +189,18 @@ async function settings(c, patch) {
  catch (error) { showError(error.message); }
 }
 
-async function forkConversation(conv = S.conv) {
+async function forkConversation(conv = S.conv, messageId = 0) {
   if (conv === null) { toast('先保存一条消息，再创建分支'); return; }
   if ($('forkchat').disabled) return;
   const current = S.conv;
-  if (S.waiting && !await askConfirm({title:'从已保存的历史创建分支？', text:'原对话中的任务仍会继续。尚未返回的回复不会复制到分支，可回原对话查看或停止。',okLabel:'创建分支'})) return;
+  if (!messageId && S.waiting && !await askConfirm({title:'从已保存的历史创建分支？', text:'原对话中的任务仍会继续。尚未返回的回复不会复制到分支，可回原对话查看或停止。',okLabel:'创建分支'})) return;
   const button = $('forkchat'); button.disabled = true;
   try {
-    const result = await apiPost('/api/send', {text:'/fork',conv});
+    const result = messageId
+      ? await apiPost('/api/conversations/fork', { conv, messageId })
+      : await apiPost('/api/send', { text: '/fork', conv });
     await refresh(); if (S.conv === current) await switchTo(result.conv);
-    toast('已创建独立分支，原对话保留', 'ok');
+    toast(messageId ? '已从该回复创建分支，原对话保留' : '已创建独立分支，原对话保留', 'ok');
   } catch (error) { showError('创建分支未确认，请先检查会话列表再重试：' + error.message); }
   finally { button.disabled = false; }
 }

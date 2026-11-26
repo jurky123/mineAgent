@@ -101,6 +101,7 @@ func (c *Channel) API() http.Handler {
 	mux.HandleFunc("/api/conversations", c.withAuth(c.handleConversations))
 	mux.HandleFunc("/api/conversations/delete", c.withAuth(c.handleConversationDelete))
 	mux.HandleFunc("/api/conversations/rename", c.withAuth(c.handleConversationRename))
+	mux.HandleFunc("/api/conversations/fork", c.withAuth(c.handleConversationFork))
 	mux.Handle("/static/", noCache(http.HandlerFunc(c.handleStatic)))
 	return c.cors(mux)
 }
@@ -779,6 +780,46 @@ func (c *Channel) handleConversationRename(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"conv": req.Conv, "title": title})
+}
+
+// handleConversationFork 从指定会话（可选截止到某条消息 ID）创建独立分支。
+func (c *Channel) handleConversationFork(w http.ResponseWriter, r *http.Request, u *storage.User) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "只支持 POST"})
+		return
+	}
+	var req struct {
+		Conv      *string `json:"conv"`
+		MessageID int64   `json:"messageId"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&req); err != nil || req.Conv == nil || !ValidConv(*req.Conv) || req.MessageID < 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "参数非法"})
+		return
+	}
+	id, err := storage.NewConversationID()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "生成会话编号失败"})
+		return
+	}
+	title := "对话分支"
+	if orig, err := c.store.ConversationFor(r.Context(), u.ID, u.Username, *req.Conv); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	} else if orig != nil && orig.Title != "" {
+		runes := []rune(orig.Title)
+		title = string(runes[:min(len(runes), 48)]) + " · 分支"
+	}
+	now := time.Now().UnixMilli()
+	if err := c.store.CreateWebConversationAt(r.Context(), u.ID, u.Username, id, title, req.Conv, req.MessageID, now); err != nil {
+		if errors.Is(err, storage.ErrConversationNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "会话或消息不存在"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	c.publishRaw(u.Username, map[string]any{"type": "conversations"})
+	writeJSON(w, http.StatusOK, map[string]any{"conv": id, "title": title})
 }
 
 // randomConv 会话短 id（12 位小写十六进制）。

@@ -101,6 +101,25 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 md.renderer.rules.fence = (tokens, index) => {
   const token = tokens[index];
   const language = (token.info.trim().split(/\s+/)[0] || 'text').replace(/[^a-zA-Z0-9_+-]/g, '');
+  const lower = language.toLowerCase();
+  if (lower === 'html' || lower === 'svg') {
+    const label = lower === 'svg' ? 'SVG 预览' : 'HTML 预览';
+    return '<div class="artifact-block" data-lang="' + esc(lower) + '">' +
+      '<div class="artifact-head">' +
+        '<span class="artifact-badge">' + label + '</span>' +
+        '<div class="artifact-tabs" role="group" aria-label="视图切换">' +
+          '<button class="artifact-tab" type="button" data-view="preview" aria-pressed="true">预览</button>' +
+          '<button class="artifact-tab" type="button" data-view="source" aria-pressed="false">源码</button>' +
+        '</div>' +
+        '<span class="spacer"></span>' +
+        '<button class="artifact-act artifact-expand" type="button">展开</button>' +
+        '<button class="artifact-act artifact-download" type="button">下载</button>' +
+        '<button class="artifact-act codecopy" type="button">' + ICON_COPY + '复制</button>' +
+      '</div>' +
+      '<div class="artifact-preview"><iframe class="artifact-frame" sandbox="allow-scripts" referrerpolicy="no-referrer" title="' + label + '"></iframe></div>' +
+      '<div class="artifact-source" hidden><pre><code class="language-' + esc(lower === 'svg' ? 'xml' : 'html') + '">' + esc(token.content) + '</code></pre></div>' +
+    '</div>\n';
+  }
   return '<div class="codeblock"><div class="codetools"><span class="codelang">' + esc(language) +
     '</span><button class="codecopy" type="button">' + ICON_COPY + '复制</button></div>' +
     '<pre><code class="language-' + esc(language) + '">' + esc(token.content) + '</code></pre></div>\n';
@@ -194,15 +213,59 @@ export async function enhanceContent(el) {
       exportNodeImage(target, kind + '-' + stamp);
     };
   });
-  el.querySelectorAll('.codeblock').forEach((box) => {
+  el.querySelectorAll('.codeblock, .artifact-block').forEach((box) => {
     const btn = box.querySelector('.codecopy');
-    if (!btn || btn._bound) return;
-    btn._bound = true;
-    btn.onclick = () => {
-      const code = box.querySelector('code');
-      navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
-        btn.textContent = '已复制'; setTimeout(() => { btn.textContent = '复制'; }, 1200);
-      }).catch(() => { btn.textContent = '复制失败，请选中文本'; });
-    };
+    if (btn && !btn._bound) {
+      btn._bound = true;
+      btn.onclick = () => {
+        const code = box.querySelector('code');
+        navigator.clipboard.writeText(code ? code.textContent : '').then(() => {
+          btn.textContent = '已复制'; setTimeout(() => { btn.innerHTML = ICON_COPY + '复制'; }, 1200);
+        }).catch(() => { btn.textContent = '复制失败，请选中文本'; });
+      };
+    }
+  });
+  el.querySelectorAll('.artifact-block').forEach((art) => {
+    if (art._bound) return;
+    art._bound = true;
+    const lang = art.dataset.lang || 'html';
+    const raw = art.querySelector('code')?.textContent || '';
+    const frame = art.querySelector('.artifact-frame');
+    const previewPane = art.querySelector('.artifact-preview');
+    const sourcePane = art.querySelector('.artifact-source');
+    const isFullDoc = /^\s*<(?:!doctype|html)\b/i.test(raw);
+    const dark = document.documentElement.dataset.theme === 'dark';
+    const baseStyle = '<style>body{margin:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;line-height:1.6;color:' +
+      (dark ? '#f2eee4;background:#201f29' : '#18171f;background:#fffdf7') +
+      ';}svg{max-width:100%;height:auto;display:block;margin:0 auto;}</style>';
+    if (frame) {
+      frame.srcdoc = isFullDoc ? raw : ('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' + baseStyle + '</head><body>' + raw + '</body></html>');
+    }
+    art.querySelectorAll('.artifact-tab').forEach((tab) => {
+      tab.onclick = () => {
+        const showPreview = tab.dataset.view === 'preview';
+        art.querySelectorAll('.artifact-tab').forEach((t) => t.setAttribute('aria-pressed', String(t === tab)));
+        if (previewPane) previewPane.hidden = !showPreview;
+        if (sourcePane) sourcePane.hidden = showPreview;
+      };
+    });
+    const expandBtn = art.querySelector('.artifact-expand');
+    if (expandBtn) {
+      expandBtn.onclick = () => {
+        const expanded = art.classList.toggle('expanded');
+        expandBtn.textContent = expanded ? '收起' : '展开';
+      };
+    }
+    const dlBtn = art.querySelector('.artifact-download');
+    if (dlBtn) {
+      dlBtn.onclick = () => {
+        const blob = new Blob([raw], { type: lang === 'svg' ? 'image/svg+xml;charset=utf-8' : 'text/html;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'artifact-' + Date.now() + '.' + (lang === 'svg' ? 'svg' : 'html');
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+      };
+    }
   });
 }

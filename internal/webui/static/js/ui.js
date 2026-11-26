@@ -106,7 +106,8 @@ export const ICON = {
   check: '<svg class="i"><use href="#i-check"/></svg>',
   x: '<svg class="i"><use href="#i-x"/></svg>',
   trash: '<svg class="i"><use href="#i-trash"/></svg>',
-  edit: '<svg class="i"><use href="#i-edit"/></svg>'
+  edit: '<svg class="i"><use href="#i-edit"/></svg>',
+  fork: '<svg class="i"><use href="#i-fork"/></svg>'
 };
 
 // 按扩展名给出文件卡片角标（文字 + 配色 class）

@@ -7,6 +7,8 @@ import { renderContent, enhanceContent } from './markdown.js';
 import { openViewer } from './viewer.js';
 
 let msgIds = new Set();
+let msgRecords = [];
+let runEventMap = new Map();
 let lastId = 0, oldestId = 0, hasMore = false;
 let es = null;
 let docked = null;
@@ -32,6 +34,12 @@ function fileBubble(f) {
     '<span class="fdl">' + ICON.download + '</span></a>';
 }
 
+function hasMarkdownSyntax(text) {
+  const s = String(text || '');
+  if (!s.trim()) return false;
+  return /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|~~~|\|.*\|)|(\*\*|__|~~|`[^`]+`|\[[^\]]+\]\([^)]+\)|\$\$|\$[^\s$][^$\n]*\$)/.test(s);
+}
+
 // ---------- 渲染 ----------
 export function renderMsg(m, prepend) {
   if (msgIds.has(m.id)) return;
@@ -39,24 +47,42 @@ export function renderMsg(m, prepend) {
   // 注意：服务端给 agent 消息的 role 是 "agent"（不是 assistant），
   // 这里统一按"非 user 即助手"处理，否则会走纯文本分支（线上踩过）。
   const isAgent = m.role !== 'user';
+  const rawText = (m.text || '').trim();
+  const files = m.files || [];
+  const images = files.filter((f) => f.image);
+  const nonImages = files.filter((f) => !f.image);
+  const isMd = hasMarkdownSyntax(rawText);
   const row = document.createElement('div');
   row.className = 'msg ' + (isAgent ? 'assistant' : 'user');
-  row.dataset.raw = m.text || ''; row.dataset.messageId = m.id;
-  let html = '<div class="body">';
+  row.dataset.raw = m.text || ''; row.dataset.messageId = m.id; row.dataset.at = m.at || 0;
+  msgRecords.push({ id: m.id, role: isAgent ? 'assistant' : 'user', at: m.at || 0, el: row });
+  msgRecords.sort((a, b) => (a.at - b.at) || (a.id - b.id));
+  let acts = '';
   if (isAgent) {
-    html += '<div class="content"></div>' +
-      (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
-      '<div class="actions"><span class="time">' + fmtTime(m.at) + '</span>' +
-      '<button class="act copy">' + ICON.copy + '复制 Markdown</button><button class="act copy-text">复制文本</button></div>';
+    acts += '<span class="time">' + fmtTime(m.at) + '</span>';
+    if (rawText && isMd) {
+      acts += '<button class="act copy">' + ICON.copy + '复制 Markdown</button><button class="act copy-text">复制文本</button>';
+    } else if (rawText) {
+      acts += '<button class="act copy-text">' + ICON.copy + '复制文本</button>';
+    } else if (images.length) {
+      acts += '<button class="act act-view-img">' + ICON.expand + '查看大图</button><button class="act act-dl-file">' + ICON.download + '下载图片</button>';
+    } else if (nonImages.length) {
+      acts += '<button class="act act-dl-file">' + ICON.download + '下载附件</button>';
+    }
+    acts += '<button class="act fork-here" title="从这条回复创建新分支">' + ICON.fork + '创建分支</button>';
   } else {
-    html += '<div class="content"></div>' +
-      (m.files && m.files.length ? '<div class="files">' + m.files.map(fileBubble).join('') + '</div>' : '') +
-      '<div class="actions"><button class="act copy">' + ICON.copy + '复制</button></div>';
+    if (rawText) acts += '<button class="act copy">' + ICON.copy + '复制</button>';
+    else if (images.length) acts += '<button class="act act-view-img">' + ICON.expand + '查看大图</button>';
+    else if (nonImages.length) acts += '<button class="act act-dl-file">' + ICON.download + '下载附件</button>';
   }
-  html += '</div>';
+  const html = '<div class="body"><div class="content"></div>' +
+    (files.length ? '<div class="files">' + files.map(fileBubble).join('') + '</div>' : '') +
+    (acts ? '<div class="actions">' + acts + '</div>' : '') + '</div>';
   row.innerHTML = html;
   const content = row.querySelector('.content');
-  if (isAgent) {
+  if (!rawText) {
+    content.hidden = true;
+  } else if (isAgent) {
     renderContent(content, m.text || '');
     enhanceContent(content);   // 懒加载高亮/KaTeX（没有代码/公式就不加载）
   } else {
@@ -69,11 +95,38 @@ export function renderMsg(m, prepend) {
     }).catch(() => showError('复制失败，请手动选择文本'));
   };
   const plainCopy = row.querySelector('.copy-text');
-  if (plainCopy) plainCopy.onclick = () => navigator.clipboard.writeText(content.innerText).then(() => { plainCopy.textContent = '已复制'; setTimeout(() => { plainCopy.textContent = '复制文本'; }, 1200); }).catch(() => showError('复制失败，请手动选择文本'));
+  if (plainCopy) plainCopy.onclick = () => {
+    const label = isMd ? '复制文本' : (ICON.copy + '复制文本');
+    navigator.clipboard.writeText(content.innerText || row.dataset.raw).then(() => {
+      plainCopy.innerHTML = (isMd ? '' : ICON.check) + '已复制';
+      setTimeout(() => { plainCopy.innerHTML = label; }, 1200);
+    }).catch(() => showError('复制失败，请手动选择文本'));
+  };
+  const viewImg = row.querySelector('.act-view-img');
+  if (viewImg) viewImg.onclick = () => {
+    openViewer(images.map((f) => ({ url: withTok(f.url), name: f.name || '' })), 0);
+  };
+  const dlFile = row.querySelector('.act-dl-file');
+  if (dlFile) dlFile.onclick = () => {
+    const target = images[0] || nonImages[0];
+    if (!target) return;
+    const a = document.createElement('a');
+    a.href = withTok(target.url); a.download = target.name || '文件';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  const forkBtn = row.querySelector('.fork-here');
+  if (forkBtn) forkBtn.onclick = () => {
+    bus.emit('fork-from-message', { conv: S.conv, messageId: m.id });
+  };
   oldestId = oldestId ? Math.min(oldestId, m.id) : m.id;
   const near = scrollNearBottom();
   if (prepend) $('listInner').insertBefore(row, $('loadolder').nextSibling);
-  else $('listInner').appendChild(row);
+  else {
+    const liveAnchor = $('listInner').querySelector('.run-events-live, .typing');
+    if (liveAnchor) $('listInner').insertBefore(row, liveAnchor);
+    else $('listInner').appendChild(row);
+  }
+  if (isAgent && runEventMap.size) syncTurnRunEvents();
   if (!prepend && near) toBottom(); else {
     if (!prepend && isAgent) { $('tobottom').classList.add('has-new'); $('tobottom').setAttribute('aria-label', '有新回复，回到底部'); if (!$('tobottom').querySelector('span')) { const label = document.createElement('span'); label.textContent = '有新回复'; $('tobottom').appendChild(label); } }
     updateToBottom();
@@ -83,7 +136,7 @@ export function renderMsg(m, prepend) {
 
 export function clearMessages() {
   $('listInner').querySelectorAll('.msg,.typing,.run-events').forEach((n) => n.remove());
-  msgIds.clear(); lastId = 0; oldestId = 0; hasMore = false;
+  msgIds.clear(); msgRecords = []; runEventMap.clear(); lastId = 0; oldestId = 0; hasMore = false;
   updateLoadOlder(); setTyping(false); layout(true);
 }
 
@@ -100,13 +153,14 @@ export function setTyping(on, text, startedAt) {
   if (!on) {
     if (typingTimer) { clearInterval(typingTimer); typingTimer = null; }
     if (row) row.remove();
+    syncTurnRunEvents();
     return;
   }
   if (text) typingLabel = text;
   if (!row) {
     row = document.createElement('div');
-    row.className = 'typing';
-    row.innerHTML = '<span class="task-state"></span><span class="typing-text"></span>';
+    row.className = 'typing typing-active';
+    row.innerHTML = '<span class="step-pulse-dot" aria-hidden="true"></span><span class="task-state"></span><span class="typing-text"></span>';
     row.setAttribute('role', 'status');
     box.appendChild(row);
     typingStart = startedAt || Date.now();
@@ -115,11 +169,14 @@ export function setTyping(on, text, startedAt) {
     const el = row.querySelector('.typing-text');
     if (!el) return;
     const secs = Math.floor((Date.now() - typingStart) / 1000);
-    const state = /审批|授权/.test(typingLabel) ? '等待审批' : /队|等待处理|已提交/.test(typingLabel) ? '排队中' : /停止|取消/.test(typingLabel) ? '正在停止' : /工具|搜索|执行|读取|查询/.test(typingLabel) ? '使用工具' : '处理中';
+    const state = /审批|授权/.test(typingLabel) ? '等待审批' : /队|等待处理|已提交/.test(typingLabel) ? '排队中' : /停止|取消/.test(typingLabel) ? '正在停止' : /工具|搜索|执行|读取|查询/.test(typingLabel) ? '使用工具' : '思考中';
     row.querySelector('.task-state').textContent = state;
     el.textContent = typingLabel + (secs >= 3 ? ' · ' + secs + ' 秒' : '');
+    const liveSummary = box.querySelector('.run-events-live > summary .step-live-label');
+    if (liveSummary) liveSummary.textContent = typingLabel + (secs >= 3 ? ' · ' + secs + 's' : '');
   };
   paint();
+  syncTurnRunEvents();
   if (!typingTimer) typingTimer = setInterval(paint, 1000);
   if (scrollNearBottom()) toBottom();
 }
@@ -284,15 +341,97 @@ $('list').addEventListener('click', (e) => {
   openViewer(imgs.map((n) => ({ url: n.dataset.zoom, name: n.dataset.name || '' })), Math.max(0, imgs.indexOf(target)));
 });
 
-function renderRunEvents(events, append = false) {
-  if (!events.length) return;
-  let details = $('listInner').querySelector('.run-events');
-  if (!details) { details = document.createElement('details'); details.className = 'run-events'; details.innerHTML = '<summary>任务步骤</summary><ol class="run-event-list"></ol>';  $('listInner').appendChild(details); }
-  const list = details.querySelector('.run-event-list'); if (!append) list.replaceChildren();
-  for (const event of events) {
-    let row = Array.from(list.children).find((el) => el.dataset.callId === event.id);
-    if (!row) { row = document.createElement('li'); row.dataset.callId = event.id; list.appendChild(row); }
-    const labels = { started: '请求调用', returned: '已返回（结果以回复为准）', failed: '调用失败', cancelled: '已停止或未完成', unconfirmed: '未收到完成事件', approval: '等待管理员审批' };
-    row.textContent = (event.at ? new Date(event.at).toLocaleTimeString() + ' · ' : '') + event.name + ' · ' + (labels[event.status] || event.status) + (event.durationMs ? ' · ' + (event.durationMs / 1000).toFixed(1) + 's' : '');
+function formatRunEvent(event) {
+  const labels = { started: '正在调用', returned: '已返回（结果以回复为准）', failed: '调用失败', cancelled: '已停止或未完成', unconfirmed: '未收到完成事件', approval: '等待管理员审批' };
+  return (event.at ? new Date(event.at).toLocaleTimeString() + ' · ' : '') + event.name + ' · ' + (labels[event.status] || event.status) + (event.durationMs ? ' · ' + (event.durationMs / 1000).toFixed(1) + 's' : '');
+}
+
+function fillRunEventsEl(details, events, isLive) {
+  const open = details.open;
+  details.className = 'run-events' + (isLive ? ' run-events-live' : '');
+  const activeStep = events.findLast ? events.findLast((e) => e.status === 'started' || e.status === 'approval') : [...events].reverse().find((e) => e.status === 'started' || e.status === 'approval');
+  const latest = activeStep || events[events.length - 1];
+  const summary = details.querySelector('summary') || document.createElement('summary');
+  if (isLive) {
+    const liveText = activeStep ? (activeStep.name + ' · ' + (activeStep.status === 'approval' ? '等待审批' : '执行中…')) : (typingLabel || (latest ? latest.name : '正在处理…'));
+    summary.innerHTML = '<span class="step-pulse-dot" aria-hidden="true"></span><span>任务步骤（' + events.length + '）</span><span class="step-live-label">' + esc(liveText) + '</span>';
+  } else {
+    summary.innerHTML = '<span>任务步骤（' + events.length + ' 步）</span>';
   }
+  if (!summary.parentNode) details.appendChild(summary);
+  let list = details.querySelector('.run-event-list');
+  if (!list) { list = document.createElement('ol'); list.className = 'run-event-list'; details.appendChild(list); }
+  list.replaceChildren();
+  for (const event of events) {
+    const row = document.createElement('li');
+    row.dataset.callId = event.id;
+    if (event.status === 'started' || event.status === 'approval') row.className = 'step-running';
+    row.textContent = formatRunEvent(event);
+    list.appendChild(row);
+  }
+  details.open = open;
+}
+
+function syncTurnRunEvents() {
+  const box = $('listInner');
+  const events = Array.from(runEventMap.values()).sort((a, b) => (a.at || 0) - (b.at || 0));
+  const assistants = msgRecords.filter((m) => m.role === 'assistant');
+  const buckets = new Map();
+  const liveEvents = [];
+
+  for (const ev of events) {
+    const evAt = ev.at || 0;
+    let target = null;
+    for (const a of assistants) {
+      if (a.at && evAt && evAt <= a.at + 2000) { target = a; break; }
+    }
+    if (!target && !S.waiting && assistants.length && (!evAt || evAt <= (assistants[assistants.length - 1].at || 0) + 15000)) {
+      target = assistants[assistants.length - 1];
+    }
+    if (target) {
+      if (!buckets.has(target.id)) buckets.set(target.id, []);
+      buckets.get(target.id).push(ev);
+    } else {
+      liveEvents.push(ev);
+    }
+  }
+
+  for (const a of assistants) {
+    const body = a.el.querySelector('.body');
+    if (!body) continue;
+    const evs = buckets.get(a.id);
+    let details = body.querySelector(':scope > .run-events');
+    if (!evs || !evs.length) {
+      if (details) details.remove();
+      continue;
+    }
+    if (!details) {
+      details = document.createElement('details');
+      details.className = 'run-events';
+      body.insertBefore(details, body.firstChild);
+    }
+    fillRunEventsEl(details, evs, false);
+  }
+
+  let liveDetails = box.querySelector(':scope > .run-events');
+  if (liveEvents.length) {
+    if (!liveDetails) {
+      liveDetails = document.createElement('details');
+      const typing = box.querySelector('.typing');
+      if (typing) box.insertBefore(liveDetails, typing);
+      else box.appendChild(liveDetails);
+    }
+    fillRunEventsEl(liveDetails, liveEvents, S.waiting || liveEvents.some((e) => e.status === 'started' || e.status === 'approval'));
+  } else if (liveDetails) {
+    liveDetails.remove();
+  }
+}
+
+function renderRunEvents(events, append = false) {
+  if (!append) runEventMap.clear();
+  for (const event of events || []) {
+    if (!event || !event.id) continue;
+    runEventMap.set(event.id, event);
+  }
+  syncTurnRunEvents();
 }

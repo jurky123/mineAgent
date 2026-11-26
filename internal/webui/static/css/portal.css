@@ -53,7 +53,7 @@
 .catalog-card.clickable { cursor: pointer; }
 .catalog-card.clickable:active { transform: translateY(0) scale(.99); transition-duration: var(--motion-press); }
 .catalog-card .catalog-head { display: flex; align-items: center; gap: 8px; }
-.catalog-card.clickable:hover .catalog-go { transform: translateX(3px); }
+.catalog-card.clickable:hover .catalog-go { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--shadow-ink); }
 .settings .list-row { padding: 12px 2px; }
 .settings .list-row + .list-row { border-top: var(--bw) dashed var(--line-soft); }
 .settings .list-row.action { padding: 12px 8px; border-radius: 10px; cursor: pointer; transition: background var(--motion-ui) ease; }
@@ -73,9 +73,11 @@
 .catalog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; }
 .catalog-head { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
 .catalog-go {
-  margin-top: auto; color: var(--link); font-size: 14px; font-weight: 600; text-decoration: none;
-  transition: transform 200ms var(--ease-out); align-self: flex-start; min-height: 44px; display: inline-flex;
-  align-items: center;
+  margin-top: auto; background: var(--tone-sun); color: var(--on-accent); font-size: 14px; font-weight: 750;
+  text-decoration: none; border: var(--bw) solid var(--line); border-radius: var(--radius-control);
+  box-shadow: var(--shadow-hard-sm); padding: 8px 18px; gap: 6px;
+  transition: transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out); align-self: flex-start;
+  min-height: 44px; display: inline-flex; align-items: center;
 }
 .login-view {
   position: fixed; inset: var(--shell-height) 0 0; z-index: 70; display: flex; align-items: safe center;

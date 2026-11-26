@@ -40,30 +40,55 @@ func NewConversationID() (string, error) {
 
 // copyConversationHistory copies a stable transaction snapshot. Message ids are
 // regenerated; summary cutoffs are remapped by position, never reused from the
-// source. Approvals, checkpoints, reminders and active tool handles are excluded.
-func copyConversationHistory(ctx context.Context, tx *sql.Tx, source, dest string) error {
+// source. When upToMessageID > 0, only messages up to and including that id are copied.
+// Approvals, checkpoints, reminders and active tool handles are excluded.
+func copyConversationHistory(ctx context.Context, tx *sql.Tx, source, dest string, upToMessageID int64) error {
 	if source == dest {
 		return fmt.Errorf("fork source equals destination")
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO messages(session_id,channel,author_kind,author_id,author_name,text,target,created_at)
+	if upToMessageID > 0 {
+		var exists int
+		err := tx.QueryRowContext(ctx, `SELECT 1 FROM messages WHERE session_id=? AND id=?`, source, upToMessageID).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrConversationNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO messages(session_id,channel,author_kind,author_id,author_name,text,target,created_at)
+ SELECT ?,channel,author_kind,author_id,author_name,text,target,created_at FROM messages WHERE session_id=? AND id<=? ORDER BY id`, dest, source, upToMessageID); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `WITH mapping AS (
+ SELECT old.id AS old_id,new.id AS new_id FROM
+ (SELECT id,ROW_NUMBER() OVER (ORDER BY id) AS pos FROM messages WHERE session_id=? AND id<=?) old
+ JOIN (SELECT id,ROW_NUMBER() OVER (ORDER BY id) AS pos FROM messages WHERE session_id=?) new ON old.pos=new.pos
+ ) INSERT INTO summaries(session_id,up_to_message_id,text,created_at)
+ SELECT ?,COALESCE((SELECT MAX(new_id) FROM mapping WHERE old_id<=s.up_to_message_id),0),s.text,s.created_at
+ FROM summaries s WHERE s.session_id=? AND s.up_to_message_id<=? ORDER BY s.id`, source, upToMessageID, dest, dest, source, upToMessageID)
+		if err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO messages(session_id,channel,author_kind,author_id,author_name,text,target,created_at)
  SELECT ?,channel,author_kind,author_id,author_name,text,target,created_at FROM messages WHERE session_id=? ORDER BY id`, dest, source); err != nil {
-		return err
-	}
-	_, err := tx.ExecContext(ctx, `WITH mapping AS (
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `WITH mapping AS (
  SELECT old.id AS old_id,new.id AS new_id FROM
  (SELECT id,ROW_NUMBER() OVER (ORDER BY id) AS pos FROM messages WHERE session_id=?) old
  JOIN (SELECT id,ROW_NUMBER() OVER (ORDER BY id) AS pos FROM messages WHERE session_id=?) new ON old.pos=new.pos
  ) INSERT INTO summaries(session_id,up_to_message_id,text,created_at)
  SELECT ?,COALESCE((SELECT MAX(new_id) FROM mapping WHERE old_id<=s.up_to_message_id),0),s.text,s.created_at
  FROM summaries s WHERE s.session_id=? ORDER BY s.id`, source, dest, dest, source)
-	if err != nil {
+		if err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO session_efforts(session_id,effort) SELECT ?,effort FROM session_efforts WHERE session_id=?`, dest, source); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO session_efforts(session_id,effort) SELECT ?,effort FROM session_efforts WHERE session_id=?`, dest, source)
-	if err != nil {
-		return err
-	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO session_models(session_id,model) SELECT ?,model FROM session_models WHERE session_id=?`, dest, source)
+	_, err := tx.ExecContext(ctx, `INSERT INTO session_models(session_id,model) SELECT ?,model FROM session_models WHERE session_id=?`, dest, source)
 	return err
 }
 
@@ -134,7 +159,7 @@ func (s *Store) NewQQConversation(ctx context.Context, scope string, fork bool, 
 		return c, err
 	}
 	if fork {
-		if err = copyConversationHistory(ctx, tx, source.SessionID, c.SessionID); err != nil {
+		if err = copyConversationHistory(ctx, tx, source.SessionID, c.SessionID, 0); err != nil {
 			return c, err
 		}
 	}
@@ -198,6 +223,12 @@ func (s *Store) QQConversationScope(ctx context.Context, key string) (string, st
 // CreateWebConversation validates ownership inside the same transaction as the
 // optional history copy. A nil source creates an empty conversation.
 func (s *Store) CreateWebConversation(ctx context.Context, uid int64, account, id, title string, source *string, now int64) error {
+	return s.CreateWebConversationAt(ctx, uid, account, id, title, source, 0, now)
+}
+
+// CreateWebConversationAt creates a web conversation and optionally forks history
+// up to and including upToMessageID (0 copies all messages from source).
+func (s *Store) CreateWebConversationAt(ctx context.Context, uid int64, account, id, title string, source *string, upToMessageID, now int64) error {
 	if uid <= 0 || id == "" {
 		return fmt.Errorf("invalid web conversation")
 	}
@@ -229,7 +260,7 @@ func (s *Store) CreateWebConversation(ctx context.Context, uid int64, account, i
 		if *source != "" {
 			key += ":" + *source
 		}
-		if err = copyConversationHistory(ctx, tx, key, dest); err != nil {
+		if err = copyConversationHistory(ctx, tx, key, dest, upToMessageID); err != nil {
 			return err
 		}
 	}

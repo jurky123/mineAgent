@@ -103,7 +103,7 @@ time { font-variant-numeric: tabular-nums; }
   --danger: #B72F24;
   --ok: #287239;
   --grid-line: var(--line-soft);
-  --shell-height: 64px;
+  --shell-height: 52px;
   --content-width: 1180px;
   --radius-sm: 10px;
   --radius-md: 12px;
@@ -178,7 +178,7 @@ samp { font-family: var(--font-mono); }
 @keyframes screenIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @keyframes screenOut { to { opacity: 0; transform: translateY(-6px); } }
 @media (max-width: 640px) {
-  :root { --shell-height: 56px; }
+  :root { --shell-height: 50px; }
 }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*) { animation: none !important; }

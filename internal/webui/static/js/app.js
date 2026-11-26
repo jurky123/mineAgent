@@ -16,6 +16,7 @@ import { initPromptSettings, refreshPromptLabel } from './prompt-settings.js';
 
 // ---------- 登录 / 登出 ----------
 function showLogin() {
+  delete document.documentElement.dataset.authed;
   const el = $('login');
   const card = el.querySelector('.login-card');
   card.replaceChildren(passwordForm((data) => {
@@ -58,6 +59,7 @@ function logout(silent) {
 }
 
 async function startChat() {
+  document.documentElement.dataset.authed = '1';
   hideLogin(); showApp();
   $('myname').textContent = S.me;
   $('myavatar').textContent = (S.me[0] || '?').toUpperCase();

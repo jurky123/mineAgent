@@ -230,8 +230,14 @@ func DefaultWeb() Web {
 // Workspace 是写代码/执行代码工具的沙箱根目录。
 // 执行必须通过 Linux Bubblewrap 隔离，目录约束保护工具读写。
 // 命令静态检查与语义审查是额外护栏；执行另受超时、输出上限、单并发与审计约束。
+type Colab struct {
+	Binary   string `json:"binary"`
+	StateDir string `json:"stateDir"`
+}
+
 type Workspace struct {
-	Root string `json:"root"`
+	Colab Colab  `json:"colab"`
+	Root  string `json:"root"`
 	// 单个文件读写上限（字节）。
 	MaxFileBytes int `json:"maxFileBytes"`
 	// 单次命令执行超时（秒）。

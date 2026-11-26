@@ -617,3 +617,9 @@ node scripts/ui-preview.mjs --base https://zkun.art --only shots
 2026-11-15 用户提交 `b215839` 的评审、房间码提示与登录态竞态修复及验收见 [UI版本评审与发布](docs/UI_REVIEW_RELEASE_2026-11-15.md)。
 
 2026-11-16 修复切回默认模型时DSH宿主离线及恢复后保护锁定无法解除的问题：仅在认证取消确认旧任务停止后解锁新请求，保留失败任务不自动重放。见 [模型切换与DSH恢复](docs/MODEL_SWITCH_DSH_RECOVERY_2026-11-16.md)。
+
+### Google Colab Pro 执行工具
+
+配置 `workspace.colab.binary`（官方 `colab` CLI 的绝对路径）和 `workspace.colab.stateDir`（独立授权目录，权限 0700）后，具有现有工作区管理员权限的 Agent 可调用 `colab_run`。未配置时不注册工具。服务使用 `--auth adc`，读取该目录下 `.config/gcloud/application_default_credentials.json`，授权文件应为 0600 并留在仓库之外。授权时按 [Google Colab CLI 文档](https://github.com/googlecolab/google-colab-cli#global-options) 取得 Colab scope。
+
+先用 `workspace_write` 写入 Python 或标准 nbformat 4 Notebook；用首个代码单元配置 Python 依赖和运行参数。调用 `colab_run` 时可选 CPU（默认）、T4、L4、G4、A100 或 H100。高内存选项和实际机型取决于账号额度及资源供应。每次运行使用独立会话，返回限长日志和带输出的 Notebook。即使取消或超时，也会尝试释放该会话，并明确报告释放结果。工具同一时间只允许一个任务，总超时默认 600 秒，可选 30–1800 秒。输入和生成的 Notebook 最大 16 MiB。目前产物以 Notebook 形式返回。

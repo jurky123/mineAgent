@@ -120,6 +120,7 @@
     "maxConcurrentRuns": 1
   },
   "workspace": {
+    "colab": { "binary": "", "stateDir": "" },
     "root": "workspace",
     "maxFileBytes": 65536,
     "execTimeoutSec": 0,

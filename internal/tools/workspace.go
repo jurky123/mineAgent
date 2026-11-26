@@ -36,7 +36,8 @@ type Workspace struct {
 	log      *slog.Logger
 	reviewer Reviewer
 
-	execMu sync.Mutex
+	execMu  sync.Mutex
+	colabMu sync.Mutex
 }
 
 func NewWorkspace(cfg config.Workspace, channelAdmins map[string][]string, store *storage.Store, log *slog.Logger) *Workspace {
@@ -71,7 +72,7 @@ func (w *Workspace) IsAdmin(channel string, openIDs ...string) bool {
 // Tools 返回给 QQ 通道的四件套。checkAdmin 由调用方（main.go 的 QQ 工具包装）
 // 在 ctx 里放好，见 WithQQAdmin。
 func (w *Workspace) Tools() []tool.BaseTool {
-	return []tool.BaseTool{
+	result := []tool.BaseTool{
 		&wsTool{w: w, name: "workspace_ls",
 			desc: "列出 workspace 沙箱目录内的文件（只读）。path 为相对路径，缺省列根目录。",
 			params: map[string]*schema.ParameterInfo{
@@ -94,6 +95,10 @@ func (w *Workspace) Tools() []tool.BaseTool {
 				"command": {Type: schema.String, Desc: "shell 命令，如 $VENV_BIN/pip install requests 或 curl -s --max-time 10 https://example.com/data.json -o data.json", Required: true},
 			}, fn: w.exec},
 	}
+	if w.cfg.Colab.Binary != "" {
+		result = append(result, w.colabTool())
+	}
+	return result
 }
 
 type wsTool struct {
